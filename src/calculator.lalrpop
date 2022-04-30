@@ -1,15 +1,17 @@
 use std::str::FromStr;
+use crate::tupple::{Tupple, Data};
 
 grammar;
 
-pub Expr = {
-    <l:Expr> "+" <r:Term> => l + r,
-    Term
-}
-
-Term = {
-    <Num>,
-    "(" <Expr> ")" ,
+pub Expr : Tupple = { 
+    "(" <l:Content> "," <r:Content> ")" => Tupple(l, r)
 };
 
-Num: i32 = <s:r"[0-9]+"> => i32::from_str(s).unwrap();
+Content : Data = {
+    Num => Data::Number(<>)
+}
+
+Num: i32 = {
+    r"[0-9]+" => i32::from_str(<>).unwrap()
+};
+
