@@ -8,7 +8,20 @@ pub Expr : Tupple = {
 };
 
 Content : Data = {
-    Num => Data::Number(<>)
+    Text => Data::Text(<>),
+    Num => Data::Num(<>),
+    Bool => Data::Bool(<>),
+    Expr => Data::Tupple(Box::new(<>))
+}
+
+Bool: bool = {
+    "true" => true,
+    "false" => false,
+}
+
+Text: String = {
+    // get all text between two parentheses
+    r#""[\w ]+""# => String::from_str(<>).unwrap()
 }
 
 Num: i32 = {
