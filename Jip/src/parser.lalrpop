@@ -1,0 +1,27 @@
+use std::str::FromStr;
+use crate::ast::{Expr9, Literal};
+
+grammar;
+
+pub Expr9 : Expr9 = {
+    Identifier => Expr9::Identifier(<>),
+    Literal => Expr9::Literal(<>)
+}
+
+Literal : Literal = {
+    Bool => Literal::Boolean(<>),
+    Integer => Literal::Integer(<>),
+}
+
+Bool: bool = {
+    "true" => true,
+    "false" => false,
+}
+
+Identifier: String = {
+    r#"[a-zA-Z]+"# => String::from_str(<>).unwrap()
+}
+
+Integer: i32 = {
+    r"[0-9]+" => i32::from_str(<>).unwrap()
+};
