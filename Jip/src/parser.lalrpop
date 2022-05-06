@@ -20,7 +20,7 @@ Declaration : Declaration = {
 }
 
 Nonvoidtype : Nonvoidtype = {
-    Primitivetype => Nonvoidtype::Primitivetype
+    Primitivetype => Nonvoidtype::Primitivetype(<>)
 }
 
 Primitivetype : Primitivetype = {

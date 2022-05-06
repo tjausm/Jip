@@ -4,6 +4,7 @@ extern crate lalrpop_util;
 use std::io;
 
 mod ast;
+mod cfg;
 
 lalrpop_mod!(pub parser); // synthesized by LALRPOP
 
@@ -14,8 +15,7 @@ mod tests {
 
     #[test]
     fn assignment() {
-        assert!(parser::StatementsParser::new().parse("x := 2;").is_ok());
-        
+        assert!(parser::StatementsParser::new().parse("x := 2;").is_ok()); 
     }
     #[test]
     fn declaration() {     
@@ -38,6 +38,8 @@ mod tests {
 
 fn main() {
 
+    let x = cfg::CFG::Leaf;
+
     println!("Welcome to Jip v0.1");
     loop{
         let mut input = String::new();
@@ -46,7 +48,7 @@ fn main() {
         io::stdin().read_line(&mut input);
     
         match parser::StatementsParser::new().parse(&input){
-            Ok(_) => println!("Concrete syntax is correct"),
+            Ok(ast) => println!("Concrete syntax is correct, parse result: \n{:?}", ast),
             Err(e) => println!("Error: {})", e)
         }
     }
