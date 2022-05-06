@@ -11,7 +11,7 @@ pub Statements : Statements = {
 pub Statement : Statement = {
     Declaration => Statement::Declaration(<>),
     Assignment => Statement::Assignment(<>),
-    Ite => Statement::Ite(Box::new(<>)),
+    Ite => Statement::Ite(<>),
 }
 
 
@@ -44,7 +44,7 @@ Rhs : Rhs= {
 
 
 Ite : Ite = {
-    "if" "(" <e:Expr9> ")" <s1:Statement> "else" <s2:Statement> => (<>)
+    "if" "(" <e:Expr9> ")" <s1:Statement> "else" <s2:Statement> => (e, Box::new(s1), Box::new(s2))
 }
 
 

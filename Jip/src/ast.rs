@@ -13,7 +13,7 @@ pub enum Statements {
 pub enum Statement {
     Declaration(Declaration),
     Assignment(Assignment),
-    Ite(Box<Ite>),
+    Ite(Ite),
 }
 
 pub type Declaration = (Nonvoidtype, Identifier);
@@ -41,7 +41,7 @@ pub enum Rhs {
     Expr(Expr9),
 }
 
-pub type Ite = (Expr9, Statement, Statement);
+pub type Ite = (Expr9, Box<Statement>, Box<Statement>);
 
 #[derive(Debug)]
 pub enum Expr9 {

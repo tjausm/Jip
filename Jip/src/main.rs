@@ -37,9 +37,7 @@ mod tests {
 }
 
 fn main() {
-
-    let x = cfg::CFG::Leaf;
-
+    
     println!("Welcome to Jip v0.1");
     loop{
         let mut input = String::new();
