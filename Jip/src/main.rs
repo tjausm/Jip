@@ -28,6 +28,11 @@ mod tests {
         assert!(parser::StatementsParser::new().parse("int x; x := 2; if(true)x := 1; else x := 2;").is_ok());
     }
     #[test]
+    fn block() {
+        assert!(parser::StatementsParser::new().parse("if(true){x := 1; bool z;} else {y := 2; x := 2;}").is_ok());
+        
+    }
+    #[test]
     fn faulty_input(){
         assert!(parser::StatementsParser::new().parse("bool;").is_err());
         assert!(parser::StatementsParser::new().parse("2 := x;").is_err());
@@ -37,8 +42,9 @@ mod tests {
 }
 
 fn main() {
-    
+
     println!("Welcome to Jip v0.1");
+    
     loop{
         let mut input = String::new();
 

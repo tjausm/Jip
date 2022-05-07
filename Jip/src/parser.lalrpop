@@ -12,6 +12,7 @@ pub Statement : Statement = {
     Declaration => Statement::Declaration(<>),
     Assignment => Statement::Assignment(<>),
     Ite => Statement::Ite(<>),
+    Block => Statement::Block(<>)
 }
 
 
@@ -47,6 +48,9 @@ Ite : Ite = {
     "if" "(" <e:Expr9> ")" <s1:Statement> "else" <s2:Statement> => (e, Box::new(s1), Box::new(s2))
 }
 
+Block : Box<Statements> = {
+    "{" <s:Statements> "}" => Box::new(<>)
+}
 
 Expr9 : Expr9 = {
     Identifier => Expr9::Identifier(<>),

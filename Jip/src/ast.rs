@@ -14,6 +14,7 @@ pub enum Statement {
     Declaration(Declaration),
     Assignment(Assignment),
     Ite(Ite),
+    Block(Box<Statements>)
 }
 
 pub type Declaration = (Nonvoidtype, Identifier);
