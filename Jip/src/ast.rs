@@ -14,7 +14,9 @@ pub enum Statement {
     Declaration(Declaration),
     Assignment(Assignment),
     Ite(Ite),
-    Block(Box<Statements>)
+    Block(Box<Statements>),
+    Assert(Verificationexpression),
+    Assume(Verificationexpression),
 }
 
 pub type Declaration = (Nonvoidtype, Identifier);
@@ -43,6 +45,10 @@ pub enum Rhs {
 }
 
 pub type Ite = (Expr9, Box<Statement>, Box<Statement>);
+
+
+//Todo: change to Expr1 when implemented
+pub type Verificationexpression = Expr9;
 
 #[derive(Debug)]
 pub enum Expr9 {

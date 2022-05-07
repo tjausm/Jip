@@ -12,9 +12,10 @@ pub Statement : Statement = {
     Declaration => Statement::Declaration(<>),
     Assignment => Statement::Assignment(<>),
     Ite => Statement::Ite(<>),
-    Block => Statement::Block(<>)
+    Block => Statement::Block(<>),
+    Assert => Statement::Assert(<>),
+    Assume => Statement::Assume(<>),
 }
-
 
 Declaration : Declaration = {
     <l:Nonvoidtype> <r:Identifier> ";" => (<>)
@@ -42,14 +43,24 @@ Rhs : Rhs= {
     Expr9 => Rhs::Expr(<>)
 }
 
-
-
 Ite : Ite = {
     "if" "(" <e:Expr9> ")" <s1:Statement> "else" <s2:Statement> => (e, Box::new(s1), Box::new(s2))
 }
 
 Block : Box<Statements> = {
     "{" <s:Statements> "}" => Box::new(<>)
+}
+
+Assert : Verificationexpression = {
+    "assert" <s:Verificationexpression> ";" => (<>)
+}
+
+Assume : Verificationexpression = {
+    "assume" <s:Verificationexpression> ";" => (<>)
+}
+
+Verificationexpression : Verificationexpression = {
+    Expr9
 }
 
 Expr9 : Expr9 = {

@@ -33,6 +33,15 @@ mod tests {
         
     }
     #[test]
+    fn assume(){
+        assert!(parser::StatementsParser::new().parse("assume true;").is_ok());  
+    }
+    
+    fn assert(){
+        assert!(parser::StatementsParser::new().parse("assert true;").is_ok());  
+    }
+
+    #[test]
     fn faulty_input(){
         assert!(parser::StatementsParser::new().parse("bool;").is_err());
         assert!(parser::StatementsParser::new().parse("2 := x;").is_err());
