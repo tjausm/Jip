@@ -3,30 +3,30 @@
 // - each syntactical label's first symbol is transformed to uppercase (program -> Program)
 // - labels with only 1 ´option´ are type aliases, , 1 < options are enums
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Statements {
     Cons(Statement, Box<Statements>),
     Nil,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Statement {
     Declaration(Declaration),
     Assignment(Assignment),
     Ite(Ite),
     Block(Box<Statements>),
-    Assert(Verificationexpression),
-    Assume(Verificationexpression),
+    Assert(Expression),
+    Assume(Expression),
 }
 
 pub type Declaration = (Nonvoidtype, Identifier);
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Nonvoidtype {
     Primitivetype(Primitivetype),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Primitivetype {
     Int,
     Bool,
@@ -34,29 +34,44 @@ pub enum Primitivetype {
 
 pub type Assignment = (Lhs, Rhs);
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Lhs {
     Identifier(String),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Rhs {
-    Expr(Expr9),
+    Expr(Expression),
 }
 
-pub type Ite = (Expr9, Box<Statement>, Box<Statement>);
-
+pub type Ite = (Expression, Box<Statement>, Box<Statement>);
 
 //Todo: change to Expr1 when implemented
-pub type Verificationexpression = Expr9;
 
-#[derive(Debug)]
-pub enum Expr9 {
+#[derive(Debug, Clone)]
+pub enum Expression {
+
+    //expression3
+    And(Box<Expression>, Box<Expression>),
+    Or(Box<Expression>, Box<Expression>),
+
+    //Box<Expression>
+    LT(Box<Expression>, Box<Expression>),
+    GT(Box<Expression>, Box<Expression>),
+    GEQ(Box<Expression>, Box<Expression>),
+    LEQ(Box<Expression>, Box<Expression>),
+
+    //Expression
+    Minus(Box<Expression>),
+    Not(Box<Expression>),
+    Expr9(Box<Expression>),
+
+    //expression9
     Identifier(Identifier),
     Literal(Literal),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Literal {
     Boolean(bool),
     Integer(i32),

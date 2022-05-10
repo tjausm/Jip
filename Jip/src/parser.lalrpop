@@ -40,32 +40,60 @@ Lhs : Lhs = {
 }
 
 Rhs : Rhs= {
-    Expr9 => Rhs::Expr(<>)
+    Expression3 => Rhs::Expr(<>)
 }
 
 Ite : Ite = {
-    "if" "(" <e:Expr9> ")" <s1:Statement> "else" <s2:Statement> => (e, Box::new(s1), Box::new(s2))
+    "if" "(" <e:Expression3> ")" <s1:Statement> "else" <s2:Statement> => (e, Box::new(s1), Box::new(s2))
 }
 
 Block : Box<Statements> = {
     "{" <s:Statements> "}" => Box::new(<>)
 }
 
-Assert : Verificationexpression = {
+Assert : Expression = {
     "assert" <s:Verificationexpression> ";" => (<>)
 }
 
-Assume : Verificationexpression = {
+Assume : Expression = {
     "assume" <s:Verificationexpression> ";" => (<>)
 }
 
-Verificationexpression : Verificationexpression = {
-    Expr9
+Verificationexpression : Expression = {
+    Expression3
 }
 
-Expr9 : Expr9 = {
-    Identifier => Expr9::Identifier(<>),
-    Literal => Expr9::Literal(<>)
+pub Expression3 : Expression = {
+    <l:Expression4> "&&" <r:Expression3> => Expression::And(Box::new(l), Box::new(r)),
+    <l:Expression4> "||" <r:Expression3> => Expression::Or(Box::new(l), Box::new(r)),
+    Expression4
+}
+
+Expression4 : Expression = {
+    Expression5
+}
+
+Expression5 : Expression = {
+    <l:Expression6> "<" <r:Expression5> => Expression::LT(Box::new(l), Box::new(r)),
+    <l:Expression6> ">" <r:Expression5> => Expression::GT(Box::new(l), Box::new(r)),
+    <l:Expression6> "<=" <r:Expression5> => Expression::LEQ(Box::new(l), Box::new(r)),
+    <l:Expression6> ">=" <r:Expression5> => Expression::GEQ(Box::new(l), Box::new(r)),
+    Expression6
+}
+
+Expression6 : Expression = {
+    Expression8
+}
+
+Expression8 : Expression = {
+    "-" <e:Expression8> => Expression::Minus(Box::new(<>)),
+    "!" <e:Expression8> => Expression::Not(Box::new(<>)),
+    Expression9
+}
+
+Expression9 : Expression = {
+    Identifier => Expression::Identifier(<>),
+    Literal => Expression::Literal(<>)
 }
 
 

@@ -13,3 +13,4 @@ lalrpop = "0.19.7"
 [dependencies]
 lalrpop-util = "0.19.7"
 regex = "1"
+queues = "1.0.2"

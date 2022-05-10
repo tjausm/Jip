@@ -7,18 +7,12 @@ use std::rc::Rc;
 
 #[derive(Debug)]
 pub enum CFG {
-    Branch { left: Rc<CFG>, right: Rc<CFG> },
+    Branch { condition: Expression, if_condition: Rc<CFG>, if_not_condition: Rc<CFG> },
     Straight { statement: Statement, next: Rc<CFG> },
     End,
 }
 
-type Branch = (CFG, CFG);
-
-type Straight = (Statement, CFG);
-
 // both to_cfg functions create a graph, or a subgraph pointing to the supplied node 
-
-
 fn stmt_to_cfg(stmt: Statement, next : Option<Rc<CFG>>) -> Rc<CFG> {
     
     let endpoint = next.unwrap_or(Rc::new(CFG::End));
@@ -34,7 +28,7 @@ fn stmt_to_cfg(stmt: Statement, next : Option<Rc<CFG>>) -> Rc<CFG> {
     }
 }
 
-fn stmts_to_cfg(stmts: Statements, next : Option<Rc<CFG>>) -> Rc<CFG> {
+pub fn stmts_to_cfg(stmts: Statements, next : Option<Rc<CFG>>) -> Rc<CFG> {
     
     // let endpoint(s) point to either the next arg or CFG::End
     let endpoint = next.unwrap_or(Rc::new(CFG::End));
@@ -47,8 +41,9 @@ fn stmts_to_cfg(stmts: Statements, next : Option<Rc<CFG>>) -> Rc<CFG> {
                 // cfg generated from stmts following ite, 
                 let next = Rc::new(stmts_to_cfg(*stmts, Some(endpoint)));
                 return Rc::new(CFG::Branch {
-                    left: stmt_to_cfg(*s1, Some(Rc::clone(&next))),
-                    right: stmt_to_cfg(*s2, Some(Rc::clone(&next))),
+                    condition: cond,
+                    if_condition: stmt_to_cfg(*s1, Some(Rc::clone(&next))),
+                    if_not_condition: stmt_to_cfg(*s2, Some(Rc::clone(&next))),
                 });
             }
             other => {
@@ -62,10 +57,14 @@ fn stmts_to_cfg(stmts: Statements, next : Option<Rc<CFG>>) -> Rc<CFG> {
     }
 }
 
+#[cfg(test)]
 mod tests {
 
     use super::*;
+    lalrpop_mod!(pub parser);
 
+    fn parse_stmt(i: &str,) -> Statement {return parser::StatementParser::new().parse(i).unwrap()}
+    fn parse_expr(i: &str,) -> Expression {return parser::Expression3Parser::new().parse(i).unwrap()}
 
     fn build_test(input: &str, correct_cfg: Rc<CFG>) {
         let statements = parser::StatementsParser::new().parse(input).unwrap();
@@ -75,15 +74,6 @@ mod tests {
         );
     }
 
-    //TODO (maybe): deze functies uitbreiden om makkelijker CFG's te maken
-
-    // shorthands to build statements
-    fn declaration(t: Primitivetype, id: &str) -> Statement {
-        return Statement::Declaration((Nonvoidtype::Primitivetype(t), String::from(id)));
-    }
-    fn assignment(id: &str, expr: Expr9) -> Statement {
-        return Statement::Assignment((Lhs::Identifier(String::from(id)), Rhs::Expr(expr)));
-    }
 
     // pre-build CFG's, 
     // combine by passing each element as argument to the next, with CFG::End as inner-most arg
@@ -91,7 +81,7 @@ mod tests {
     // "int x; ..."
     fn straight_declaration(next: Rc<CFG>) -> Rc<CFG> {
         return Rc::new(CFG::Straight {
-            statement: declaration(Primitivetype::Int, "x"),
+            statement: parse_stmt("int x;"),
             next: next,
         });
     }
@@ -99,28 +89,29 @@ mod tests {
     // "arbitraryId = true; ..."
     fn straight_assignment(next: Rc<CFG>) -> Rc<CFG> {
         return Rc::new(CFG::Straight {
-            statement: assignment("arbitraryId", Expr9::Literal(Literal::Boolean(true))),
+            statement: parse_stmt("arbitraryId := true;"),
             next: next,
         });
     }
 
-    // {int x; int x;} ...
+    // {int x; int otherName;} ...
     fn block_declaration(next: Rc<CFG>) -> Rc<CFG> {
         return Rc::new(CFG::Straight {
-            statement: declaration(Primitivetype::Int, "x"),
+            statement: parse_stmt("int x;"),
             next: Rc::new(CFG::Straight {
-                statement: declaration(Primitivetype::Int, "x"),
+                statement: parse_stmt("int otherName;"),
                 next: next
             })
         })
     }
+
 
     // if (true) then int x; else int x; ...
     fn branch_ite(l_and_r: fn(Rc<CFG>) -> Rc<CFG>, next: Option<Rc<CFG>>) -> Rc<CFG> {
 
         let endpoint = next.unwrap_or(Rc::new(CFG::End));
 
-        return Rc::new(CFG::Branch { left: l_and_r(Rc::clone(&endpoint)), right: l_and_r(endpoint) });
+        return Rc::new(CFG::Branch { condition: parse_expr("true"), if_condition: l_and_r(Rc::clone(&endpoint)), if_not_condition: l_and_r(endpoint) });
     }
 
     #[test]
@@ -145,7 +136,7 @@ mod tests {
     fn block() {
         let next = straight_declaration(Rc::new(CFG::End));
 
-        build_test("if (true) {int x; int x;} else {int x; int x;} int x;", 
+        build_test("if (true) {int x; int otherName;} else {int x; int otherName;} int x;", 
         branch_ite(block_declaration, Some(next)));
     }
 }

@@ -5,50 +5,9 @@ use std::io;
 
 mod ast;
 mod cfg;
+mod see;
 
 lalrpop_mod!(pub parser); // synthesized by LALRPOP
-
-#[cfg(test)]
-mod tests {
-
-    use super::*;
-
-    #[test]
-    fn assignment() {
-        assert!(parser::StatementsParser::new().parse("x := 2;").is_ok()); 
-    }
-    #[test]
-    fn declaration() {     
-        assert!(parser::StatementsParser::new().parse("int x;").is_ok());
-        
-
-    }
-    #[test]
-    fn statements() {
-        assert!(parser::StatementsParser::new().parse("int x; x := 2; if(true)x := 1; else x := 2;").is_ok());
-    }
-    #[test]
-    fn block() {
-        assert!(parser::StatementsParser::new().parse("if(true){x := 1; bool z;} else {y := 2; x := 2;}").is_ok());
-        
-    }
-    #[test]
-    fn assume(){
-        assert!(parser::StatementsParser::new().parse("assume true;").is_ok());  
-    }
-    
-    fn assert(){
-        assert!(parser::StatementsParser::new().parse("assert true;").is_ok());  
-    }
-
-    #[test]
-    fn faulty_input(){
-        assert!(parser::StatementsParser::new().parse("bool;").is_err());
-        assert!(parser::StatementsParser::new().parse("2 := x;").is_err());
-        assert!(parser::StatementsParser::new().parse("if (x := 1) x := 1; else x := 2;").is_err());
-    }
-
-}
 
 fn main() {
 
@@ -67,5 +26,50 @@ fn main() {
     }
 }
 
+#[cfg(test)]
+mod tests {
 
+    use super::*;
+
+    #[test]
+    fn assignment() {
+        assert!(parser::StatementsParser::new().parse("x := 2;").is_ok()); 
+    }
+    #[test]
+    fn expressions() {
+        assert!(parser::StatementsParser::new().parse("x := 2 < 1;").is_ok()); 
+        assert!(parser::StatementsParser::new().parse("x := !true && false;").is_ok()); 
+        assert!(parser::StatementsParser::new().parse("x := -1;").is_ok()); 
+    }
+    #[test]
+    fn declaration() {     
+        assert!(parser::StatementsParser::new().parse("int x;").is_ok());
+    
+    }
+    #[test]
+    fn statements() {
+        assert!(parser::StatementsParser::new().parse("int x; x := 2; if(true)x := 1; else x := 2;").is_ok());
+    }
+    #[test]
+    fn block() {
+        assert!(parser::StatementsParser::new().parse("if(true){x := 1; bool z;} else {y := 2; x := 2;}").is_ok());
+        
+    }
+    #[test]
+    fn assume(){
+        assert!(parser::StatementsParser::new().parse("assume true;").is_ok());  
+    }
+    #[test]
+    fn assert(){
+        assert!(parser::StatementsParser::new().parse("assert true;").is_ok());  
+    }
+
+    #[test]
+    fn faulty_input(){
+        assert!(parser::StatementsParser::new().parse("bool;").is_err());
+        assert!(parser::StatementsParser::new().parse("2 := x;").is_err());
+        assert!(parser::StatementsParser::new().parse("if (x := 1) x := 1; else x := 2;").is_err());
+    }
+
+}
 
