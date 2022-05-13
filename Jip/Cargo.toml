@@ -13,4 +13,5 @@ lalrpop = "0.19.7"
 [dependencies]
 lalrpop-util = "0.19.7"
 regex = "1"
-queues = "1.0.2"
+queues = "1.0.2"                                        # used in the see module
+z3 = {version="0.11.2", features = ["static-link-z3"]}

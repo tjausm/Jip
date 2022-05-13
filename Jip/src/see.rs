@@ -5,46 +5,51 @@ use crate::ast::*;
 use crate::cfg::{stmts_to_cfg, CFG};
 use std::rc::Rc;
 
-type ExecutionPath = Vec<Statement>;
+pub type ExecutionPath = Vec<Statement>;
 
 pub fn generate_execution_paths(cfg: Rc<CFG>) -> Vec<ExecutionPath> {
     let mut e_paths: Vec<ExecutionPath> = vec![];
 
     let mut q: Queue<(ExecutionPath, Rc<CFG>)> = queue![(vec![], cfg)];
+    
+    loop {
 
-    while q.size() > 0 {
-        let (mut path, node) = q.remove().unwrap();
-
-        match &*node {
-            // simply add straights to path and enqueue again
-            CFG::Straight {
-                statement: stmt,
-                next: next,
-            } => {
-                path.push(stmt.clone());
-                q.add((path, Rc::clone(next)));
+        match q.remove() {
+            Ok ((mut path, node)) => {
+                match &*node {
+                    // simply add straights to path and enqueue again
+                    CFG::Straight {
+                        statement: stmt,
+                        next: nxt,
+                    } => {
+                        path.push(stmt.clone());
+                        q.add((path, Rc::clone(&nxt))).unwrap();
+                    }
+        
+                    // for branch we add 2 new paths, one pre-fixed with 'assume cond', the other
+                    // with the negation of the condition as assume
+                    CFG::Branch {
+                        condition: cond,
+                        if_condition: s1,
+                        if_not_condition: s2,
+                    } => {
+                        let mut if_path = path.clone();
+                        if_path.push(Statement::Assume(cond.clone()));
+        
+                        let mut if_not_path = path.clone();
+                        if_not_path.push(Statement::Assume(Expression::Not(Box::new(cond.clone()))));
+        
+                        q.add((if_path, Rc::clone(&s1))).unwrap();
+                        q.add((if_not_path, Rc::clone(&s2))).unwrap();
+                    }
+        
+                    // if end node is reached path is pushed to result vec
+                    CFG::End => e_paths.push(path),
+                }
             }
-
-            // for branch we add 2 new paths, one pre-fixed with 'assume cond', the other
-            // with the negation of the condition as assume
-            CFG::Branch {
-                condition: cond,
-                if_condition: s1,
-                if_not_condition: s2,
-            } => {
-                let mut if_path = path.clone();
-                if_path.push(Statement::Assume(cond.clone()));
-
-                let mut if_not_path = path.clone();
-                if_not_path.push(Statement::Assume(Expression::Not(Box::new(cond.clone()))));
-
-                q.add((if_path, Rc::clone(s1)));
-                q.add((if_not_path, Rc::clone(s2)));
-            }
-
-            // if end node is reached path is pushed to result vec
-            CFG::End => e_paths.push(path),
+            Err(_) => {break},
         }
+
     }
 
     return e_paths;
