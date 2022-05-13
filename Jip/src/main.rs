@@ -7,7 +7,7 @@ use std::io;
 mod ast;
 mod cfg;
 mod see;
-//mod z3;
+mod z3;
 
 lalrpop_mod!(pub parser); // synthesized by LALRPOP
 

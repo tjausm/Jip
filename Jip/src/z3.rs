@@ -34,13 +34,13 @@ mod tests {
 
     #[test]
     fn test_solving() {
-        let cfg = Config::new();
-        let ctx = Context::new(&cfg);
-        let x = ast::Int::new_const(&ctx, "x");
-        let y = ast::Int::new_const(&ctx, "y");
+        let cfg = z3::Config::new();
+        let ctx = z3::Context::new(&cfg);
+        let x = z3::ast::Int::new_const(&ctx, "x");
+        let y = z3::ast::Int::new_const(&ctx, "y");
     
-        let solver = Solver::new(&ctx);
+        let solver = z3::Solver::new(&ctx);
         solver.assert(&x.gt(&y));
-        assert_eq!(solver.check(), SatResult::Sat);
+        assert_eq!(solver.check(), z3::SatResult::Sat);
     }
 }
