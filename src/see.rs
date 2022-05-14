@@ -1,21 +1,23 @@
 extern crate queues;
-use queues::*;
 
 use crate::ast::*;
 use crate::cfg::{stmts_to_cfg, CFG};
+
 use std::rc::Rc;
+use std::collections::VecDeque;
 
 pub type ExecutionPath = Vec<Statement>;
 
+//bf-search collecting all possible paths to the END node in the cfg
 pub fn generate_execution_paths(cfg: Rc<CFG>) -> Vec<ExecutionPath> {
     let mut e_paths: Vec<ExecutionPath> = vec![];
 
-    let mut q: Queue<(ExecutionPath, Rc<CFG>)> = queue![(vec![], cfg)];
+    let mut q: VecDeque<(ExecutionPath, Rc<CFG>)> = VecDeque::new(); //queue![(vec![], cfg)];
     
     loop {
 
-        match q.remove() {
-            Ok ((mut path, node)) => {
+        match q.pop_front() {
+            Some ((mut path, node)) => {
                 match &*node {
                     // simply add straights to path and enqueue again
                     CFG::Straight {
@@ -23,7 +25,7 @@ pub fn generate_execution_paths(cfg: Rc<CFG>) -> Vec<ExecutionPath> {
                         next: nxt,
                     } => {
                         path.push(stmt.clone());
-                        q.add((path, Rc::clone(&nxt))).unwrap();
+                        q.push_back((path, Rc::clone(&nxt)));
                     }
         
                     // for branch we add 2 new paths, one pre-fixed with 'assume cond', the other
@@ -39,15 +41,15 @@ pub fn generate_execution_paths(cfg: Rc<CFG>) -> Vec<ExecutionPath> {
                         let mut if_not_path = path.clone();
                         if_not_path.push(Statement::Assume(Expression::Not(Box::new(cond.clone()))));
         
-                        q.add((if_path, Rc::clone(&s1))).unwrap();
-                        q.add((if_not_path, Rc::clone(&s2))).unwrap();
+                        q.push_back((if_path, Rc::clone(&s1)));
+                        q.push_back((if_not_path, Rc::clone(&s2)));
                     }
         
                     // if end node is reached path is pushed to result vec
                     CFG::End => e_paths.push(path),
                 }
             }
-            Err(_) => {break},
+            None => {break},
         }
 
     }
@@ -68,17 +70,17 @@ mod tests {
         return parser::Expression3Parser::new().parse(i).unwrap();
     }
 
-    const max_program: &str = "if (x >= y) z := x; else z := y; assert z >= x && z >= y;";
+    const MAX_PROGRAM: &str = "int x; int y; if (x >= y) z := x; else z := y; assert z >= x && z >= y;";
 
     #[test]
     fn max_function() {
         // generate test data
-        let stmts = parser::StatementsParser::new().parse(max_program).unwrap();
+        let stmts = parser::StatementsParser::new().parse(MAX_PROGRAM).unwrap();
         let cfg = stmts_to_cfg(stmts, None);
         
         //generate correct data (in correct order, assume condition and then negation)
         fn gen_path(c: Statement, m: &str) -> ExecutionPath {
-            return vec![c, parse_stmt(m), parse_stmt("assert z >= x && z >= y;")];
+            return vec![parse_stmt("int x;"), parse_stmt("int y;"), c, parse_stmt(m), parse_stmt("assert z >= x && z >= y;")];
         }
         let correct_paths = vec![
             gen_path(parse_stmt("assume x >= y;"), "z := x;"),
