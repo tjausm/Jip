@@ -13,7 +13,8 @@ pub fn generate_execution_paths(cfg: Rc<CFG>) -> Vec<ExecutionPath> {
     let mut e_paths: Vec<ExecutionPath> = vec![];
 
     let mut q: VecDeque<(ExecutionPath, Rc<CFG>)> = VecDeque::new(); //queue![(vec![], cfg)];
-    
+    q.push_back((vec![], cfg));
+
     loop {
 
         match q.pop_front() {
@@ -58,7 +59,7 @@ pub fn generate_execution_paths(cfg: Rc<CFG>) -> Vec<ExecutionPath> {
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use super::*;
 
     lalrpop_mod!(pub parser);
@@ -70,12 +71,13 @@ mod tests {
         return parser::Expression3Parser::new().parse(i).unwrap();
     }
 
-    const MAX_PROGRAM: &str = "int x; int y; if (x >= y) z := x; else z := y; assert z >= x && z >= y;";
+    pub const MAX: &str = "int x; int y; if (x >= y) z := x; else z := y; assert z >= x && z >= y;";
+    pub const FAULTY_MAX: &str = "int x; int y; if (y >= x) z := x; else z := y; assert z >= x && z >= y;";
 
     #[test]
     fn max_function() {
         // generate test data
-        let stmts = parser::StatementsParser::new().parse(MAX_PROGRAM).unwrap();
+        let stmts = parser::StatementsParser::new().parse(MAX).unwrap();
         let cfg = stmts_to_cfg(stmts, None);
         
         //generate correct data (in correct order, assume condition and then negation)

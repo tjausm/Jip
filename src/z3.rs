@@ -37,9 +37,17 @@ pub fn validate_path(path: ExecutionPath) -> Result<(), &'static str> {
                     Nonvoidtype::Primitivetype(Primitivetype::Bool) => {variables.insert(id, Box::new(Int::new_const(&ctx, id.clone())));} //and figure out how to convert id to Symbol
                 }
             }
-            Statement::Assignment ((lhs, rhs)) => {panic!("");}
-            Statement::Assert (expr) => {panic!("");}
-            Statement::Assume (expr) => {panic!("");}
+            Statement::Assignment ((lhs, rhs)) => {
+                // todo: substitute ast here
+            }
+            Statement::Assert (expr) => {
+                let ast = expression_to_bool(&ctx, expr);
+                formula = Bool::and(&ctx, &[&ast, &formula])
+            }
+            Statement::Assume (expr) => {       
+                let ast = expression_to_bool(&ctx, expr);
+                formula = Bool::implies(&ast, &formula)
+            }
             otherwise => {panic!("Statements of the form {:?} should not be in an executionpath", otherwise);}
         }
     }
@@ -47,13 +55,58 @@ pub fn validate_path(path: ExecutionPath) -> Result<(), &'static str> {
     return Ok(())
 }
 
-fn expression_to_ast(expr: Expression) -> () {
-    return ();
+
+fn expression_to_bool<'ctx>(ctx: &'ctx Context, expr: &Expression) -> Bool<'ctx> {
+
+    match expr {
+        Expression::GEQ(l_expr, r_expr) => {
+            let l = expression_to_int(ctx, l_expr);
+            let r = expression_to_int(ctx, r_expr);
+            return l.ge(&r);
+        }
+        Expression::And(l_expr, r_expr) => {
+            let l = expression_to_bool(ctx, l_expr);
+            let r = expression_to_bool(ctx, r_expr);
+            return Bool::and(ctx, &[&l, &r])
+        }
+        Expression::Not(expr) => {
+            return expression_to_bool(ctx, expr).not();
+        }
+        otherwise => {panic!("Expressions of the form {:?} should not be in a boolean expression", otherwise);}
+    }
+}
+
+fn expression_to_int<'ctx>(ctx: &'ctx Context, expr: &Expression) -> Int<'ctx> {
+    return Int::from_i64(ctx, 0);
 }
 
 mod tests {
 
     use super::*;
+
+    lalrpop_mod!(pub parser);
+    use crate::cfg::{stmts_to_cfg};
+    use crate::see::{generate_execution_paths, tests};
+
+    fn build_test(program: &str, correct: bool) {
+        let stmts = parser::StatementsParser::new().parse(program).unwrap();
+        let cfg = stmts_to_cfg(stmts, None);
+        let paths = generate_execution_paths(cfg);
+        
+            for path in paths {
+                assert_eq!(validate_path(path).is_ok(), correct);
+            } 
+    }
+
+    #[test]
+    fn max_program(){
+        build_test(tests::MAX, true);
+    }
+
+    #[test]
+    fn faulty_max_program(){
+        build_test(tests::FAULTY_MAX, false);
+    }
 
     #[test]
     fn test_solving() {
