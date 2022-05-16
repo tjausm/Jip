@@ -1,6 +1,6 @@
 extern crate z3;
 
-use z3::ast::*;
+use z3::ast::{Bool, Int, Ast};
 use z3::*;
 
 use std::collections::HashMap;
@@ -18,34 +18,41 @@ if not do not keep track, since we will be implementing a static analyser anywar
 
 */
 
+#[derive(Debug)]
+enum Variable<'a> {
+    Int(Int<'a>),
+    Bool(Bool<'a>)
+}
 
-pub fn validate_path(path: ExecutionPath) -> Result<(), &'static str> {
+pub fn validate_path<'a>(path: &'a ExecutionPath) -> Result<(), &'a str> {
     
     //init the 'accounting' z3 needs
     let cfg = Config::new();
     let ctx = Context::new(&cfg);
 
     //init formula representing our path & our variable hashmap
-    let mut variables : HashMap<&str, Box<dyn Ast>> = HashMap::new();
+    let mut env : HashMap<&'a String, Variable<'a>> = HashMap::new();
     let mut formula = ast::Bool::from_bool(&ctx, true);
 
     for stmt in path.iter().rev() {
         match stmt {
             Statement::Declaration ((ty, id)) => {
                 match ty {
-                    Nonvoidtype::Primitivetype(Primitivetype::Int) => {variables.insert(id, Box::new(Int::new_const(&ctx, id.clone())));} // add generated var to dictionary
-                    Nonvoidtype::Primitivetype(Primitivetype::Bool) => {variables.insert(id, Box::new(Int::new_const(&ctx, id.clone())));} //and figure out how to convert id to Symbol
+                    Nonvoidtype::Primitivetype(Primitivetype::Int) => {env.insert(id, Variable::Int(Int::new_const(&ctx, id.clone())));} // add generated var to dictionary
+                    Nonvoidtype::Primitivetype(Primitivetype::Bool) => {env.insert(id, Variable::Bool(Bool::new_const(&ctx, id.clone())));} //and figure out how to convert id to Symbol
                 }
             }
             Statement::Assignment ((lhs, rhs)) => {
-                // todo: substitute ast here
+                // todo: haal type uit environment
+                // call the right expression parse function for the type
+                // and substitute the ast with the resulting expression
             }
             Statement::Assert (expr) => {
-                let ast = expression_to_bool(&ctx, expr);
+                let ast = expression_to_bool(&ctx, &env, expr);
                 formula = Bool::and(&ctx, &[&ast, &formula])
             }
             Statement::Assume (expr) => {       
-                let ast = expression_to_bool(&ctx, expr);
+                let ast = expression_to_bool(&ctx, &env, expr);
                 formula = Bool::implies(&ast, &formula)
             }
             otherwise => {panic!("Statements of the form {:?} should not be in an executionpath", otherwise);}
@@ -56,28 +63,40 @@ pub fn validate_path(path: ExecutionPath) -> Result<(), &'static str> {
 }
 
 
-fn expression_to_bool<'ctx>(ctx: &'ctx Context, expr: &Expression) -> Bool<'ctx> {
+fn expression_to_bool<'a>(ctx: &'a Context, env: &'a HashMap<&'a String, Variable<'a>>, expr: &'a Expression) -> Bool<'a> {
 
     match expr {
         Expression::GEQ(l_expr, r_expr) => {
-            let l = expression_to_int(ctx, l_expr);
-            let r = expression_to_int(ctx, r_expr);
+            let l = expression_to_int(ctx, env, l_expr);
+            let r = expression_to_int(ctx, env, r_expr);
             return l.ge(&r);
         }
         Expression::And(l_expr, r_expr) => {
-            let l = expression_to_bool(ctx, l_expr);
-            let r = expression_to_bool(ctx, r_expr);
+            let l = expression_to_bool(ctx, env, l_expr);
+            let r = expression_to_bool(ctx, env, r_expr);
             return Bool::and(ctx, &[&l, &r])
         }
         Expression::Not(expr) => {
-            return expression_to_bool(ctx, expr).not();
+            return expression_to_bool(ctx, env, expr).not();
         }
         otherwise => {panic!("Expressions of the form {:?} should not be in a boolean expression", otherwise);}
     }
 }
 
-fn expression_to_int<'ctx>(ctx: &'ctx Context, expr: &Expression) -> Int<'ctx> {
-    return Int::from_i64(ctx, 0);
+fn expression_to_int<'a>(ctx: &'a Context, env: &'a HashMap<&'a String, Variable<'a>>, expr: &'a Expression) -> &'a Int<'a> {
+    match expr {
+        Expression::Identifier(id) => {
+            match env.get(&id) {
+                Some(var) => {match var{
+                    Variable::Int(i) => {return i;},
+                    _ => {panic!("can't convert {:?} to an int", var);},
+                }}   
+                None => {panic!("Variable {} is undeclared", id);}
+            }
+            }
+        
+        otherwise => {panic!("Expressions of the form {:?} should not be in a integer expression", otherwise);}    
+        };
 }
 
 mod tests {
@@ -94,7 +113,7 @@ mod tests {
         let paths = generate_execution_paths(cfg);
         
             for path in paths {
-                assert_eq!(validate_path(path).is_ok(), correct);
+                assert_eq!(validate_path(&path).is_ok(), correct);
             } 
     }
 

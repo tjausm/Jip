@@ -3,6 +3,8 @@
 // - each syntactical label's first symbol is transformed to uppercase (program -> Program)
 // - labels with only 1 ´option´ are type aliases, , 1 < options are enums
 
+//TODO: change identifier in &str (unfuck whole lifetime business)
+
 #[derive(Debug, Clone)]
 pub enum Statements {
     Cons(Statement, Box<Statements>),
