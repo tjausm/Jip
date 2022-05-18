@@ -71,8 +71,8 @@ pub mod tests {
         return parser::Expression3Parser::new().parse(i).unwrap();
     }
 
-    pub const MAX: &str = "int x; int y; if (x >= y) z := x; else z := y; assert z >= x && z >= y;";
-    pub const FAULTY_MAX: &str = "int x; int y; if (y >= x) z := x; else z := y; assert z >= x && z >= y;";
+    pub const MAX: &str = "int x; int y; int z; if (x >= y) z := x; else z := y; assert z >= x && z >= y;";
+    pub const FAULTY_MAX: &str = "int x; int y; int z; if (y >= x) z := x; else z := y; assert z >= x && z >= y;";
 
     #[test]
     fn max_function() {
@@ -82,7 +82,7 @@ pub mod tests {
         
         //generate correct data (in correct order, assume condition and then negation)
         fn gen_path(c: Statement, m: &str) -> ExecutionPath {
-            return vec![parse_stmt("int x;"), parse_stmt("int y;"), c, parse_stmt(m), parse_stmt("assert z >= x && z >= y;")];
+            return vec![parse_stmt("int x;"), parse_stmt("int y;"), parse_stmt("int z;"), c, parse_stmt(m), parse_stmt("assert z >= x && z >= y;")];
         }
         let correct_paths = vec![
             gen_path(parse_stmt("assume x >= y;"), "z := x;"),
