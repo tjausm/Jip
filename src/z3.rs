@@ -40,12 +40,24 @@ pub fn validate_path<'a>(path: ExecutionPath) -> Result<(), &'a str> {
     for stmt in path.iter().rev() {
         match stmt {
             Statement::Declaration((ty, id)) => (),
-            Statement::Assignment((lhs, rhs)) => {
+            Statement::Assignment((lhs, Rhs::Expr(rhs))) => {
                 match lhs {
                     Lhs::Identifier(id) => {
+                        let rc_env = Rc::new(&env);
                         match env.get(id) {
-                            Some(Variable::Int(i)) => {}
-                            Some(Variable::Bool(b)) => {}
+                            
+                            // TODO: refactor this to avoid duplicate code on adding a type
+                            // (tried this once but can't get the types right here without boxing and unboxing alot)
+                            Some(Variable::Int(l_ast)) => {
+                                let r_ast = expression_to_int(&ctx, Rc::clone(&rc_env), rhs);
+                                let substitutions = &[(l_ast, &r_ast)];
+                                formula.substitute(substitutions);
+                            },
+                            Some(Variable::Bool(l_ast)) => {
+                                let r_ast = expression_to_bool(&ctx, Rc::clone(&rc_env), rhs);
+                                let substitutions = &[(l_ast, &r_ast)];
+                                formula.substitute(substitutions);
+                            },
                             None => panic!("Variable {} is undeclared", id)
                         }
                     }
@@ -73,7 +85,13 @@ pub fn validate_path<'a>(path: ExecutionPath) -> Result<(), &'a str> {
         }
     }
 
-    return Ok(());
+    let solver = Solver::new(&ctx);
+    solver.assert(&formula);
+    match solver.check() {
+        SatResult::Sat => return Ok(()),
+        _ => return Err("Not satisfiable")
+    }
+
 }
 
 //optimise idea: pass program and build env once
@@ -85,10 +103,10 @@ fn build_env<'ctx, 'p>(ctx: &'ctx Context, path : &'p ExecutionPath) -> HashMap<
                 match ty {
                     Nonvoidtype::Primitivetype(Primitivetype::Int) => {
                         env.insert(id, Variable::Int(Int::new_const(&ctx, id.clone())));
-                    } // add generated var to dictionary
+                    } 
                     Nonvoidtype::Primitivetype(Primitivetype::Bool) => {
                         env.insert(id, Variable::Bool(Bool::new_const(&ctx, id.clone())));
-                    } //and figure out how to convert id to Symbol
+                    } 
                 }
             }
             _ => ()
