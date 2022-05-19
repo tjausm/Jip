@@ -38,6 +38,9 @@ pub fn validate_path<'a>(path: ExecutionPath) -> Result<(), &'a str> {
     let mut formula = ast::Bool::from_bool(&ctx, true);
     
     for stmt in path.iter().rev() {
+    
+
+
         match stmt {
             Statement::Declaration((ty, id)) => (),
             Statement::Assignment((lhs, Rhs::Expr(rhs))) => {
@@ -50,13 +53,13 @@ pub fn validate_path<'a>(path: ExecutionPath) -> Result<(), &'a str> {
                             // (tried this once but can't get the types right here without boxing and unboxing alot)
                             Some(Variable::Int(l_ast)) => {
                                 let r_ast = expression_to_int(&ctx, Rc::clone(&rc_env), rhs);
-                                let substitutions = &[(l_ast, &r_ast)];
-                                formula.substitute(substitutions);
+                                let substitutions = &[(l_ast, r_ast)];
+                                formula = formula.substitute(substitutions);
                             },
                             Some(Variable::Bool(l_ast)) => {
                                 let r_ast = expression_to_bool(&ctx, Rc::clone(&rc_env), rhs);
                                 let substitutions = &[(l_ast, &r_ast)];
-                                formula.substitute(substitutions);
+                                formula = formula.substitute(substitutions);
                             },
                             None => panic!("Variable {} is undeclared", id)
                         }
@@ -86,10 +89,14 @@ pub fn validate_path<'a>(path: ExecutionPath) -> Result<(), &'a str> {
     }
 
     let solver = Solver::new(&ctx);
-    solver.assert(&formula);
+    solver.assert(&formula.not());
+
+    //let debug_formula = format!("{:?}", &formula.not());
+    //println!("{}", debug_formula);
+
     match solver.check() {
-        SatResult::Sat => return Ok(()),
-        _ => return Err("Not satisfiable")
+        SatResult::Unsat => return Ok(()),
+        _ => return Err("The exists a violating execution")
     }
 
 }
@@ -117,14 +124,14 @@ fn build_env<'ctx, 'p>(ctx: &'ctx Context, path : &'p ExecutionPath) -> HashMap<
 
 fn expression_to_bool<'ctx>(
     ctx: &'ctx Context,
-    env: Rc<&HashMap<&String, Variable<'ctx>>>,
+    env: Rc<&'ctx HashMap<&String, Variable<'ctx>>>,
     expr: &Expression,
 ) -> Bool<'ctx> {
     match expr {
         Expression::GEQ(l_expr, r_expr) => {
             let l = expression_to_int(ctx, Rc::clone(&env), l_expr);
             let r = expression_to_int(ctx, env, r_expr);
-            return l.ge(&r);
+            return l.ge(r);
         }
         Expression::And(l_expr, r_expr) => {
             let l = expression_to_bool(ctx, Rc::clone(&env), l_expr);
@@ -145,14 +152,14 @@ fn expression_to_bool<'ctx>(
 
 fn expression_to_int<'ctx>(
     ctx: &'ctx Context,
-    env: Rc<&HashMap<&String, Variable<'ctx>>>,
+    env: Rc<&'ctx HashMap<&String, Variable<'ctx>>>,
     expr: &Expression,
-) -> Int<'ctx> {
+) -> &'ctx Int<'ctx> {
     match expr {
         Expression::Identifier(id) => match env.get(id) {
             Some(var) => match var {
                 Variable::Int(i) => {
-                    return i.clone();
+                    return i;
                 }
                 _ => {
                     panic!("can't convert {:?} to an int", var);
@@ -214,13 +221,13 @@ mod tests {
     }
 
     #[test]
-    fn test_substitution() {
+    fn manual_max() {
         let cfg = Config::new();
         let ctx = Context::new(&cfg);
         let x = ast::Real::new_const(&ctx, "x");
         let y = ast::Real::new_const(&ctx, "y");
         let z = ast::Real::new_const(&ctx, "z");
-        let x_plus_y = ast::Real::add(&ctx, &[&x, &y]);
+    	let x_plus_y = ast::Real::add(&ctx, &[&x, &y]);
         let x_plus_z = ast::Real::add(&ctx, &[&x, &z]);
         let substitutions = &[(&y, &z)];
         assert!(x_plus_y.substitute(substitutions) == x_plus_z);
