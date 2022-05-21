@@ -1,77 +1,49 @@
 #[macro_use]
 extern crate lalrpop_util;
 
-
 use std::io;
+use std::path::PathBuf;
+use clap::{ArgEnum, Parser, Subcommand};
 
+// module declarations
 mod ast;
 mod cfg;
-mod see;
+mod paths;
 mod z3;
+mod see;
 
-lalrpop_mod!(pub parser); // synthesized by LALRPOP
+#[derive(Parser)]
+#[clap(author, version, about, long_about = None)]
+struct Cli {
+
+    /// Dit is een test commentje
+    #[clap(subcommand)]
+    mode: Mode,
+}
+
+#[derive(Subcommand)]
+enum Mode {
+    /// verifies file on given filepath
+    VerifyFile {
+        /// The file
+        #[clap(short, long, parse(from_os_str), value_name = "FILE")]
+        file: PathBuf,
+    },
+    VerifyString {
+        /// The program as a string
+        string: String,
+    },
+}
 
 fn main() {
+    let cli = Cli::parse();
 
-    println!("Welcome to Jip v0.1");
-    
-    loop{
-        let mut input = String::new();
-
-        println!("\nPlease input a string:");
-        io::stdin().read_line(&mut input);
-    
-        match parser::StatementsParser::new().parse(&input){
-            Ok(ast) => println!("Concrete syntax is correct, parse result: \n{:?}", ast),
-            Err(e) => println!("Error: {})", e)
+    match cli.mode {
+        Mode::VerifyFile {file} => {
+            println!("Tortoise");
+        }
+        Mode::VerifyString {string} => {
+            println!("{}", see::verify_string_and_print(&string))
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-
-    use super::*;
-
-    #[test]
-    fn assignment() {
-        assert!(parser::StatementsParser::new().parse("x := 2;").is_ok()); 
-    }
-    #[test]
-    fn expressions() {
-        assert!(parser::StatementsParser::new().parse("x := 2 < 1;").is_ok()); 
-        assert!(parser::StatementsParser::new().parse("x := !true && false;").is_ok()); 
-        assert!(parser::StatementsParser::new().parse("x := -1;").is_ok()); 
-    }
-    #[test]
-    fn declaration() {     
-        assert!(parser::StatementsParser::new().parse("int x;").is_ok());
-    
-    }
-    #[test]
-    fn statements() {
-        assert!(parser::StatementsParser::new().parse("int x; x := 2; if(true)x := 1; else x := 2;").is_ok());
-    }
-    #[test]
-    fn block() {
-        assert!(parser::StatementsParser::new().parse("if(true){x := 1; bool z;} else {y := 2; x := 2;}").is_ok());
-        
-    }
-    #[test]
-    fn assume(){
-        assert!(parser::StatementsParser::new().parse("assume true;").is_ok());  
-    }
-    #[test]
-    fn assert(){
-        assert!(parser::StatementsParser::new().parse("assert true;").is_ok());  
-    }
-
-    #[test]
-    fn faulty_input(){
-        assert!(parser::StatementsParser::new().parse("bool;").is_err());
-        assert!(parser::StatementsParser::new().parse("2 := x;").is_err());
-        assert!(parser::StatementsParser::new().parse("if (x := 1) x := 1; else x := 2;").is_err());
-    }
-
-}
-

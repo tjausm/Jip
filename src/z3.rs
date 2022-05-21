@@ -7,15 +7,9 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::ast::*;
-use crate::see::ExecutionPath;
+use crate::paths::ExecutionPath;
 
 /*
-
-declaration: either save in own environment or save it as z3 const
-assignment: we check which type the lefthand side has and start parsing the rhs expression as z3 ast
-
-do we let z3 crash or are we gonna keep track of types ourselves? (maybe we are forced by the type system)
-if not do not keep track, since we will be implementing a static analyser anywar
 
 TODO: make constants of error messages
 
@@ -28,7 +22,7 @@ enum Variable<'a> {
 }
 
 
-pub fn validate_path<'a>(path: ExecutionPath) -> Result<(), &'a str> {
+pub fn verify_path<'a>(path: ExecutionPath) -> Result<(), &'a str> {
     //init the 'accounting' z3 needs
     let cfg = Config::new();
     let ctx = Context::new(&cfg);
@@ -187,7 +181,7 @@ mod tests {
 
     lalrpop_mod!(pub parser);
     use crate::cfg::stmts_to_cfg;
-    use crate::see::{generate_execution_paths, tests};
+    use crate::paths::{generate_execution_paths, tests};
 
     fn build_test(program: &str, correct: bool) {
         let stmts = parser::StatementsParser::new().parse(program).unwrap();
@@ -195,7 +189,7 @@ mod tests {
         let paths = generate_execution_paths(cfg);
 
         for path in paths {
-            assert_eq!(validate_path(path).is_ok(), correct);
+            assert_eq!(verify_path(path).is_ok(), correct);
         }
     }
 

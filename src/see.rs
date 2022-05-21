@@ -1,101 +1,93 @@
-extern crate queues;
+use crate::cfg::stmts_to_cfg;
+use crate::paths::generate_execution_paths;
+use crate::z3::verify_path;
+lalrpop_mod!(pub parser); // synthesized by LALRPOP
 
-use crate::ast::*;
-use crate::cfg::{stmts_to_cfg, CFG};
+/*
+pub fn verify_from_string(path: PathBuf) -> &str{
 
-use std::rc::Rc;
-use std::collections::VecDeque;
 
-pub type ExecutionPath = Vec<Statement>;
+    return verify_program("");
+}*/
 
-//bf-search collecting all possible paths to the END node in the cfg
-pub fn generate_execution_paths(cfg: Rc<CFG>) -> Vec<ExecutionPath> {
-    let mut e_paths: Vec<ExecutionPath> = vec![];
-
-    let mut q: VecDeque<(ExecutionPath, Rc<CFG>)> = VecDeque::new(); //queue![(vec![], cfg)];
-    q.push_back((vec![], cfg));
-
-    loop {
-
-        match q.pop_front() {
-            Some ((mut path, node)) => {
-                match &*node {
-                    // simply add straights to path and enqueue again
-                    CFG::Straight {
-                        statement: stmt,
-                        next: nxt,
-                    } => {
-                        path.push(stmt.clone());
-                        q.push_back((path, Rc::clone(&nxt)));
-                    }
-        
-                    // for branch we add 2 new paths, one pre-fixed with 'assume cond', the other
-                    // with the negation of the condition as assume
-                    CFG::Branch {
-                        condition: cond,
-                        if_condition: s1,
-                        if_not_condition: s2,
-                    } => {
-                        let mut if_path = path.clone();
-                        if_path.push(Statement::Assume(cond.clone()));
-        
-                        let mut if_not_path = path.clone();
-                        if_not_path.push(Statement::Assume(Expression::Not(Box::new(cond.clone()))));
-        
-                        q.push_back((if_path, Rc::clone(&s1)));
-                        q.push_back((if_not_path, Rc::clone(&s2)));
-                    }
-        
-                    // if end node is reached path is pushed to result vec
-                    CFG::End => e_paths.push(path),
-                }
-            }
-            None => {break},
-        }
-
+pub fn verify_string_and_print(program: &str) -> &str{
+    match verify_program(program){
+        Ok(_) => "Program is correct",
+        Err(err) => err,
     }
-
-    return e_paths;
 }
 
+fn verify_program(program: &str) -> Result<(), &str> {
+   
+    match parser::StatementsParser::new().parse(program) {
+        Err(pe) => return Err("Todo: show parse error here"),
+        Ok(stmts) => {
+            let cfg = stmts_to_cfg(stmts, None);
+            for path in generate_execution_paths(cfg) {
+   
+                match verify_path(path) {
+                    Ok(_) => continue,
+                    _ => return Err("Todo: show verification error here"),
+                }
+            }
+        }
+    }
+    return Ok(());
+}
+
+// put parser test here since parser mod is auto-generated
 #[cfg(test)]
-pub mod tests {
-    use super::*;
+mod tests {
 
     lalrpop_mod!(pub parser);
 
-    fn parse_stmt(i: &str) -> Statement {
-        return parser::StatementParser::new().parse(i).unwrap();
+    #[test]
+    fn assignment() {
+        assert!(parser::StatementsParser::new().parse("x := 2;").is_ok());
     }
-    fn parse_expr(i: &str) -> Expression {
-        return parser::Expression3Parser::new().parse(i).unwrap();
+    #[test]
+    fn expressions() {
+        assert!(parser::StatementsParser::new().parse("x := 2 < 1;").is_ok());
+        assert!(parser::StatementsParser::new()
+            .parse("x := !true && false;")
+            .is_ok());
+        assert!(parser::StatementsParser::new().parse("x := -1;").is_ok());
     }
-
-    pub const MAX: &str = "int x; int y; int z; if (x >= y) z := x; else z := y; assert z >= x && z >= y;";
-    pub const FAULTY_MAX: &str = "int x; int y; int z; if (y >= x) z := x; else z := y; assert z >= x && z >= y;";
+    #[test]
+    fn declaration() {
+        assert!(parser::StatementsParser::new().parse("int x;").is_ok());
+    }
+    #[test]
+    fn statements() {
+        assert!(parser::StatementsParser::new()
+            .parse("int x; x := 2; if(true)x := 1; else x := 2;")
+            .is_ok());
+    }
+    #[test]
+    fn block() {
+        assert!(parser::StatementsParser::new()
+            .parse("if(true){x := 1; bool z;} else {y := 2; x := 2;}")
+            .is_ok());
+    }
+    #[test]
+    fn assume() {
+        assert!(parser::StatementsParser::new()
+            .parse("assume true;")
+            .is_ok());
+    }
+    #[test]
+    fn assert() {
+        assert!(parser::StatementsParser::new()
+            .parse("assert true;")
+            .is_ok());
+    }
 
     #[test]
-    fn max_function() {
-        // generate test data
-        let stmts = parser::StatementsParser::new().parse(MAX).unwrap();
-        let cfg = stmts_to_cfg(stmts, None);
-        
-        //generate correct data (in correct order, assume condition and then negation)
-        fn gen_path(c: Statement, m: &str) -> ExecutionPath {
-            return vec![parse_stmt("int x;"), parse_stmt("int y;"), parse_stmt("int z;"), c, parse_stmt(m), parse_stmt("assert z >= x && z >= y;")];
-        }
-        let correct_paths = vec![
-            gen_path(parse_stmt("assume x >= y;"), "z := x;"),
-            gen_path(
-                //TODO: implement negation like in other path (when parentheses are implemented)
-                Statement::Assume(Expression::Not(Box::new(parse_expr("x >= y")))),
-                "z := y;",
-            ),
-        ];
-        
-        assert_eq!(
-            format!("{:?}", generate_execution_paths(cfg)),
-            format!("{:?}", correct_paths)
-        );
+    fn faulty_input() {
+        assert!(parser::StatementsParser::new().parse("bool;").is_err());
+        assert!(parser::StatementsParser::new().parse("2 := x;").is_err());
+        assert!(parser::StatementsParser::new()
+            .parse("if (x := 1) x := 1; else x := 2;")
+            .is_err());
     }
 }
