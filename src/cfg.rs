@@ -3,7 +3,8 @@ lalrpop_mod!(pub parser); // synthesized by LALRPOP
 use crate::ast::*;
 use std::rc::Rc;
 
-// TODO: rebuild CFG as graph instead of a tree
+//TODO: do benchmark to check whether references work
+// e.g. whether more edges don't increase graph size
 
 #[derive(Debug)]
 pub enum CFG {

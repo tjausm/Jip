@@ -12,7 +12,7 @@ pub fn generate_execution_paths(cfg: Rc<CFG>) -> Vec<ExecutionPath> {
 
     let mut q: VecDeque<(ExecutionPath, Rc<CFG>)> = VecDeque::new(); //queue![(vec![], cfg)];
     q.push_back((vec![], cfg));
-
+    
     loop {
 
         match q.pop_front() {

@@ -21,7 +21,6 @@ enum Variable<'a> {
     Bool(Bool<'a>),
 }
 
-
 pub fn verify_path<'a>(path: ExecutionPath) -> Result<(), &'a str> {
     //init the 'accounting' z3 needs
     let cfg = Config::new();
@@ -30,11 +29,8 @@ pub fn verify_path<'a>(path: ExecutionPath) -> Result<(), &'a str> {
     //init formula representing our path & our variable hashmap
     let mut env: HashMap<&String, Variable> = build_env(&ctx, &path);
     let mut formula = ast::Bool::from_bool(&ctx, true);
-    
+
     for stmt in path.iter().rev() {
-    
-
-
         match stmt {
             Statement::Declaration((ty, id)) => (),
             Statement::Assignment((lhs, Rhs::Expr(rhs))) => {
@@ -42,20 +38,27 @@ pub fn verify_path<'a>(path: ExecutionPath) -> Result<(), &'a str> {
                     Lhs::Identifier(id) => {
                         let rc_env = Rc::new(&env);
                         match env.get(id) {
-                            
                             // TODO: refactor this to avoid duplicate code on adding a type
                             // (tried this once but can't get the types right here without boxing and unboxing alot)
                             Some(Variable::Int(l_ast)) => {
-                                let r_ast = expression_to_int(&ctx, Rc::clone(&rc_env), rhs);
+                                let r_ast = 
+                                    match expression_to_int(&ctx, Rc::clone(&rc_env), rhs) {
+                                        Ok(r_ast) => r_ast,
+                                        Err(err) => return Err(err)
+                                    };
                                 let substitutions = &[(l_ast, r_ast)];
                                 formula = formula.substitute(substitutions);
-                            },
+                            }
                             Some(Variable::Bool(l_ast)) => {
-                                let r_ast = expression_to_bool(&ctx, Rc::clone(&rc_env), rhs);
+                                let r_ast = 
+                                    match expression_to_bool(&ctx, Rc::clone(&rc_env), rhs) {
+                                        Ok(r_ast) => r_ast,
+                                        Err(err) => return Err(err)
+                                    };
                                 let substitutions = &[(l_ast, &r_ast)];
                                 formula = formula.substitute(substitutions);
-                            },
-                            None => panic!("Variable {} is undeclared", id)
+                            }
+                            None => return Err(&format!("Variable {} is undeclared", id)),
                         }
                     }
                 }
@@ -65,19 +68,28 @@ pub fn verify_path<'a>(path: ExecutionPath) -> Result<(), &'a str> {
             }
             Statement::Assert(expr) => {
                 let rc_env = Rc::new(&env);
-                let ast = expression_to_bool(&ctx, Rc::clone(&rc_env), expr);
+                let ast = 
+                    match expression_to_bool(&ctx, Rc::clone(&rc_env), expr) {
+                        Ok(ast) => ast,
+                        Err(err) => return Err(err)
+                    };
+
                 formula = Bool::and(&ctx, &[&ast, &formula])
             }
             Statement::Assume(expr) => {
                 let rc_env = Rc::new(&env);
-                let ast = expression_to_bool(&ctx, Rc::clone(&rc_env), expr);
+                let ast = 
+                    match expression_to_bool(&ctx, Rc::clone(&rc_env), expr) {
+                        Ok(ast) => ast,
+                        Err(err) => return Err(err)
+                    };
                 formula = Bool::implies(&ast, &formula)
             }
             otherwise => {
-                panic!(
+                return Err(&format!(
                     "Statements of the form {:?} should not be in an executionpath",
                     otherwise
-                );
+                ));
             }
         }
     }
@@ -90,27 +102,27 @@ pub fn verify_path<'a>(path: ExecutionPath) -> Result<(), &'a str> {
 
     match solver.check() {
         SatResult::Unsat => return Ok(()),
-        _ => return Err("The exists a violating execution")
+        _ => return Err("The exists a violating execution"),
     }
-
 }
 
 //optimise idea: pass program and build env once
-fn build_env<'ctx, 'p>(ctx: &'ctx Context, path : &'p ExecutionPath) -> HashMap<&'p String, Variable<'ctx>> {
-    let mut env : HashMap<&'p String, Variable<'ctx>> = HashMap::new();
+fn build_env<'ctx, 'p>(
+    ctx: &'ctx Context,
+    path: &'p ExecutionPath,
+) -> HashMap<&'p String, Variable<'ctx>> {
+    let mut env: HashMap<&'p String, Variable<'ctx>> = HashMap::new();
     for stmt in path {
         match stmt {
-            Statement::Declaration((ty, id)) => {
-                match ty {
-                    Nonvoidtype::Primitivetype(Primitivetype::Int) => {
-                        env.insert(id, Variable::Int(Int::new_const(&ctx, id.clone())));
-                    } 
-                    Nonvoidtype::Primitivetype(Primitivetype::Bool) => {
-                        env.insert(id, Variable::Bool(Bool::new_const(&ctx, id.clone())));
-                    } 
+            Statement::Declaration((ty, id)) => match ty {
+                Nonvoidtype::Primitivetype(Primitivetype::Int) => {
+                    env.insert(id, Variable::Int(Int::new_const(&ctx, id.clone())));
                 }
-            }
-            _ => ()
+                Nonvoidtype::Primitivetype(Primitivetype::Bool) => {
+                    env.insert(id, Variable::Bool(Bool::new_const(&ctx, id.clone())));
+                }
+            },
+            _ => (),
         }
     }
     return env;
@@ -120,59 +132,82 @@ fn expression_to_bool<'ctx>(
     ctx: &'ctx Context,
     env: Rc<&'ctx HashMap<&String, Variable<'ctx>>>,
     expr: &Expression,
-) -> Bool<'ctx> {
+) -> Result<Bool<'ctx>, &'ctx str> {
     match expr {
         Expression::GEQ(l_expr, r_expr) => {
             let l = expression_to_int(ctx, Rc::clone(&env), l_expr);
             let r = expression_to_int(ctx, env, r_expr);
-            return l.ge(r);
+            match flatten_tupple((l,r)) {
+                Ok((l,r)) => return Ok(l.ge(r)),
+                Err(err) => Err(err)
+            }
+            
         }
         Expression::And(l_expr, r_expr) => {
             let l = expression_to_bool(ctx, Rc::clone(&env), l_expr);
             let r = expression_to_bool(ctx, env, r_expr);
-            return Bool::and(ctx, &[&l, &r]);
+            match flatten_tupple((l,r)) {
+                Ok((l,r)) => return Ok(Bool::and(ctx, &[&l, &r])),
+                Err(err) => return Err(err)
+            }
         }
         Expression::Not(expr) => {
-            return expression_to_bool(ctx, env, expr).not();
+            match expression_to_bool(ctx, env, expr){
+                Ok(expr) => return Ok(expr.not()),
+                otherwise => return otherwise
+            }
         }
         otherwise => {
-            panic!(
+            return Err(&format!(
                 "Expressions of the form {:?} should not be in a boolean expression",
-                otherwise
+                otherwise)
             );
         }
     }
 }
 
+//flatten result to ok, or the first error encountered
+fn flatten_tupple<'ctx, A>(
+    (l,r) : ((Result<A, &'ctx str>, Result<A, &'ctx str>)))
+     -> Result<(A,A), &'ctx str> {
+    
+    match(l, r) {
+        (Ok(l), Ok(r)) => return Ok((l, r)),
+        (Ok(l), Err(r_err)) => return Err(r_err),
+        (Err(l_err), _) => return Err(l_err),    
+    }
+
+}
+
+
 fn expression_to_int<'ctx>(
     ctx: &'ctx Context,
     env: Rc<&'ctx HashMap<&String, Variable<'ctx>>>,
     expr: &Expression,
-) -> &'ctx Int<'ctx> {
+) -> Result<&'ctx Int<'ctx>, &'ctx str> {
     match expr {
         Expression::Identifier(id) => match env.get(id) {
             Some(var) => match var {
                 Variable::Int(i) => {
-                    return i;
+                    return Ok(i);
                 }
                 _ => {
-                    panic!("can't convert {:?} to an int", var);
+                    return Err(&format!("can't convert {:?} to an int", var));
                 }
             },
             None => {
-                panic!("Variable {} is undeclared", id);
+                return Err(&format!("Variable {} is undeclared", id));
             }
         },
 
         otherwise => {
-            panic!(
+            return Err(&format!(
                 "Expressions of the form {:?} should not be in a integer expression",
                 otherwise
-            );
+            ));
         }
     };
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -221,7 +256,7 @@ mod tests {
         let x = ast::Real::new_const(&ctx, "x");
         let y = ast::Real::new_const(&ctx, "y");
         let z = ast::Real::new_const(&ctx, "z");
-    	let x_plus_y = ast::Real::add(&ctx, &[&x, &y]);
+        let x_plus_y = ast::Real::add(&ctx, &[&x, &y]);
         let x_plus_z = ast::Real::add(&ctx, &[&x, &z]);
         let substitutions = &[(&y, &z)];
         assert!(x_plus_y.substitute(substitutions) == x_plus_z);
