@@ -1,7 +1,7 @@
 extern crate z3;
 
 use z3::ast::{Ast, Bool, Int};
-use z3::*;
+use z3::{Config, Context, ast, Solver, SatResult};
 
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -21,7 +21,7 @@ enum Variable<'a> {
     Bool(Bool<'a>),
 }
 
-pub fn verify_path<'a>(path: ExecutionPath) -> Result<(), &'a str> {
+pub fn verify_path<'a>(path: ExecutionPath) -> Result<(), String> {
     //init the 'accounting' z3 needs
     let cfg = Config::new();
     let ctx = Context::new(&cfg);
@@ -58,7 +58,7 @@ pub fn verify_path<'a>(path: ExecutionPath) -> Result<(), &'a str> {
                                 let substitutions = &[(l_ast, &r_ast)];
                                 formula = formula.substitute(substitutions);
                             }
-                            None => return Err(&format!("Variable {} is undeclared", id)),
+                            None => return Err(format!("Variable {} is undeclared", id)),
                         }
                     }
                 }
@@ -86,7 +86,7 @@ pub fn verify_path<'a>(path: ExecutionPath) -> Result<(), &'a str> {
                 formula = Bool::implies(&ast, &formula)
             }
             otherwise => {
-                return Err(&format!(
+                return Err(format!(
                     "Statements of the form {:?} should not be in an executionpath",
                     otherwise
                 ));
@@ -96,13 +96,15 @@ pub fn verify_path<'a>(path: ExecutionPath) -> Result<(), &'a str> {
 
     let solver = Solver::new(&ctx);
     solver.assert(&formula.not());
+    let model = solver.get_model();
 
     //let debug_formula = format!("{:?}", &formula.not());
     //println!("{}", debug_formula);
 
     match solver.check() {
         SatResult::Unsat => return Ok(()),
-        _ => return Err("The exists a violating execution"),
+        SatResult::Sat => { return Err(format!("Following configuration violates program:\n{:?}", solver.get_model().unwrap()))}
+        SatResult::Unknown => return Err("Huh, verification gave an unkown result".to_string())
     }
 }
 
@@ -132,14 +134,14 @@ fn expression_to_bool<'ctx>(
     ctx: &'ctx Context,
     env: Rc<&'ctx HashMap<&String, Variable<'ctx>>>,
     expr: &Expression,
-) -> Result<Bool<'ctx>, &'ctx str> {
+) -> Result<Bool<'ctx>, String> {
     match expr {
         Expression::GEQ(l_expr, r_expr) => {
             let l = expression_to_int(ctx, Rc::clone(&env), l_expr);
             let r = expression_to_int(ctx, env, r_expr);
             match flatten_tupple((l,r)) {
                 Ok((l,r)) => return Ok(l.ge(r)),
-                Err(err) => Err(err)
+                Err(err) => Err(err.to_string())
             }
             
         }
@@ -158,7 +160,7 @@ fn expression_to_bool<'ctx>(
             }
         }
         otherwise => {
-            return Err(&format!(
+            return Err(format!(
                 "Expressions of the form {:?} should not be in a boolean expression",
                 otherwise)
             );
@@ -168,8 +170,8 @@ fn expression_to_bool<'ctx>(
 
 //flatten result to ok, or the first error encountered
 fn flatten_tupple<'ctx, A>(
-    (l,r) : ((Result<A, &'ctx str>, Result<A, &'ctx str>)))
-     -> Result<(A,A), &'ctx str> {
+    (l,r) : ((Result<A, String>, Result<A, String>)))
+     -> Result<(A,A), String> {
     
     match(l, r) {
         (Ok(l), Ok(r)) => return Ok((l, r)),
@@ -184,7 +186,7 @@ fn expression_to_int<'ctx>(
     ctx: &'ctx Context,
     env: Rc<&'ctx HashMap<&String, Variable<'ctx>>>,
     expr: &Expression,
-) -> Result<&'ctx Int<'ctx>, &'ctx str> {
+) -> Result<&'ctx Int<'ctx>, String> {
     match expr {
         Expression::Identifier(id) => match env.get(id) {
             Some(var) => match var {
@@ -192,16 +194,16 @@ fn expression_to_int<'ctx>(
                     return Ok(i);
                 }
                 _ => {
-                    return Err(&format!("can't convert {:?} to an int", var));
+                    return Err(format!("can't convert {:?} to an int", var));
                 }
             },
             None => {
-                return Err(&format!("Variable {} is undeclared", id));
+                return Err(format!("Variable {} is undeclared", id));
             }
         },
 
         otherwise => {
-            return Err(&format!(
+            return Err(format!(
                 "Expressions of the form {:?} should not be in a integer expression",
                 otherwise
             ));

@@ -10,24 +10,24 @@ pub fn verify_from_string(path: PathBuf) -> &str{
     return verify_program("");
 }*/
 
-pub fn verify_string_and_print(program: &str) -> &str{
+pub fn verify_string_and_print(program: &str) -> String{
     match verify_program(program){
-        Ok(_) => "Program is correct",
+        Ok(_) => "Program is correct".to_string(),
         Err(err) => err,
     }
 }
 
-fn verify_program(program: &str) -> Result<(), &str> {
+fn verify_program(program: &str) -> Result<(), String> {
    
     match parser::StatementsParser::new().parse(program) {
-        Err(pe) => return Err("Todo: show parse error here"),
+        Err(pe) => return Err(format!("{}", pe)),
         Ok(stmts) => {
             let cfg = stmts_to_cfg(stmts, None);
             for path in generate_execution_paths(cfg) {
    
                 match verify_path(path) {
                     Ok(_) => continue,
-                    _ => return Err("Todo: show verification error here"),
+                    Err(err) => return Err(err),
                 }
             }
         }
