@@ -30,17 +30,19 @@ pub fn verify_path<'a>(path: ExecutionPath) -> Result<(), String> {
     let env: HashMap<&String, Variable> = build_env(&ctx, &path);
     let formula = match path_to_formula(&ctx, &path, &env) {
         Ok(formula) => formula,
-        Err(err) => return Err(err),
+        Err(why) => return Err(why),
     };
 
     //negate formula to 'disprove' validity of path
     let solver = Solver::new(&ctx);
     solver.assert(&formula.not());
+    let result = solver.check();
+    let model = solver.get_model();
 
     //let debug_formula = format!("{:?}", &formula.not());
     //println!("{}", debug_formula);
 
-    match (solver.check(), solver.get_model()) {
+    match (result, model) {
         (SatResult::Unsat, _) => return Ok(()),
         (SatResult::Sat, Some(model)) => {
             return Err(format!(
@@ -49,7 +51,7 @@ pub fn verify_path<'a>(path: ExecutionPath) -> Result<(), String> {
             ))
         }
         _ => return Err("Huh, verification gave an unkown result".to_string()),
-    }
+    };
 }
 
 //optimise idea: pass program and build env once
@@ -93,7 +95,7 @@ fn path_to_formula<'ctx>(
                             Some(Variable::Int(l_ast)) => {
                                 let r_ast = match expression_to_int(&ctx, Rc::clone(&rc_env), rhs) {
                                     Ok(r_ast) => r_ast,
-                                    Err(err) => return Err(err),
+                                    Err(why) => return Err(why),
                                 };
                                 let substitutions = &[(l_ast, r_ast)];
                                 formula = formula.substitute(substitutions);
@@ -102,7 +104,7 @@ fn path_to_formula<'ctx>(
                                 let r_ast = match expression_to_bool(&ctx, Rc::clone(&rc_env), rhs)
                                 {
                                     Ok(r_ast) => r_ast,
-                                    Err(err) => return Err(err),
+                                    Err(why) => return Err(why),
                                 };
                                 let substitutions = &[(l_ast, &r_ast)];
                                 formula = formula.substitute(substitutions);
@@ -116,7 +118,7 @@ fn path_to_formula<'ctx>(
                 let rc_env = Rc::new(env);
                 let ast = match expression_to_bool(&ctx, Rc::clone(&rc_env), expr) {
                     Ok(ast) => ast,
-                    Err(err) => return Err(err),
+                    Err(why) => return Err(why),
                 };
 
                 formula = Bool::and(&ctx, &[&ast, &formula])
@@ -125,7 +127,7 @@ fn path_to_formula<'ctx>(
                 let rc_env = Rc::new(env);
                 let ast = match expression_to_bool(&ctx, Rc::clone(&rc_env), expr) {
                     Ok(ast) => ast,
-                    Err(err) => return Err(err),
+                    Err(why) => return Err(why),
                 };
                 formula = Bool::implies(&ast, &formula)
             }
@@ -151,7 +153,7 @@ fn expression_to_bool<'ctx>(
             let r = expression_to_int(ctx, env, r_expr);
             match flatten_tupple((l, r)) {
                 Ok((l, r)) => return Ok(l.ge(r)),
-                Err(err) => Err(err.to_string()),
+                Err(why) => Err(why.to_string()),
             }
         }
         Expression::And(l_expr, r_expr) => {
@@ -159,7 +161,7 @@ fn expression_to_bool<'ctx>(
             let r = expression_to_bool(ctx, env, r_expr);
             match flatten_tupple((l, r)) {
                 Ok((l, r)) => return Ok(Bool::and(ctx, &[&l, &r])),
-                Err(err) => return Err(err),
+                Err(why) => return Err(why),
             }
         }
         Expression::Not(expr) => match expression_to_bool(ctx, env, expr) {

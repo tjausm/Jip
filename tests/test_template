@@ -1,0 +1,4 @@
+#[test]
+fn {name}() {{
+    assert!(crate::see::verify_file(r#"{path}"#).is_ok())
+}}

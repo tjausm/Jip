@@ -16,6 +16,7 @@ pub enum CFG {
 // both to_cfg functions create a graph, or a subgraph pointing to the supplied node 
 fn stmt_to_cfg(stmt: Statement, next : Option<Rc<CFG>>) -> Rc<CFG> {
     
+
     let endpoint = next.unwrap_or(Rc::new(CFG::End));
     
     match stmt {

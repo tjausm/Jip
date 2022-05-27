@@ -1,0 +1,7 @@
+#[test]
+fn {name}() {{
+    let input = include_str!(r#"{path}"#);
+    //let expected_output = include_str!("{path}");
+
+    assert_eq!(1,1);
+}}

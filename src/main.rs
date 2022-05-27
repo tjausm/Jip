@@ -36,6 +36,12 @@ enum Mode {
 }
 
 fn main() {
+    let paths = std::fs::read_dir("./programs/").unwrap();
+
+    for path in paths {
+        println!("Name: {}", path.unwrap().path().display())
+    }
+
     let cli = Cli::parse();
 
     match cli.mode {

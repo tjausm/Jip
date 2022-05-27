@@ -1,0 +1,8 @@
+int x; 
+int y; 
+int z; 
+if (y >= x) 
+    z := x; 
+else 
+    z := y; 
+assert z >= x && z >= y;
