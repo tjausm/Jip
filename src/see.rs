@@ -55,13 +55,15 @@ mod tests {
     fn assignment() {
         assert!(parser::StatementsParser::new().parse("x := 2;").is_ok());
     }
+
     #[test]
     fn expressions() {
-        assert!(parser::StatementsParser::new().parse("x := 2 < 1;").is_ok());
-        assert!(parser::StatementsParser::new()
-            .parse("x := !true && false;")
-            .is_ok());
-        assert!(parser::StatementsParser::new().parse("x := -1;").is_ok());
+        assert!(parser::VerificationExpressionParser::new().parse("2 < 1").is_ok());
+        assert!(parser::VerificationExpressionParser::new().parse("!true && false").is_ok());
+        assert!(parser::VerificationExpressionParser::new().parse("-1").is_ok());
+        assert!(parser::VerificationExpressionParser::new().parse("y && z || a").is_ok());
+        assert!(parser::VerificationExpressionParser::new().parse("1 == 2 != 3").is_ok());
+        assert!(parser::VerificationExpressionParser::new().parse("1 + 2 - 3 / 4 % 5 * 6").is_ok());
     }
     #[test]
     fn declaration() {
@@ -89,6 +91,12 @@ mod tests {
     fn assert() {
         assert!(parser::StatementsParser::new()
             .parse("assert true;")
+            .is_ok());
+    }
+    #[test]
+    fn while_loop() {
+        assert!(parser::StatementsParser::new()
+            .parse("while (1 < 2) x := y;")
             .is_ok());
     }
 

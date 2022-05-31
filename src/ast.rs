@@ -4,7 +4,6 @@
 // - labels with only 1 ´option´ are type aliases, , 1 < options are enums
 
 //TODO: change identifier in &str (unfuck whole lifetime business)
-
 #[derive(Debug, Clone)]
 pub enum Statements {
     Cons(Statement, Box<Statements>),
@@ -19,9 +18,13 @@ pub enum Statement {
     Block(Box<Statements>),
     Assert(Expression),
     Assume(Expression),
+    While(While)
+
 }
 
 pub type Declaration = (Nonvoidtype, Identifier);
+
+pub type While = (Expression, Box<Statement>);
 
 #[derive(Debug, Clone)]
 pub enum Nonvoidtype {
@@ -57,16 +60,29 @@ pub enum Expression {
     And(Box<Expression>, Box<Expression>),
     Or(Box<Expression>, Box<Expression>),
 
-    //Box<Expression>
+    //expression4
+    EQ(Box<Expression>, Box<Expression>),
+    NE(Box<Expression>, Box<Expression>),
+    
+
+    //Expression5
     LT(Box<Expression>, Box<Expression>),
     GT(Box<Expression>, Box<Expression>),
     GEQ(Box<Expression>, Box<Expression>),
     LEQ(Box<Expression>, Box<Expression>),
 
-    //Expression
-    Minus(Box<Expression>),
+    //Expression6
+    Plus(Box<Expression>, Box<Expression>),
+    Minus(Box<Expression>, Box<Expression>),
+    
+    //Expression7
+    Times(Box<Expression>, Box<Expression>),
+    Divide(Box<Expression>, Box<Expression>),
+    Mod(Box<Expression>, Box<Expression>),
+
+    //Expression8
+    Negative(Box<Expression>),
     Not(Box<Expression>),
-    Expr9(Box<Expression>),
 
     //expression9
     Identifier(Identifier),

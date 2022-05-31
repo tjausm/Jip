@@ -1,7 +1,6 @@
 use std::str::FromStr;
 use crate::ast::*;
 
-
 grammar;
 
 pub Statements : Statements = {
@@ -16,6 +15,7 @@ pub Statement : Statement = {
     Block => Statement::Block(<>),
     Assert => Statement::Assert(<>),
     Assume => Statement::Assume(<>),
+    While => Statement::While(<>)
 }
 
 Declaration : Declaration = {
@@ -53,14 +53,18 @@ Block : Box<Statements> = {
 }
 
 Assert : Expression = {
-    "assert" <s:Verificationexpression> ";" => (<>)
+    "assert" <s:VerificationExpression> ";" => (<>)
 }
 
 Assume : Expression = {
-    "assume" <s:Verificationexpression> ";" => (<>)
+    "assume" <s:VerificationExpression> ";" => (<>)
 }
 
-Verificationexpression : Expression = {
+While : While = {
+    "while (" <v:VerificationExpression> ")" <s:Statement>  => (v, Box::new(s))
+}
+
+pub VerificationExpression : Expression = {
     Expression3
 }
 
@@ -71,6 +75,8 @@ pub Expression3 : Expression = {
 }
 
 Expression4 : Expression = {
+    <l:Expression5> "==" <r:Expression4> => Expression::EQ(Box::new(l), Box::new(r)),
+    <l:Expression5> "!=" <r:Expression4> => Expression::NE(Box::new(l), Box::new(r)),
     Expression5
 }
 
@@ -83,11 +89,20 @@ Expression5 : Expression = {
 }
 
 Expression6 : Expression = {
+    <l:Expression7> "+" <r:Expression6> => Expression::Plus(Box::new(l), Box::new(r)),
+    <l:Expression7> "-" <r:Expression6> => Expression::Minus(Box::new(l), Box::new(r)),
+    Expression7
+}
+
+Expression7 : Expression = {
+    <l:Expression8> "*" <r:Expression7> => Expression::Times(Box::new(l), Box::new(r)),
+    <l:Expression8> "/" <r:Expression7> => Expression::Divide(Box::new(l), Box::new(r)),
+    <l:Expression8> "%" <r:Expression7> => Expression::Mod(Box::new(l), Box::new(r)),
     Expression8
 }
 
 Expression8 : Expression = {
-    "-" <e:Expression8> => Expression::Minus(Box::new(<>)),
+    "-" <e:Expression8> => Expression::Negative(Box::new(<>)),
     "!" <e:Expression8> => Expression::Not(Box::new(<>)),
     Expression9
 }
