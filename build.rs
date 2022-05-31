@@ -6,8 +6,9 @@ use std::fs::File;
 use std::io::Write;
 use std::path::Path;
 
-// build script's entry point
 fn main() {
+
+    //necessary for the Lalrpop to work ()
     lalrpop::process_root().unwrap();
 
     // code to generate one unit test per oox program in the tests/programs folder
@@ -16,7 +17,7 @@ fn main() {
     let destination = Path::new(&out_dir).join("tests.rs");
     let mut test_file = File::create(&destination).unwrap();
 
-    // write test file header, put `use`, `const` etc there
+    // writes test file header, put `use`, `const` etc there
     write_header(&mut test_file);
 
     let test_programs = read_dir("./tests/programs").unwrap();
@@ -26,6 +27,7 @@ fn main() {
     }
 }
 
+//generates 1 test per file using either the test_template or the test_faulty_template 
 fn write_test(test_file: &mut File, directory: &DirEntry) {
     let directory = directory.path().canonicalize().unwrap();
     let path = directory.display();
@@ -53,6 +55,9 @@ fn write_test(test_file: &mut File, directory: &DirEntry) {
 fn write_header(test_file: &mut File) {
     write!(test_file, 
     r#"
-    extern crate jip;
+    use assert_cmd::Command;
+    use predicates::prelude::*;
+    use predicates::str::*;
     "#).unwrap();
 }
+

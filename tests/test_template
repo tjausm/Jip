@@ -1,4 +1,13 @@
 #[test]
 fn {name}() {{
-    assert!(crate::see::verify_file(r#"{path}"#).is_ok())
+
+    let predicate = contains("Program is correct");
+    let mut cmd = Command::cargo_bin("jip").unwrap();
+    let assert = cmd
+        .arg("verify-file")
+        .arg(r#"{path}"#)
+        .assert();
+    assert
+        .success()
+        .stdout(predicate);
 }}

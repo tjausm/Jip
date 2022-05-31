@@ -26,8 +26,7 @@ enum Mode {
     /// verifies file on given filepath
     VerifyFile {
         /// The file
-        #[clap(short, long, parse(from_os_str), value_name = "FILE")]
-        file: PathBuf,
+        path: PathBuf,
     },
     VerifyString {
         /// The program as a string
@@ -36,17 +35,11 @@ enum Mode {
 }
 
 fn main() {
-    let paths = std::fs::read_dir("./programs/").unwrap();
-
-    for path in paths {
-        println!("Name: {}", path.unwrap().path().display())
-    }
-
     let cli = Cli::parse();
 
     match cli.mode {
-        Mode::VerifyFile {file} => {
-            println!("Tortoise");
+        Mode::VerifyFile {path} => {
+            println!("{}", see::verify_file_and_print(&path))
         }
         Mode::VerifyString {string} => {
             println!("{}", see::verify_string_and_print(&string))
