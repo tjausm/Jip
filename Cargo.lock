@@ -369,6 +369,7 @@ dependencies = [
  "clap 3.1.18",
  "lalrpop",
  "lalrpop-util",
+ "petgraph",
  "predicates",
  "regex",
  "z3",
