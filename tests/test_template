@@ -1,7 +1,5 @@
 #[test]
 fn {name}() {{
-
-    let predicate = contains("Program is correct");
     let mut cmd = Command::cargo_bin("jip").unwrap();
     let assert = cmd
         .arg("verify-file")
@@ -9,5 +7,5 @@ fn {name}() {{
         .assert();
     assert
         .success()
-        .stdout(predicate);
+        .code(0);
 }}

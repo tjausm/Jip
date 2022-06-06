@@ -8,8 +8,5 @@
 
 
 ## Todo's
-- [ ] experiment with lambda functions to shorten z3 module
-- [ ] implement verification from files, and do tests using file loading
 - [ ] put all error msgs in one or more enums to 'streamline' them
-- [ ] linter installeren
 - [ ] best practices opzoeken voor variable shadowing

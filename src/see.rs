@@ -1,6 +1,6 @@
 use crate::cfg::generate_cfg;
 use crate::paths::{generate_execution_paths, Depth};
-use crate::z3::verify_path;
+use crate::z3::{Error, verify_path};
 lalrpop_mod!(pub parser); // synthesized by LALRPOP
 
 use std::fs;
@@ -8,30 +8,37 @@ use std::path::Path;
 
 const PROG_CORRECT : &str = "Program is correct";
 
-pub fn verify_file_and_print(program: &Path, d: Depth) -> String {
-    match verify_file(program, d) {
-        Err(why) => format!("{}", why),
-        Ok(_) => PROG_CORRECT.to_string()
+// 0 = validated program, 1 = validation error, 2 = all other errors
+pub type ExitCode = i32;
+
+fn print_result(r: Result<(), Error>) -> (ExitCode, String) {
+    match r {
+        Err(Error::Syntax(why)) => (2, format!("Syntax error: {}", why)),
+        Err(Error::Semantics(why)) => (2, format!("Semantics error: {}", why)),
+        Err(Error::Other(why)) => (2, format!("{}", why)),
+        Err(Error::Verification(why)) => (1, format!("{}", why)),
+        Ok(_) => (0, PROG_CORRECT.to_string())
     }
 }
 
-pub fn verify_file(program: &Path, d : Depth) -> Result<(), String>{
+pub fn verify_file_and_print(program: &Path, d: Depth) -> (ExitCode, String) {
+    return print_result(verify_file(program, d)); 
+}
+
+pub fn verify_file(program: &Path, d : Depth) -> Result<(), Error> {
     match fs::read_to_string(program) {
-        Err(why) => Err(format!("{}", why)),
+        Err(why) => Err(Error::Other(format!("{}", why))),
         Ok(content) => verify_string(&content, d) 
     }
 } 
 
-pub fn verify_string_and_print(program: &str, d: Depth) -> String {
-    match verify_string(program, d) {
-        Err(err) => err,
-        Ok(_) => PROG_CORRECT.to_string(),
-    }
+pub fn verify_string_and_print(program: &str, d: Depth) -> (ExitCode, String) {
+    return print_result(verify_string(program, d));
 }
 
-pub fn verify_string(program: &str, d: Depth) -> Result<(), String> {
+pub fn verify_string(program: &str, d: Depth) -> Result<(), Error> {
     match parser::StatementsParser::new().parse(program) {
-        Err(pe) => return Err(format!("{}", pe)),
+        Err(pe) => return Err(Error::Syntax(format!("{}", pe))),
         Ok(stmts) => {
             let (start_node, cfg) = generate_cfg(stmts);
             for path in generate_execution_paths(start_node, cfg, d) {

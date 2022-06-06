@@ -2,6 +2,7 @@
 extern crate lalrpop_util;
 
 use std::path::PathBuf;
+use std::process::exit;
 use clap::{Parser, Subcommand};
 
 // module declarations
@@ -38,12 +39,11 @@ enum Mode {
 fn main() {
     let cli = Cli::parse();
 
-    match cli.mode {
-        Mode::VerifyFile {path} => {
-            println!("{}", see::verify_file_and_print(&path, cli.depth))
-        }
-        Mode::VerifyString {string} => {
-            println!("{}", see::verify_string_and_print(&string, cli.depth))
-        }
+    let (exitCode, result) = match cli.mode {
+        Mode::VerifyFile {path} => see::verify_file_and_print(&path, cli.depth),
+        Mode::VerifyString {string} => see::verify_string_and_print(&string, cli.depth)
+        };
+        println!("{}", result);
+        exit(exitCode);
     }
-}
+

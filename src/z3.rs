@@ -9,11 +9,12 @@ use std::rc::Rc;
 use crate::ast::*;
 use crate::paths::ExecutionPath;
 
-/*
-
-TODO: make constants of error messages
-
-*/
+pub enum Error {
+    Syntax(String),
+    Semantics(String),
+    Verification(String),
+    Other(String)
+}
 
 #[derive(Debug, Clone)]
 enum Variable<'a> {
@@ -21,7 +22,7 @@ enum Variable<'a> {
     Bool(Bool<'a>),
 }
 
-pub fn verify_path<'a>(path: ExecutionPath) -> Result<(), String> {
+pub fn verify_path<'a>(path: ExecutionPath) -> Result<(), Error> {
     //init the 'accounting' z3 needs
     let cfg = Config::new();
     let ctx = Context::new(&cfg);
@@ -45,12 +46,12 @@ pub fn verify_path<'a>(path: ExecutionPath) -> Result<(), String> {
     match (result, model) {
         (SatResult::Unsat, _) => return Ok(()),
         (SatResult::Sat, Some(model)) => {
-            return Err(format!(
+            return Err(Error::Verification(format!(
                 "Following configuration violates program:\n{:?}",
                 model
-            ))
+            )))
         }
-        _ => return Err("Huh, verification gave an unkown result".to_string()),
+        _ => return Err(Error::Verification("Huh, verification gave an unkown result".to_string())),
     };
 }
 
@@ -80,7 +81,7 @@ fn path_to_formula<'ctx>(
     ctx: &'ctx Context,
     path: &'ctx ExecutionPath,
     env: &'ctx HashMap<&String, Variable>,
-) -> Result<Bool<'ctx>, String> {
+) -> Result<Bool<'ctx>, Error> {
     let mut formula = ast::Bool::from_bool(&ctx, true);
     for stmt in path.iter().rev() {
         match stmt {
@@ -109,7 +110,7 @@ fn path_to_formula<'ctx>(
                                 let substitutions = &[(l_ast, &r_ast)];
                                 formula = formula.substitute(substitutions);
                             }
-                            None => return Err(format!("Variable {} is undeclared", id)),
+                            None => return Err(Error::Semantics(format!("Variable {} is undeclared", id))),
                         }
                     }
                 }
@@ -132,10 +133,10 @@ fn path_to_formula<'ctx>(
                 formula = Bool::implies(&ast, &formula)
             }
             otherwise => {
-                return Err(format!(
+                return Err(Error::Semantics(format!(
                     "Statements of the form {:?} should not be in an executionpath",
                     otherwise
-                ));
+                )));
             }
         }
     }
@@ -146,14 +147,14 @@ fn expression_to_bool<'ctx>(
     ctx: &'ctx Context,
     env: Rc<&'ctx HashMap<&String, Variable<'ctx>>>,
     expr: &Expression,
-) -> Result<Bool<'ctx>, String> {
+) -> Result<Bool<'ctx>, Error> {
     match expr {
         Expression::GEQ(l_expr, r_expr) => {
             let l = expression_to_int(ctx, Rc::clone(&env), l_expr);
             let r = expression_to_int(ctx, env, r_expr);
             match flatten_tupple((l, r)) {
                 Ok((l, r)) => return Ok(l.ge(r)),
-                Err(why) => Err(why.to_string()),
+                Err(why) => Err(why),
             }
         }
         Expression::And(l_expr, r_expr) => {
@@ -169,18 +170,18 @@ fn expression_to_bool<'ctx>(
             otherwise => return otherwise,
         },
         otherwise => {
-            return Err(format!(
+            return Err(Error::Semantics(format!(
                 "Expressions of the form {:?} should not be in a boolean expression",
                 otherwise
-            ));
+            )));
         }
     }
 }
 
 //flatten result to ok, or the first error encountered
 fn flatten_tupple<'ctx, A>(
-    (l, r): (Result<A, String>, Result<A, String>),
-) -> Result<(A, A), String> {
+    (l, r): (Result<A, Error>, Result<A, Error>),
+) -> Result<(A, A), Error> {
     match (l, r) {
         (Ok(l), Ok(r)) => return Ok((l, r)),
         (Ok(l), Err(r_err)) => return Err(r_err),
@@ -192,7 +193,7 @@ fn expression_to_int<'ctx>(
     ctx: &'ctx Context,
     env: Rc<&'ctx HashMap<&String, Variable<'ctx>>>,
     expr: &Expression,
-) -> Result<&'ctx Int<'ctx>, String> {
+) -> Result<&'ctx Int<'ctx>, Error> {
     match expr {
         Expression::Identifier(id) => match env.get(id) {
             Some(var) => match var {
@@ -200,19 +201,19 @@ fn expression_to_int<'ctx>(
                     return Ok(i);
                 }
                 _ => {
-                    return Err(format!("can't convert {:?} to an int", var));
+                    return Err(Error::Semantics(format!("can't convert {:?} to an int", var)));
                 }
             },
             None => {
-                return Err(format!("Variable {} is undeclared", id));
+                return Err(Error::Semantics(format!("Variable {} is undeclared", id)));
             }
         },
 
         otherwise => {
-            return Err(format!(
+            return Err(Error::Semantics(format!(
                 "Expressions of the form {:?} should not be in a integer expression",
                 otherwise
-            ));
+            )));
         }
     };
 }
