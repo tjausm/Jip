@@ -92,7 +92,7 @@ pub enum Expression {
 #[derive(Debug, Clone)]
 pub enum Literal {
     Boolean(bool),
-    Integer(i32),
+    Integer(i64),
 }
 
 type Identifier = String;

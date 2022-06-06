@@ -98,7 +98,7 @@ fn path_to_formula<'ctx>(
                                     Ok(r_ast) => r_ast,
                                     Err(why) => return Err(why),
                                 };
-                                let substitutions = &[(l_ast, r_ast)];
+                                let substitutions = &[(l_ast, &r_ast)];
                                 formula = formula.substitute(substitutions);
                             }
                             Some(Variable::Bool(l_ast)) => {
@@ -169,7 +169,7 @@ fn expression_to_bool<'ctx>(
         // Because type of expression is unknown, and it must be known for _eq() we try all conversion functions
         Expression::EQ(l_expr, r_expr) => {
             match (expression_to_int(ctx, Rc::clone(&env), l_expr), expression_to_int(ctx, Rc::clone(&env), r_expr)) {
-                (Ok(l), Ok(r)) => return Ok(l._eq(r)),
+                (Ok(l), Ok(r)) => return Ok(l._eq(&r)),
                 _ => {
                     let t = (expression_to_bool(ctx, Rc::clone(&env), l_expr), expression_to_bool(ctx, env, r_expr)); 
                     match flatten_tupple(t) {
@@ -182,7 +182,7 @@ fn expression_to_bool<'ctx>(
             let l = expression_to_int(ctx, Rc::clone(&env), l_expr);
             let r = expression_to_int(ctx, env, r_expr);
             match flatten_tupple((l, r)) {
-                Ok((l, r)) => return Ok(l.lt(r)),
+                Ok((l, r)) => return Ok(l.lt(&r)),
                 Err(why) => Err(why),
             }
         }
@@ -190,7 +190,7 @@ fn expression_to_bool<'ctx>(
             let l = expression_to_int(ctx, Rc::clone(&env), l_expr);
             let r = expression_to_int(ctx, env, r_expr);
             match flatten_tupple((l, r)) {
-                Ok((l, r)) => return Ok(l.gt(r)),
+                Ok((l, r)) => return Ok(l.gt(&r)),
                 Err(why) => Err(why),
             }
         }
@@ -198,7 +198,7 @@ fn expression_to_bool<'ctx>(
             let l = expression_to_int(ctx, Rc::clone(&env), l_expr);
             let r = expression_to_int(ctx, env, r_expr);
             match flatten_tupple((l, r)) {
-                Ok((l, r)) => return Ok(l.ge(r)),
+                Ok((l, r)) => return Ok(l.ge(&r)),
                 Err(why) => Err(why),
             }
         }
@@ -206,7 +206,7 @@ fn expression_to_bool<'ctx>(
             let l = expression_to_int(ctx, Rc::clone(&env), l_expr);
             let r = expression_to_int(ctx, env, r_expr);
             match flatten_tupple((l, r)) {
-                Ok((l, r)) => return Ok(l.le(r)),
+                Ok((l, r)) => return Ok(l.le(&r)),
                 Err(why) => Err(why),
             }
         }
@@ -238,12 +238,21 @@ fn expression_to_int<'ctx>(
     ctx: &'ctx Context,
     env: Rc<&'ctx HashMap<&String, Variable<'ctx>>>,
     expr: &Expression,
-) -> Result<&'ctx Int<'ctx>, Error> {
+) -> Result<Int<'ctx>, Error> {
     match expr {
+        Expression::Minus(l_expr, r_expr) => {
+            let l = expression_to_int(ctx, Rc::clone(&env), l_expr);
+            let r = expression_to_int(ctx, env, r_expr);
+            match flatten_tupple((l, r)) {
+                Ok((l, r)) => return Ok(ast::Int::sub(&ctx, &[&l, &r])),
+                Err(why) => return Err(why),
+            }       
+        }
         Expression::Identifier(id) => match env.get(id) {
             Some(var) => match var {
                 Variable::Int(i) => {
-                    return Ok(i);
+                    //klopt dit, moet ik niet de reference naar de variable in de env passen?
+                    return Ok(i.clone());
                 }
                 _ => {
                     return Err(Error::Semantics(format!("can't convert {:?} to an int", var)));
@@ -253,7 +262,8 @@ fn expression_to_int<'ctx>(
                 return Err(Error::Semantics(format!("Variable {} is undeclared", id)));
             }
         },
-
+        Expression::Literal(Literal::Integer(n)) => { 
+            return Ok(ast::Int::from_i64(ctx, *n))},
         otherwise => {
             return Err(Error::Semantics(format!(
                 "Expressions of the form {:?} should not be in an integer expression",
