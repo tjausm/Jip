@@ -1,9 +1,8 @@
 #[macro_use]
 extern crate lalrpop_util;
 
-use std::io;
 use std::path::PathBuf;
-use clap::{ArgEnum, Parser, Subcommand};
+use clap::{Parser, Subcommand};
 
 // module declarations
 mod ast;
@@ -19,6 +18,8 @@ struct Cli {
     /// Dit is een test commentje
     #[clap(subcommand)]
     mode: Mode,
+    #[clap(default_value_t = 40)]
+    depth: paths::Depth,
 }
 
 #[derive(Subcommand)]
@@ -39,10 +40,10 @@ fn main() {
 
     match cli.mode {
         Mode::VerifyFile {path} => {
-            println!("{}", see::verify_file_and_print(&path))
+            println!("{}", see::verify_file_and_print(&path, cli.depth))
         }
         Mode::VerifyString {string} => {
-            println!("{}", see::verify_string_and_print(&string))
+            println!("{}", see::verify_string_and_print(&string, cli.depth))
         }
     }
 }

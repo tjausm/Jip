@@ -84,7 +84,7 @@ fn path_to_formula<'ctx>(
     let mut formula = ast::Bool::from_bool(&ctx, true);
     for stmt in path.iter().rev() {
         match stmt {
-            Statement::Declaration((ty, id)) => (),
+            Statement::Declaration(_) => (),
             Statement::Assignment((lhs, Rhs::Expr(rhs))) => {
                 match lhs {
                     Lhs::Identifier(id) => {
@@ -179,7 +179,7 @@ fn expression_to_bool<'ctx>(
 
 //flatten result to ok, or the first error encountered
 fn flatten_tupple<'ctx, A>(
-    (l, r): ((Result<A, String>, Result<A, String>)),
+    (l, r): (Result<A, String>, Result<A, String>),
 ) -> Result<(A, A), String> {
     match (l, r) {
         (Ok(l), Ok(r)) => return Ok((l, r)),
@@ -223,13 +223,14 @@ mod tests {
     use super::*;
 
     lalrpop_mod!(pub parser);
-    use crate::cfg::stmts_to_cfg;
+    use crate::cfg::generate_cfg;
     use crate::paths::{generate_execution_paths, tests};
 
     fn build_test(program: &str, correct: bool) {
         let stmts = parser::StatementsParser::new().parse(program).unwrap();
-        let cfg = stmts_to_cfg(stmts, None);
-        let paths = generate_execution_paths(cfg);
+        let (start_node, cfg) = generate_cfg(stmts);
+        let depth = 100;
+        let paths = generate_execution_paths(start_node, cfg, depth);
 
         for path in paths {
             assert_eq!(verify_path(path).is_ok(), correct);

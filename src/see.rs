@@ -1,5 +1,5 @@
-use crate::cfg::stmts_to_cfg;
-use crate::paths::generate_execution_paths;
+use crate::cfg::generate_cfg;
+use crate::paths::{generate_execution_paths, Depth};
 use crate::z3::verify_path;
 lalrpop_mod!(pub parser); // synthesized by LALRPOP
 
@@ -8,33 +8,33 @@ use std::path::Path;
 
 const PROG_CORRECT : &str = "Program is correct";
 
-pub fn verify_file_and_print(program: &Path) -> String {
-    match verify_file(program) {
+pub fn verify_file_and_print(program: &Path, d: Depth) -> String {
+    match verify_file(program, d) {
         Err(why) => format!("{}", why),
         Ok(_) => PROG_CORRECT.to_string()
     }
 }
 
-pub fn verify_file(program: &Path) -> Result<(), String>{
+pub fn verify_file(program: &Path, d : Depth) -> Result<(), String>{
     match fs::read_to_string(program) {
         Err(why) => Err(format!("{}", why)),
-        Ok(content) => verify_string(&content) 
+        Ok(content) => verify_string(&content, d) 
     }
 } 
 
-pub fn verify_string_and_print(program: &str) -> String {
-    match verify_string(program) {
+pub fn verify_string_and_print(program: &str, d: Depth) -> String {
+    match verify_string(program, d) {
         Err(err) => err,
         Ok(_) => PROG_CORRECT.to_string(),
     }
 }
 
-pub fn verify_string(program: &str) -> Result<(), String> {
+pub fn verify_string(program: &str, d: Depth) -> Result<(), String> {
     match parser::StatementsParser::new().parse(program) {
         Err(pe) => return Err(format!("{}", pe)),
         Ok(stmts) => {
-            let cfg = stmts_to_cfg(stmts, None);
-            for path in generate_execution_paths(cfg) {
+            let (start_node, cfg) = generate_cfg(stmts);
+            for path in generate_execution_paths(start_node, cfg, d) {
                 match verify_path(path) {
                     Ok(_) => continue,
                     Err(err) => return Err(err),

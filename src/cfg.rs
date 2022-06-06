@@ -1,25 +1,9 @@
 lalrpop_mod!(pub parser); // synthesized by LALRPOP
 
 use crate::ast::*;
-use petgraph::graph::{Graph, Node, NodeIndex};
-use std::rc::Rc;
+use petgraph::graph::{Graph, NodeIndex};
 
-//TODO: do benchmark to check whether references work
-// e.g. whether more edges don't increase graph size
 
-#[derive(Debug)]
-pub enum CFG {
-    Branch {
-        condition: Expression,
-        if_condition: Rc<CFG>,
-        if_not_condition: Rc<CFG>,
-    },
-    Straight {
-        statement: Statement,
-        next: Rc<CFG>,
-    },
-    End,
-}
 #[derive(Debug)]
 pub enum CfgNode {
     Start,
@@ -27,24 +11,25 @@ pub enum CfgNode {
     End,
 }
 
-type CFGp = Graph<CfgNode, ()>;
+pub type CFG = Graph<CfgNode, ()>;
 
-// fuctions as the set-up for the recursive stmt_to_cfg and stmts_to_cfg functions
-pub fn generate_cfg(stmts: Statements) -> CFGp {
+// fuctions as the set-up for the recursive  stmts_to_cfg function
+// returns cfg, and the start_node for search algorithms
+pub fn generate_cfg(stmts: Statements) -> (NodeIndex, CFG) {
     let mut cfg = Graph::<CfgNode, ()>::new();
     let start_node = cfg.add_node(CfgNode::Start);
     let end_node = cfg.add_node(CfgNode::End);
     let (_, _, cfg) = stmts_to_cfgp(stmts, cfg, vec![start_node], Some(end_node));
-    return cfg;
+    return (start_node, cfg);
 }
 
 // recursively unpacks Statement and returns start and end of cfg and cfg itself
 fn stmt_to_cfgp(
     stmt: Statement,
-    mut cfg: CFGp,
+    mut cfg: CFG,
     start_node: NodeIndex,
     end_node: Option<NodeIndex>,
-) -> (Vec<NodeIndex>, NodeIndex, CFGp) {
+) -> (Vec<NodeIndex>, NodeIndex, CFG) {
     match stmt {
         Statement::Block(stmts) => return stmts_to_cfgp(*stmts, cfg, vec![start_node], end_node),
         other => {
@@ -61,13 +46,15 @@ fn stmt_to_cfgp(
     }
 }
 
-// recursively unpacks Statements and returns start of cfg and the cfg itself
+// recursively unpacks Statements and returns start, end and cfg itself
+// adds edges from all passed start nodes to first node it generates from stmts
+// and adds edges from the last nodes it generates to the ending node if it is specified
 fn stmts_to_cfgp(
     stmts: Statements,
-    mut cfg: CFGp,
+    mut cfg: CFG,
     start_nodes: Vec<NodeIndex>,
     ending_node: Option<NodeIndex>,
-) -> (Vec<NodeIndex>, NodeIndex, CFGp) {
+) -> (Vec<NodeIndex>, NodeIndex, CFG) {
     match stmts {
         Statements::Cons(stmt, stmts) => match stmt {
             Statement::Ite((cond, s1, s2)) => {
@@ -100,11 +87,11 @@ fn stmts_to_cfgp(
                     cfg.add_edge(start_node, assume_node, ());
                     cfg.add_edge(start_node, assume_not_node, ());
                 }
-                // calculate cfg for body of while and cfg for the rest of the stmts
+                // calculate cfg for body of while and cfg for the remainder of the stmts
                 let (_, body_ending, cfg) = stmt_to_cfgp(*body, cfg, assume_node, None);                
                 let (start_remainder, end_remainder, mut cfg) =
                     stmts_to_cfgp(*stmts, cfg, vec![assume_not_node], ending_node);
-                // add edges from end of while to begin and edge to rest of stmts
+                // add edges from end of while body to begin and edge from while body to rest of stmts
                 cfg.add_edge(body_ending, assume_node, ());
                 for start_node in start_remainder {
                     cfg.add_edge(body_ending, start_node, ());
@@ -132,46 +119,6 @@ fn stmts_to_cfgp(
     }
 }
 
-// both to_cfg functions create a graph, or a subgraph pointing to the supplied node
-fn stmt_to_cfg(stmt: Statement, next: Option<Rc<CFG>>) -> Rc<CFG> {
-    let endpoint = next.unwrap_or(Rc::new(CFG::End));
-    match stmt {
-        Statement::Block(stmts) => return stmts_to_cfg(*stmts, Some(endpoint)),
-        other => {
-            return Rc::new(CFG::Straight {
-                statement: other,
-                next: endpoint,
-            })
-        }
-    }
-}
-
-pub fn stmts_to_cfg(stmts: Statements, next: Option<Rc<CFG>>) -> Rc<CFG> {
-    // let endpoint(s) point to either the next arg or CFG::End
-    let endpoint = next.unwrap_or(Rc::new(CFG::End));
-    match stmts {
-        Statements::Cons(stmt, stmts) => match stmt {
-            Statement::Ite((cond, s1, s2)) => {
-                // endpoint for cfg generated from branches is
-                // cfg generated from stmts following ite,
-                let next = Rc::new(stmts_to_cfg(*stmts, Some(endpoint)));
-                return Rc::new(CFG::Branch {
-                    condition: cond,
-                    if_condition: stmt_to_cfg(*s1, Some(Rc::clone(&next))),
-                    if_not_condition: stmt_to_cfg(*s2, Some(Rc::clone(&next))),
-                });
-            }
-            other => {
-                return Rc::new(CFG::Straight {
-                    statement: other,
-                    next: stmts_to_cfg(*stmts, Some(endpoint)),
-                })
-            }
-        },
-        Statements::Nil => return endpoint,
-    }
-}
-
 #[cfg(test)]
 mod tests {
 
@@ -183,9 +130,9 @@ mod tests {
         return CfgNode::Statement(parser::StatementParser::new().parse(i).unwrap());
     }
 
-    fn build_test(input: &str, correct_cfg: CFGp) {
+    fn build_test(input: &str, correct_cfg: CFG) {
         let stmts = parser::StatementsParser::new().parse(input).unwrap();
-        let generated_cfg = generate_cfg(stmts);
+        let (_, generated_cfg) = generate_cfg(stmts);
         //either pass unit test or print the 2 cfg's
         if (!is_isomorphic(&generated_cfg, &correct_cfg)) { assert_eq!(format!("{:?}", generated_cfg), format!("{:?}", correct_cfg))}
     }
