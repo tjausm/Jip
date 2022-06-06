@@ -53,10 +53,10 @@ fn stmt_to_cfgp(
             match end_node {
                 Some(end_node) => {
                     cfg.add_edge(stmt_node, end_node, ());
-                    return (vec![start_node], end_node, cfg)
+                    return (vec![start_node], end_node, cfg);
                 }
-                None => return (vec![start_node], start_node, cfg)
-            }   
+                None => return (vec![start_node], stmt_node, cfg),
+            }
         }
     }
 }
@@ -81,33 +81,54 @@ fn stmts_to_cfgp(
                 for start_node in start_nodes {
                     cfg.add_edge(start_node, assume_node, ());
                     cfg.add_edge(start_node, assume_not_node, ());
-                };
+                }
 
-                // we add the if and else branch to the cfg
+                // add the if and else branch to the cfg
                 let (_, if_ending, cfg) = stmt_to_cfgp(*s1, cfg, assume_node, None);
                 let (_, else_ending, cfg) = stmt_to_cfgp(*s2, cfg, assume_not_node, None);
                 return stmts_to_cfgp(*stmts, cfg, vec![if_ending, else_ending], ending_node);
             }
             Statement::While((cond, body)) => {
-                return panic!("");
+                // add condition as assume and assume_not to the cfg
+                let assume = CfgNode::Statement(Statement::Assume(cond.clone()));
+                let assume_not =
+                    CfgNode::Statement(Statement::Assume(Expression::Not(Box::new(cond))));
+                let assume_node = cfg.add_node(assume);
+                let assume_not_node = cfg.add_node(assume_not);
+                // add edges from start node to assume and assume_not
+                for start_node in start_nodes {
+                    cfg.add_edge(start_node, assume_node, ());
+                    cfg.add_edge(start_node, assume_not_node, ());
+                }
+                // calculate cfg for body of while and cfg for the rest of the stmts
+                let (_, body_ending, cfg) = stmt_to_cfgp(*body, cfg, assume_node, None);                
+                let (start_remainder, end_remainder, mut cfg) =
+                    stmts_to_cfgp(*stmts, cfg, vec![assume_not_node], ending_node);
+                // add edges from end of while to begin and edge to rest of stmts
+                cfg.add_edge(body_ending, assume_node, ());
+                for start_node in start_remainder {
+                    cfg.add_edge(body_ending, start_node, ());
+                }
+                return (vec![assume_node, assume_not_node], end_remainder, cfg);
             }
+            //add edge from start to stmt and recurse
             other => {
                 let stmt_node = cfg.add_node(CfgNode::Statement(other));
-                for start_node in start_nodes {cfg.add_edge(start_node, stmt_node, ());}
-                return stmts_to_cfgp(*stmts, cfg, vec![stmt_node], ending_node);
-            } 
-        },
-        Statements::Nil => {
-            match ending_node {
-                Some(end_node) => {
-                    for start_node in &start_nodes {
-                        cfg.add_edge(*start_node, end_node, ());
-                    }
-                    return (start_nodes, end_node, cfg);
+                for start_node in start_nodes {
+                    cfg.add_edge(start_node, stmt_node, ());
                 }
-                None => return (start_nodes.clone(), start_nodes[0], cfg),
+                return stmts_to_cfgp(*stmts, cfg, vec![stmt_node], ending_node);
             }
-        }
+        },
+        Statements::Nil => match ending_node {
+            Some(end_node) => {
+                for start_node in &start_nodes {
+                    cfg.add_edge(*start_node, end_node, ());
+                }
+                return (start_nodes, end_node, cfg);
+            }
+            None => return (start_nodes.clone(), start_nodes[0], cfg),
+        },
     }
 }
 
@@ -165,8 +186,8 @@ mod tests {
     fn build_test(input: &str, correct_cfg: CFGp) {
         let stmts = parser::StatementsParser::new().parse(input).unwrap();
         let generated_cfg = generate_cfg(stmts);
-        assert!(is_isomorphic(&generated_cfg, &correct_cfg));
-        //assert_eq!(format!("{:?}", generated_cfg), format!("{:?}", correct_cfg));
+        //either pass unit test or print the 2 cfg's
+        if (!is_isomorphic(&generated_cfg, &correct_cfg)) { assert_eq!(format!("{:?}", generated_cfg), format!("{:?}", correct_cfg))}
     }
 
     #[test]
@@ -228,7 +249,9 @@ mod tests {
 
         cfg.add_edge(s, a, ());
         cfg.add_edge(a, c, ());
-        cfg.add_edge(c, s, ());
+        cfg.add_edge(c, a, ());
+        cfg.add_edge(c, b, ());
+        
 
         cfg.add_edge(s, b, ());
 
