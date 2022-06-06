@@ -8,7 +8,7 @@ use std::path::Path;
 
 fn main() {
 
-    //necessary for the Lalrpop to work ()
+    //necessary for the Lalrpop to work 
     lalrpop::process_root().unwrap();
 
     // code to generate one unit test per oox program in the tests/programs folder
@@ -21,13 +21,14 @@ fn main() {
     write_header(&mut test_file);
 
     let test_programs = read_dir("./tests/programs").unwrap();
-
     for directory in test_programs {
         write_test(&mut test_file, &directory.unwrap());
     }
 }
 
-//generates 1 test per file using either the test_template or the test_faulty_template 
+//gens 1 test per program in 'tests/programs/..' folder (file can't have extension) 
+//tests check if program ending with '_faulty' are shown incorrect,
+//and if all other program are proven to be correct
 fn write_test(test_file: &mut File, directory: &DirEntry) {
     let directory = directory.path().canonicalize().unwrap();
     let path = directory.display();
@@ -52,6 +53,8 @@ fn write_test(test_file: &mut File, directory: &DirEntry) {
         .unwrap();
     }
 }
+
+
 fn write_header(test_file: &mut File) {
     write!(test_file, 
     r#"

@@ -1,7 +1,7 @@
 lalrpop_mod!(pub parser); // synthesized by LALRPOP
 
 use crate::ast::*;
-use petgraph::graph::{Graph, Node};
+use petgraph::graph::{Graph, Node, NodeIndex};
 use std::rc::Rc;
 
 //TODO: do benchmark to check whether references work
@@ -21,49 +21,93 @@ pub enum CFG {
     End,
 }
 #[derive(Debug)]
-enum CfgNode {
-    Branch,
+pub enum CfgNode {
+    Start,
     Statement(Statement),
-    End
-} 
+    End,
+}
 
 type CFGp = Graph<CfgNode, ()>;
 
-// we update the cfg and return the begin and endpoint of this particular stmt in the graph
-fn stmt_to_cfgp(
-    stmt: Statement,
-    curr_cfg: Option<CFGp>,
-    starting_node: Option<Node<Statement>>,
-    ennding_node: Option<Node<Statement>>,
-) -> (Node<Statement>, Node<Statement>, CFGp) {
-    return panic!("fuck!");
+// fuctions as the set-up for the recursive stmt_to_cfg and stmts_to_cfg functions
+pub fn generate_cfg(stmts: Statements) -> CFGp {
+    let mut cfg = Graph::<CfgNode, ()>::new();
+    let start_node = cfg.add_node(CfgNode::Start);
+    let end_node = cfg.add_node(CfgNode::End);
+    let (_, _, cfg) = stmts_to_cfgp(stmts, cfg, vec![start_node], Some(end_node));
+    return cfg;
 }
 
-// we update the cfg and return the begin and endpoint of this particular set of statements in the graph
+// recursively unpacks Statement and returns start and end of cfg and cfg itself
+fn stmt_to_cfgp(
+    stmt: Statement,
+    mut cfg: CFGp,
+    start_node: NodeIndex,
+    end_node: Option<NodeIndex>,
+) -> (Vec<NodeIndex>, NodeIndex, CFGp) {
+    match stmt {
+        Statement::Block(stmts) => return stmts_to_cfgp(*stmts, cfg, vec![start_node], end_node),
+        other => {
+            let stmt_node = cfg.add_node(CfgNode::Statement(other));
+            cfg.add_edge(start_node, stmt_node, ());
+            match end_node {
+                Some(end_node) => {
+                    cfg.add_edge(stmt_node, end_node, ());
+                    return (vec![start_node], end_node, cfg)
+                }
+                None => return (vec![start_node], start_node, cfg)
+            }   
+        }
+    }
+}
+
+// recursively unpacks Statements and returns start of cfg and the cfg itself
 fn stmts_to_cfgp(
     stmts: Statements,
-    curr_cfg: Option<CFGp>,
-    starting_node: Option<Node<Statement>>,
-    ennding_node: Option<Node<Statement>>,
-) -> (Node<Statement>, Node<Statement>, CFGp) {
-    let mut cfg = curr_cfg.unwrap_or(Graph::<CfgNode, ()>::new());
-
+    mut cfg: CFGp,
+    start_nodes: Vec<NodeIndex>,
+    ending_node: Option<NodeIndex>,
+) -> (Vec<NodeIndex>, NodeIndex, CFGp) {
     match stmts {
         Statements::Cons(stmt, stmts) => match stmt {
             Statement::Ite((cond, s1, s2)) => {
-                // endpoint for cfg generated from branches is
-                // cfg generated from stmts following ite,
-                //let (next_begin, _, cfg) = stmts_to_cfgp(stmts, Some(cfg));
-                return panic!("");
+                // add condition as assume and assume_not to the cfg
+                let assume = CfgNode::Statement(Statement::Assume(cond.clone()));
+                let assume_not =
+                    CfgNode::Statement(Statement::Assume(Expression::Not(Box::new(cond))));
+                let assume_node = cfg.add_node(assume);
+                let assume_not_node = cfg.add_node(assume_not);
+                //iterate over all starting nodes to lay edges
+                for start_node in start_nodes {
+                    cfg.add_edge(start_node, assume_node, ());
+                    cfg.add_edge(start_node, assume_not_node, ());
+                };
+
+                // we add the if and else branch to the cfg
+                let (_, if_ending, cfg) = stmt_to_cfgp(*s1, cfg, assume_node, None);
+                let (_, else_ending, cfg) = stmt_to_cfgp(*s2, cfg, assume_not_node, None);
+                return stmts_to_cfgp(*stmts, cfg, vec![if_ending, else_ending], ending_node);
             }
             Statement::While((cond, body)) => {
                 return panic!("");
             }
             other => {
-                return panic!("");
-            }
+                let stmt_node = cfg.add_node(CfgNode::Statement(other));
+                for start_node in start_nodes {cfg.add_edge(start_node, stmt_node, ());}
+                return stmts_to_cfgp(*stmts, cfg, vec![stmt_node], ending_node);
+            } 
         },
-        Statements::Nil => return panic!(""),
+        Statements::Nil => {
+            match ending_node {
+                Some(end_node) => {
+                    for start_node in &start_nodes {
+                        cfg.add_edge(*start_node, end_node, ());
+                    }
+                    return (start_nodes, end_node, cfg);
+                }
+                None => return (start_nodes.clone(), start_nodes[0], cfg),
+            }
+        }
     }
 }
 
@@ -111,6 +155,7 @@ pub fn stmts_to_cfg(stmts: Statements, next: Option<Rc<CFG>>) -> Rc<CFG> {
 mod tests {
 
     use super::*;
+    use petgraph::algo::is_isomorphic;
     lalrpop_mod!(pub parser);
 
     fn parse_stmt(i: &str) -> CfgNode {
@@ -118,39 +163,40 @@ mod tests {
     }
 
     fn build_test(input: &str, correct_cfg: CFGp) {
-        let statements = parser::StatementsParser::new().parse(input).unwrap();
-        let (_, _, generated_cfg) = stmts_to_cfgp(statements, None, None, None);
-        assert_eq!(format!("{:?}", generated_cfg), format!("{:?}", correct_cfg));
+        let stmts = parser::StatementsParser::new().parse(input).unwrap();
+        let generated_cfg = generate_cfg(stmts);
+        assert!(is_isomorphic(&generated_cfg, &correct_cfg));
+        //assert_eq!(format!("{:?}", generated_cfg), format!("{:?}", correct_cfg));
     }
 
     #[test]
     fn empty() {
-        build_test("", Graph::<CfgNode, ()>::new());
+        let mut cfg = Graph::<CfgNode, ()>::new();
+        let s = cfg.add_node(CfgNode::Start);
+        let e = cfg.add_node(CfgNode::End);
+        cfg.add_edge(s, e, ());
+        build_test("", cfg);
     }
 
     #[test]
     fn straight() {
         let mut cfg = Graph::<CfgNode, ()>::new();
-        let a = cfg.add_node(CfgNode::Branch);
+        let a = cfg.add_node(CfgNode::Start);
         let b = cfg.add_node(parse_stmt("int x; "));
         let c = cfg.add_node(parse_stmt("arbitraryId := true;"));
         let d = cfg.add_node(CfgNode::End);
 
         cfg.add_edge(a, b, ());
         cfg.add_edge(b, c, ());
-        cfg.add_edge(c,d, ());
+        cfg.add_edge(c, d, ());
 
-        build_test(
-            "int x; arbitraryId := true;",
-            cfg)
+        build_test("int x; arbitraryId := true;", cfg)
     }
-
 
     #[test]
     fn branch_and_block() {
-        
         let mut cfg = Graph::<CfgNode, ()>::new();
-        let s = cfg.add_node(CfgNode::Branch);
+        let s = cfg.add_node(CfgNode::Start);
         let a = cfg.add_node(parse_stmt("assume true; "));
         let b = cfg.add_node(parse_stmt("assume !true;"));
         let c = cfg.add_node(parse_stmt("int x;"));
@@ -168,15 +214,13 @@ mod tests {
 
         cfg.add_edge(e, f, ());
 
-        build_test(
-            "if (true) {int x;} else {int y; } int z;",
-            cfg
-        );
+        build_test("if (true) {int x;} else {int y; } int z;", cfg);
     }
+
+    #[test]
     fn while_loop() {
-        
         let mut cfg = Graph::<CfgNode, ()>::new();
-        let s = cfg.add_node(CfgNode::Branch);
+        let s = cfg.add_node(CfgNode::Start);
         let a = cfg.add_node(parse_stmt("assume true; "));
         let b = cfg.add_node(parse_stmt("assume !true;"));
         let c = cfg.add_node(parse_stmt("int x;"));
@@ -190,9 +234,6 @@ mod tests {
 
         cfg.add_edge(b, d, ());
 
-        build_test(
-            "while (true) int x;",
-            cfg
-        );
+        build_test("while (true) int x;", cfg);
     }
 }
