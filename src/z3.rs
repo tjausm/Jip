@@ -1,7 +1,7 @@
 extern crate z3;
 
 use z3::ast::{Ast, Bool, Int};
-use z3::{ast, Config, Context, SatResult, Solver};
+use z3::{ast, AstKind, Config, Context, SatResult, Solver};
 
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -149,6 +149,51 @@ fn expression_to_bool<'ctx>(
     expr: &Expression,
 ) -> Result<Bool<'ctx>, Error> {
     match expr {
+
+        Expression::And(l_expr, r_expr) => {
+            let l = expression_to_bool(ctx, Rc::clone(&env), l_expr);
+            let r = expression_to_bool(ctx, env, r_expr);
+            match flatten_tupple((l, r)) {
+                Ok((l, r)) => return Ok(Bool::and(ctx, &[&l, &r])),
+                Err(why) => return Err(why),
+            }
+        }
+        Expression::Or(l_expr, r_expr) => {
+            let l = expression_to_bool(ctx, Rc::clone(&env), l_expr);
+            let r = expression_to_bool(ctx, env, r_expr);
+            match flatten_tupple((l, r)) {
+                Ok((l, r)) => return Ok(Bool::or(ctx, &[&l, &r])),
+                Err(why) => return Err(why),
+            }
+        }
+        // Because type of expression is unknown, and it must be known for _eq() we try all conversion functions
+        Expression::EQ(l_expr, r_expr) => {
+            match (expression_to_int(ctx, Rc::clone(&env), l_expr), expression_to_int(ctx, Rc::clone(&env), r_expr)) {
+                (Ok(l), Ok(r)) => return Ok(l._eq(r)),
+                _ => {
+                    let t = (expression_to_bool(ctx, Rc::clone(&env), l_expr), expression_to_bool(ctx, env, r_expr)); 
+                    match flatten_tupple(t) {
+                        Ok((l,r)) => return Ok(l._eq(&r)),
+                        Err(why) => return Err(Error::Semantics(format!("Can't compare expressions {:?} and {:?} because they have different types", l_expr, r_expr)))
+                    }}
+            }
+        }
+        Expression::LT(l_expr, r_expr) => {
+            let l = expression_to_int(ctx, Rc::clone(&env), l_expr);
+            let r = expression_to_int(ctx, env, r_expr);
+            match flatten_tupple((l, r)) {
+                Ok((l, r)) => return Ok(l.lt(r)),
+                Err(why) => Err(why),
+            }
+        }
+        Expression::GT(l_expr, r_expr) => {
+            let l = expression_to_int(ctx, Rc::clone(&env), l_expr);
+            let r = expression_to_int(ctx, env, r_expr);
+            match flatten_tupple((l, r)) {
+                Ok((l, r)) => return Ok(l.gt(r)),
+                Err(why) => Err(why),
+            }
+        }
         Expression::GEQ(l_expr, r_expr) => {
             let l = expression_to_int(ctx, Rc::clone(&env), l_expr);
             let r = expression_to_int(ctx, env, r_expr);
@@ -157,12 +202,12 @@ fn expression_to_bool<'ctx>(
                 Err(why) => Err(why),
             }
         }
-        Expression::And(l_expr, r_expr) => {
-            let l = expression_to_bool(ctx, Rc::clone(&env), l_expr);
-            let r = expression_to_bool(ctx, env, r_expr);
+        Expression::LEQ(l_expr, r_expr) => {
+            let l = expression_to_int(ctx, Rc::clone(&env), l_expr);
+            let r = expression_to_int(ctx, env, r_expr);
             match flatten_tupple((l, r)) {
-                Ok((l, r)) => return Ok(Bool::and(ctx, &[&l, &r])),
-                Err(why) => return Err(why),
+                Ok((l, r)) => return Ok(l.le(r)),
+                Err(why) => Err(why),
             }
         }
         Expression::Not(expr) => match expression_to_bool(ctx, env, expr) {
@@ -211,7 +256,7 @@ fn expression_to_int<'ctx>(
 
         otherwise => {
             return Err(Error::Semantics(format!(
-                "Expressions of the form {:?} should not be in a integer expression",
+                "Expressions of the form {:?} should not be in an integer expression",
                 otherwise
             )));
         }
@@ -222,31 +267,6 @@ fn expression_to_int<'ctx>(
 mod tests {
 
     use super::*;
-
-    lalrpop_mod!(pub parser);
-    use crate::cfg::generate_cfg;
-    use crate::paths::{generate_execution_paths, tests};
-
-    fn build_test(program: &str, correct: bool) {
-        let stmts = parser::StatementsParser::new().parse(program).unwrap();
-        let (start_node, cfg) = generate_cfg(stmts);
-        let depth = 100;
-        let paths = generate_execution_paths(start_node, cfg, depth);
-
-        for path in paths {
-            assert_eq!(verify_path(path).is_ok(), correct);
-        }
-    }
-
-    #[test]
-    fn max_program() {
-        build_test(tests::MAX, true);
-    }
-
-    #[test]
-    fn faulty_max_program() {
-        build_test(tests::FAULTY_MAX, false);
-    }
 
     #[test]
     fn test_solving() {

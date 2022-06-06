@@ -6,6 +6,5 @@ fn {name}() {{
         .arg(r#"{path}"#)
         .assert();
     assert
-        .success()
         .code(1);
 }}

@@ -39,11 +39,11 @@ enum Mode {
 fn main() {
     let cli = Cli::parse();
 
-    let (exitCode, result) = match cli.mode {
+    let (exit_code, result) = match cli.mode {
         Mode::VerifyFile {path} => see::verify_file_and_print(&path, cli.depth),
         Mode::VerifyString {string} => see::verify_string_and_print(&string, cli.depth)
         };
         println!("{}", result);
-        exit(exitCode);
+        exit(exit_code);
     }
 
