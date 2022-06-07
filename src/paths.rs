@@ -3,6 +3,7 @@ use crate::cfg::{generate_cfg, CFG, CfgNode};
 
 use petgraph::graph::{Graph, NodeIndex, EdgeReference};
 use petgraph::visit::{ EdgeRef};
+use petgraph::dot::Dot; //for transforming graph to image
 use std::rc::Rc;
 use std::collections::VecDeque;
 
@@ -12,10 +13,12 @@ pub type Depth = i64;
 //bf-search collecting all possible paths to the END node in the cfg
 pub fn generate_execution_paths(start_node: NodeIndex, cfg: CFG, d: Depth) -> Vec<ExecutionPath> {
     let mut resulting_paths: Vec<ExecutionPath> = vec![];
-
+    
     let mut q: VecDeque<(ExecutionPath, Depth, NodeIndex)> = VecDeque::new(); //queue![(vec![], cfg)];
     q.push_back((vec![], d, start_node));
     
+    //println!("{:?}", Dot::new(&cfg));
+
     loop {
 
         match q.pop_front() {
@@ -35,6 +38,9 @@ pub fn generate_execution_paths(start_node: NodeIndex, cfg: CFG, d: Depth) -> Ve
                         path.push(stmt.clone());
 
                         for edge in cfg.edges(node_index){
+                            
+                            //let dedge = format!("{:?}", cfg[edge.target()]);
+
                             let next = edge.target();
                             q.push_back((path.clone(), d-1, next));
                         }

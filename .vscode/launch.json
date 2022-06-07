@@ -12,14 +12,14 @@
                 "args": [
                     "build",
                     "--bin=jip",
-                    "--package=jip"
+                    "--package=jip",
                 ],
                 "filter": {
                     "name": "jip",
                     "kind": "bin"
                 }
             },
-            "args": [],
+            "args": ["verify-file", "tests/programs/E_faulty"],
             "cwd": "${workspaceFolder}"
         },
         {

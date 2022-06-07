@@ -3,7 +3,6 @@ lalrpop_mod!(pub parser); // synthesized by LALRPOP
 use crate::ast::*;
 use petgraph::graph::{Graph, NodeIndex};
 
-
 #[derive(Debug)]
 pub enum CfgNode {
     Start,
@@ -77,25 +76,23 @@ fn stmts_to_cfgp(
             }
             Statement::While((cond, body)) => {
                 // add condition as assume and assume_not to the cfg
-                let assume = CfgNode::Statement(Statement::Assume(cond.clone()));
-                let assume_not =
-                    CfgNode::Statement(Statement::Assume(Expression::Not(Box::new(cond))));
-                let assume_node = cfg.add_node(assume);
-                let assume_not_node = cfg.add_node(assume_not);
+                let assume_node = cfg.add_node(CfgNode::Statement(Statement::Assume(cond.clone())));
+                let assume_not_node = cfg.add_node(CfgNode::Statement(Statement::Assume(
+                    Expression::Not(Box::new(cond)),
+                )));
                 // add edges from start node to assume and assume_not
                 for start_node in start_nodes {
                     cfg.add_edge(start_node, assume_node, ());
                     cfg.add_edge(start_node, assume_not_node, ());
                 }
                 // calculate cfg for body of while and cfg for the remainder of the stmts
-                let (_, body_ending, cfg) = stmt_to_cfgp(*body, cfg, assume_node, None);                
-                let (start_remainder, end_remainder, mut cfg) =
+                let (_, body_ending, cfg) = stmt_to_cfgp(*body, cfg, assume_node, None);
+                let (_, end_remainder, mut cfg) =
                     stmts_to_cfgp(*stmts, cfg, vec![assume_not_node], ending_node);
                 // add edges from end of while body to begin and edge from while body to rest of stmts
                 cfg.add_edge(body_ending, assume_node, ());
-                for start_node in start_remainder {
-                    cfg.add_edge(body_ending, start_node, ());
-                }
+                cfg.add_edge(body_ending, assume_not_node, ());
+                
                 return (vec![assume_node, assume_not_node], end_remainder, cfg);
             }
             //add edge from start to stmt and recurse
@@ -124,6 +121,7 @@ mod tests {
 
     use super::*;
     use petgraph::algo::is_isomorphic;
+    use petgraph::dot::Dot; //for transforming graph to image
     lalrpop_mod!(pub parser);
 
     fn parse_stmt(i: &str) -> CfgNode {
@@ -133,8 +131,10 @@ mod tests {
     fn build_test(input: &str, correct_cfg: CFG) {
         let stmts = parser::StatementsParser::new().parse(input).unwrap();
         let (_, generated_cfg) = generate_cfg(stmts);
-        //either pass unit test or print the 2 cfg's
-        if (!is_isomorphic(&generated_cfg, &correct_cfg)) { assert_eq!(format!("{:?}", generated_cfg), format!("{:?}", correct_cfg))}
+        //print visualizable graph in case of failure (visualizable at http://viz-js.com/)
+        println!("Generated cfg: \n{:?}", Dot::new(&generated_cfg));
+        println!("Correct cfg: \n{:?}", Dot::new(&correct_cfg));
+        assert!(is_isomorphic(&generated_cfg, &correct_cfg));
     }
 
     #[test]
@@ -192,18 +192,18 @@ mod tests {
         let a = cfg.add_node(parse_stmt("assume true; "));
         let b = cfg.add_node(parse_stmt("assume !true;"));
         let c = cfg.add_node(parse_stmt("int x;"));
-        let d = cfg.add_node(CfgNode::End);
+        let d = cfg.add_node(parse_stmt("int y;"));
+        let e = cfg.add_node(CfgNode::End);
 
         cfg.add_edge(s, a, ());
         cfg.add_edge(a, c, ());
         cfg.add_edge(c, a, ());
         cfg.add_edge(c, b, ());
-        
 
         cfg.add_edge(s, b, ());
-
         cfg.add_edge(b, d, ());
+        cfg.add_edge(d, e, ());
 
-        build_test("while (true) int x;", cfg);
+        build_test("while (true) int x; int y;", cfg);
     }
 }
