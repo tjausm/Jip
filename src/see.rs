@@ -1,10 +1,11 @@
-use crate::cfg::generate_cfg;
+use crate::ast::Statements;
+use crate::cfg::{generate_cfg, generate_dot_cfg};
 use crate::paths::{generate_execution_paths, Depth};
-use crate::z3::{Error, verify_path};
+use crate::z3::{Error, verify_path, print_formula};
 lalrpop_mod!(pub parser); // synthesized by LALRPOP
 
+use std::path::PathBuf;
 use std::fs;
-use std::path::Path;
 
 const PROG_CORRECT : &str = "Program is correct";
 
@@ -21,24 +22,46 @@ fn print_result(r: Result<(), Error>) -> (ExitCode, String) {
     }
 }
 
-pub fn verify_file_and_print(program: &Path, d: Depth) -> (ExitCode, String) {
-    return print_result(verify_file(program, d)); 
-}
-
-pub fn verify_file(program: &Path, d : Depth) -> Result<(), Error> {
+pub fn load_program(program: String) -> Result<String, (ExitCode, String)> {
     match fs::read_to_string(program) {
-        Err(why) => Err(Error::Other(format!("{}", why))),
-        Ok(content) => verify_string(&content, d) 
+        Err(why) => Err(print_result(Err(Error::Other(format!("{}", why))))),
+        Ok(content) => Ok(content) 
     }
-} 
-
-pub fn verify_string_and_print(program: &str, d: Depth) -> (ExitCode, String) {
-    return print_result(verify_string(program, d));
 }
 
-pub fn verify_string(program: &str, d: Depth) -> Result<(), Error> {
-    match parser::StatementsParser::new().parse(program) {
-        Err(pe) => return Err(Error::Syntax(format!("{}", pe))),
+pub fn print_cfg(program: &str) -> (ExitCode, String) {
+    match parse_program(program) {
+        Err(why) => print_result(Err(why)),
+        Ok(stmts) => (0, generate_dot_cfg(stmts))
+    }
+}
+
+pub fn print_formulas(program: &str, d:Depth) -> (ExitCode, String){
+    match parse_program(program) {
+        Err(pe) => return print_result(Err(pe)),
+        Ok(stmts) => {
+            let (start_node, cfg) = generate_cfg(stmts);
+            for path in generate_execution_paths(start_node, cfg, d) {
+                match print_formula(path) {
+                    Ok(formula) => println!("{}", formula),
+                    Err(err) => return print_result(Err(err)),
+                }
+            }
+        }
+    }
+    return (0, "".to_string());
+
+}
+
+pub fn print_verification(program: &str, d: Depth) -> (ExitCode, String) {
+    return print_result(verify(program, d));
+}
+
+
+
+fn verify(program: &str, d: Depth) -> Result<(), Error> {
+    match parse_program(program) {
+        Err(pe) => return Err(pe),
         Ok(stmts) => {
             let (start_node, cfg) = generate_cfg(stmts);
             for path in generate_execution_paths(start_node, cfg, d) {
@@ -51,6 +74,14 @@ pub fn verify_string(program: &str, d: Depth) -> Result<(), Error> {
     }
     return Ok(());
 }
+
+fn parse_program(program:&str) -> Result<Statements, Error> {
+    match parser::StatementsParser::new().parse(program) {
+        Err(pe) => return Err(Error::Syntax(format!("{}", pe))),
+        Ok(stmts) => {return Ok(stmts)}
+        }
+    }
+
 
 // put parser test here since parser mod is auto-generated
 #[cfg(test)]

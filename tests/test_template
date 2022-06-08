@@ -2,8 +2,9 @@
 fn {name}() {{
     let mut cmd = Command::cargo_bin("jip").unwrap();
     let assert = cmd
-        .arg("verify-file")
+        .arg("file")
         .arg(r#"{path}"#)
+        .arg("verify-program")
         .assert();
     assert
         .code(0);

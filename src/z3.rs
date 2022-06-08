@@ -22,6 +22,19 @@ enum Variable<'a> {
     Bool(Bool<'a>),
 }
 
+pub fn print_formula<'a>(path: ExecutionPath) -> Result<String, Error> {
+    //init the 'accounting' z3 needs
+    let cfg = Config::new();
+    let ctx = Context::new(&cfg);
+
+    //calculate variable hashmap and formula representing our path
+    let env: HashMap<&String, Variable> = build_env(&ctx, &path);
+    let formula = match path_to_formula(&ctx, &path, &env) {
+        Ok(formula) => return Ok(format!("{}", &formula.not())),
+        Err(why) => return Err(why),
+    };
+}
+
 pub fn verify_path<'a>(path: ExecutionPath) -> Result<(), Error> {
     //init the 'accounting' z3 needs
     let cfg = Config::new();
@@ -36,12 +49,9 @@ pub fn verify_path<'a>(path: ExecutionPath) -> Result<(), Error> {
 
     //negate formula to 'disprove' validity of path
     let solver = Solver::new(&ctx);
-    solver.assert(&formula.not());
+    solver.assert(&formula);
     let result = solver.check();
     let model = solver.get_model();
-
-    //let debug_formula = format!("{:?}", &formula.not());
-    //println!("{}", debug_formula);
 
     match (result, model) {
         (SatResult::Unsat, _) => return Ok(()),
@@ -140,7 +150,7 @@ fn path_to_formula<'ctx>(
             }
         }
     }
-    return Ok(formula);
+    return Ok(formula.not());
 }
 
 fn expression_to_bool<'ctx>(

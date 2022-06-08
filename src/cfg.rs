@@ -2,6 +2,7 @@ lalrpop_mod!(pub parser); // synthesized by LALRPOP
 
 use crate::ast::*;
 use petgraph::graph::{Graph, NodeIndex};
+use petgraph::dot::Dot; 
 
 #[derive(Debug)]
 pub enum CfgNode {
@@ -11,6 +12,12 @@ pub enum CfgNode {
 }
 
 pub type CFG = Graph<CfgNode, ()>;
+
+// generates cfg in vizualizable Dot format(visualizable at http://viz-js.com/)
+pub fn generate_dot_cfg(stmts: Statements) -> String{
+    let (_,cfg) = generate_cfg(stmts);
+    return format!("{:?}", Dot::new(&cfg));
+}
 
 // fuctions as the set-up for the recursive  stmts_to_cfg function
 // returns cfg, and the start_node for search algorithms
@@ -121,7 +128,7 @@ mod tests {
 
     use super::*;
     use petgraph::algo::is_isomorphic;
-    use petgraph::dot::Dot; //for transforming graph to image
+
     lalrpop_mod!(pub parser);
 
     fn parse_stmt(i: &str) -> CfgNode {
@@ -131,7 +138,7 @@ mod tests {
     fn build_test(input: &str, correct_cfg: CFG) {
         let stmts = parser::StatementsParser::new().parse(input).unwrap();
         let (_, generated_cfg) = generate_cfg(stmts);
-        //print visualizable graph in case of failure (visualizable at http://viz-js.com/)
+        
         println!("Generated cfg: \n{:?}", Dot::new(&generated_cfg));
         println!("Correct cfg: \n{:?}", Dot::new(&correct_cfg));
         assert!(is_isomorphic(&generated_cfg, &correct_cfg));
