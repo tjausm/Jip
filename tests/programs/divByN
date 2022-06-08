@@ -1,0 +1,13 @@
+int x;
+int k;
+bool divisible;
+assume x > 1;
+divisible := false;
+while (k <= x && !divisible) {
+    int i;
+    while (i < 20) i := i + 1;
+    divisible := (i * k == x);
+}
+k := k + 1
+assert (divisible == (exists m ::))
+

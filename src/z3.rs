@@ -1,6 +1,6 @@
 extern crate z3;
 
-use z3::ast::{Ast, Bool, Int};
+use z3::ast::{Ast, Bool, Dynamic, Int};
 use z3::{ast, AstKind, Config, Context, SatResult, Solver};
 
 use std::collections::HashMap;
@@ -9,11 +9,12 @@ use std::rc::Rc;
 use crate::ast::*;
 use crate::paths::ExecutionPath;
 
+#[derive(Debug)]
 pub enum Error {
     Syntax(String),
     Semantics(String),
     Verification(String),
-    Other(String)
+    Other(String),
 }
 
 #[derive(Debug, Clone)]
@@ -61,7 +62,11 @@ pub fn verify_path<'a>(path: ExecutionPath) -> Result<(), Error> {
                 model
             )))
         }
-        _ => return Err(Error::Verification("Huh, verification gave an unkown result".to_string())),
+        _ => {
+            return Err(Error::Verification(
+                "Huh, verification gave an unkown result".to_string(),
+            ))
+        }
     };
 }
 
@@ -104,43 +109,52 @@ fn path_to_formula<'ctx>(
                             // TODO: refactor this to avoid duplicate code on adding a type
                             // (tried this once but can't get the types right here without boxing and unboxing alot)
                             Some(Variable::Int(l_ast)) => {
-                                let r_ast = match expression_to_int(&ctx, Rc::clone(&rc_env), rhs) {
-                                    Ok(r_ast) => r_ast,
+                                let r_ast = expression_to_dynamic(&ctx, Rc::clone(&rc_env), rhs)
+                                    .and_then(as_int_or_error);
+
+                                match r_ast {
+                                    Ok(r_ast) => formula = formula.substitute(&[(l_ast, &r_ast)]),
                                     Err(why) => return Err(why),
                                 };
-                                let substitutions = &[(l_ast, &r_ast)];
-                                formula = formula.substitute(substitutions);
                             }
                             Some(Variable::Bool(l_ast)) => {
-                                let r_ast = match expression_to_bool(&ctx, Rc::clone(&rc_env), rhs)
-                                {
-                                    Ok(r_ast) => r_ast,
+                                let r_ast = expression_to_dynamic(&ctx, Rc::clone(&rc_env), rhs)
+                                    .and_then(as_bool_or_error);
+
+                                match r_ast {
+                                    Ok(r_ast) => formula = formula.substitute(&[(l_ast, &r_ast)]),
                                     Err(why) => return Err(why),
                                 };
-                                let substitutions = &[(l_ast, &r_ast)];
-                                formula = formula.substitute(substitutions);
                             }
-                            None => return Err(Error::Semantics(format!("Variable {} is undeclared", id))),
+                            None => {
+                                return Err(Error::Semantics(format!(
+                                    "Variable {} is undeclared",
+                                    id
+                                )))
+                            }
                         }
                     }
                 }
             }
             Statement::Assert(expr) => {
                 let rc_env = Rc::new(env);
-                let ast = match expression_to_bool(&ctx, Rc::clone(&rc_env), expr) {
-                    Ok(ast) => ast,
+                let ast = expression_to_dynamic(&ctx, Rc::clone(&rc_env), expr)
+                    .and_then(as_bool_or_error);
+
+                match ast {
+                    Ok(ast) => formula = Bool::and(&ctx, &[&ast, &formula]),
                     Err(why) => return Err(why),
                 };
-
-                formula = Bool::and(&ctx, &[&ast, &formula])
             }
             Statement::Assume(expr) => {
                 let rc_env = Rc::new(env);
-                let ast = match expression_to_bool(&ctx, Rc::clone(&rc_env), expr) {
-                    Ok(ast) => ast,
+                let ast = expression_to_dynamic(&ctx, Rc::clone(&rc_env), expr)
+                    .and_then(as_bool_or_error);
+
+                match ast {
+                    Ok(ast) => formula = Bool::implies(&ast, &formula),
                     Err(why) => return Err(why),
                 };
-                formula = Bool::implies(&ast, &formula)
             }
             otherwise => {
                 return Err(Error::Semantics(format!(
@@ -153,80 +167,124 @@ fn path_to_formula<'ctx>(
     return Ok(formula.not());
 }
 
-fn expression_to_bool<'ctx>(
+// deze functie implementeren as switchen tussen types teveel problemen oplevert (bijv bij implementeren Reals)
+fn expression_to_dynamic<'ctx>(
     ctx: &'ctx Context,
     env: Rc<&'ctx HashMap<&String, Variable<'ctx>>>,
     expr: &Expression,
-) -> Result<Bool<'ctx>, Error> {
+) -> Result<Dynamic<'ctx>, Error> {
     match expr {
-
         Expression::And(l_expr, r_expr) => {
-            let l = expression_to_bool(ctx, Rc::clone(&env), l_expr);
-            let r = expression_to_bool(ctx, env, r_expr);
+            let l = expression_to_dynamic(ctx, Rc::clone(&env), l_expr).and_then(as_bool_or_error);
+
+            let r = expression_to_dynamic(ctx, env, r_expr).and_then(as_bool_or_error);
+
             match flatten_tupple((l, r)) {
-                Ok((l, r)) => return Ok(Bool::and(ctx, &[&l, &r])),
+                Ok((l, r)) => return Ok(Dynamic::from(Bool::and(ctx, &[&l, &r]))),
                 Err(why) => return Err(why),
             }
         }
         Expression::Or(l_expr, r_expr) => {
-            let l = expression_to_bool(ctx, Rc::clone(&env), l_expr);
-            let r = expression_to_bool(ctx, env, r_expr);
+            let l = expression_to_dynamic(ctx, Rc::clone(&env), l_expr).and_then(as_bool_or_error);
+
+            let r = expression_to_dynamic(ctx, env, r_expr).and_then(as_bool_or_error);
+
             match flatten_tupple((l, r)) {
-                Ok((l, r)) => return Ok(Bool::or(ctx, &[&l, &r])),
+                Ok((l, r)) => return Ok(Dynamic::from(Bool::or(ctx, &[&l, &r]))),
                 Err(why) => return Err(why),
             }
         }
         // Because type of expression is unknown, and it must be known for _eq() we try all conversion functions
         Expression::EQ(l_expr, r_expr) => {
-            match (expression_to_int(ctx, Rc::clone(&env), l_expr), expression_to_int(ctx, Rc::clone(&env), r_expr)) {
-                (Ok(l), Ok(r)) => return Ok(l._eq(&r)),
-                _ => {
-                    let t = (expression_to_bool(ctx, Rc::clone(&env), l_expr), expression_to_bool(ctx, env, r_expr)); 
-                    match flatten_tupple(t) {
-                        Ok((l,r)) => return Ok(l._eq(&r)),
-                        Err(why) => return Err(Error::Semantics(format!("Can't compare expressions {:?} and {:?} because they have different types", l_expr, r_expr)))
-                    }}
+            let l = expression_to_dynamic(ctx, Rc::clone(&env), l_expr);
+
+            let r = expression_to_dynamic(ctx, env, r_expr);
+
+            match flatten_tupple((l, r)) {
+                Ok((l, r)) => return Ok(Dynamic::from(l._eq(&r))),
+                Err(why) => return Err(why),
             }
         }
         Expression::LT(l_expr, r_expr) => {
-            let l = expression_to_int(ctx, Rc::clone(&env), l_expr);
-            let r = expression_to_int(ctx, env, r_expr);
+            let l = expression_to_dynamic(ctx, Rc::clone(&env), l_expr).and_then(as_int_or_error);
+
+            let r = expression_to_dynamic(ctx, env, r_expr).and_then(as_int_or_error);
+
             match flatten_tupple((l, r)) {
-                Ok((l, r)) => return Ok(l.lt(&r)),
+                Ok((l, r)) => return Ok(Dynamic::from(l.lt(&r))),
                 Err(why) => Err(why),
             }
         }
         Expression::GT(l_expr, r_expr) => {
-            let l = expression_to_int(ctx, Rc::clone(&env), l_expr);
-            let r = expression_to_int(ctx, env, r_expr);
+            let l = expression_to_dynamic(ctx, Rc::clone(&env), l_expr).and_then(as_int_or_error);
+
+            let r = expression_to_dynamic(ctx, env, r_expr).and_then(as_int_or_error);
+
             match flatten_tupple((l, r)) {
-                Ok((l, r)) => return Ok(l.gt(&r)),
+                Ok((l, r)) => return Ok(Dynamic::from(l.gt(&r))),
                 Err(why) => Err(why),
             }
         }
         Expression::GEQ(l_expr, r_expr) => {
-            let l = expression_to_int(ctx, Rc::clone(&env), l_expr);
-            let r = expression_to_int(ctx, env, r_expr);
+            let l = expression_to_dynamic(ctx, Rc::clone(&env), l_expr).and_then(as_int_or_error);
+
+            let r = expression_to_dynamic(ctx, env, r_expr).and_then(as_int_or_error);
+
             match flatten_tupple((l, r)) {
-                Ok((l, r)) => return Ok(l.ge(&r)),
+                Ok((l, r)) => return Ok(Dynamic::from(l.ge(&r))),
                 Err(why) => Err(why),
             }
         }
         Expression::LEQ(l_expr, r_expr) => {
-            let l = expression_to_int(ctx, Rc::clone(&env), l_expr);
-            let r = expression_to_int(ctx, env, r_expr);
+            let l = expression_to_dynamic(ctx, Rc::clone(&env), l_expr).and_then(as_int_or_error);
+
+            let r = expression_to_dynamic(ctx, env, r_expr).and_then(as_int_or_error);
             match flatten_tupple((l, r)) {
-                Ok((l, r)) => return Ok(l.le(&r)),
+                Ok((l, r)) => return Ok(Dynamic::from(l.le(&r))),
                 Err(why) => Err(why),
             }
         }
-        Expression::Not(expr) => match expression_to_bool(ctx, env, expr) {
-            Ok(expr) => return Ok(expr.not()),
-            otherwise => return otherwise,
+        Expression::Not(expr) => {
+            let expr = expression_to_dynamic(ctx, env, expr).and_then(as_bool_or_error);
+
+            match expr {
+                Ok(expr) => return Ok(Dynamic::from(expr.not())),
+                Err(err) => return Err(err),
+            }
+        }
+        Expression::Minus(l_expr, r_expr) => {
+            let l = expression_to_dynamic(ctx, Rc::clone(&env), l_expr).and_then(as_int_or_error);
+
+            let r = expression_to_dynamic(ctx, env, r_expr).and_then(as_int_or_error);
+
+            match flatten_tupple((l, r)) {
+                Ok((l, r)) => return Ok(Dynamic::from(ast::Int::sub(&ctx, &[&l, &r]))),
+                Err(why) => return Err(why),
+            }
+        }
+        Expression::Identifier(id) => match env.get(id) {
+            Some(var) => match var {
+                Variable::Int(i) => {
+                    //klopt dit, moet ik niet de reference naar de variable in de env passen?
+                    return Ok(Dynamic::from(i.clone()));
+                }
+                _ => {
+                    return Err(Error::Semantics(format!(
+                        "can't convert {:?} to an int",
+                        var
+                    )));
+                }
+            },
+            None => {
+                return Err(Error::Semantics(format!("Variable {} is undeclared", id)));
+            }
         },
+        Expression::Literal(Literal::Integer(n)) => {
+            return Ok(Dynamic::from(ast::Int::from_i64(ctx, *n)))
+        }
         otherwise => {
             return Err(Error::Semantics(format!(
-                "Expressions of the form {:?} should not be in a boolean expression",
+                "Expressions of the form {:?} should not be in an expression",
                 otherwise
             )));
         }
@@ -234,9 +292,7 @@ fn expression_to_bool<'ctx>(
 }
 
 //flatten result to ok, or the first error encountered
-fn flatten_tupple<'ctx, A>(
-    (l, r): (Result<A, Error>, Result<A, Error>),
-) -> Result<(A, A), Error> {
+fn flatten_tupple<'ctx, A>((l, r): (Result<A, Error>, Result<A, Error>)) -> Result<(A, A), Error> {
     match (l, r) {
         (Ok(l), Ok(r)) => return Ok((l, r)),
         (Ok(l), Err(r_err)) => return Err(r_err),
@@ -244,43 +300,25 @@ fn flatten_tupple<'ctx, A>(
     }
 }
 
-fn expression_to_int<'ctx>(
-    ctx: &'ctx Context,
-    env: Rc<&'ctx HashMap<&String, Variable<'ctx>>>,
-    expr: &Expression,
-) -> Result<Int<'ctx>, Error> {
-    match expr {
-        Expression::Minus(l_expr, r_expr) => {
-            let l = expression_to_int(ctx, Rc::clone(&env), l_expr);
-            let r = expression_to_int(ctx, env, r_expr);
-            match flatten_tupple((l, r)) {
-                Ok((l, r)) => return Ok(ast::Int::sub(&ctx, &[&l, &r])),
-                Err(why) => return Err(why),
-            }       
-        }
-        Expression::Identifier(id) => match env.get(id) {
-            Some(var) => match var {
-                Variable::Int(i) => {
-                    //klopt dit, moet ik niet de reference naar de variable in de env passen?
-                    return Ok(i.clone());
-                }
-                _ => {
-                    return Err(Error::Semantics(format!("can't convert {:?} to an int", var)));
-                }
-            },
-            None => {
-                return Err(Error::Semantics(format!("Variable {} is undeclared", id)));
-            }
-        },
-        Expression::Literal(Literal::Integer(n)) => { 
-            return Ok(ast::Int::from_i64(ctx, *n))},
-        otherwise => {
-            return Err(Error::Semantics(format!(
-                "Expressions of the form {:?} should not be in an integer expression",
-                otherwise
-            )));
-        }
-    };
+fn flatten2<'ctx, A>(r: (Result<Result<A, Error>, Error>)) -> Result<A, Error> {
+    match r {
+        Ok(r) => r,
+        Err(err) => Err(err),
+    }
+}
+
+fn as_bool_or_error<'ctx>(d: Dynamic<'ctx>) -> Result<Bool<'ctx>, Error> {
+    match d.as_bool() {
+        Some(b) => Ok(b),
+        None => Err(Error::Semantics(format!("{} is not of type Bool", d))),
+    }
+}
+
+fn as_int_or_error<'ctx>(d: Dynamic<'ctx>) -> Result<Int<'ctx>, Error> {
+    match d.as_int() {
+        Some(b) => Ok(b),
+        None => Err(Error::Semantics(format!("{} is not of type Int", d))),
+    }
 }
 
 #[cfg(test)]

@@ -56,6 +56,10 @@ pub type Ite = (Expression, Box<Statement>, Box<Statement>);
 #[derive(Debug, Clone)]
 pub enum Expression {
 
+    //expression1
+    Forall(Box<Expression>, Box<Expression>),
+    Exists(Box<Expression>, Box<Expression>),
+
     //expression3
     And(Box<Expression>, Box<Expression>),
     Or(Box<Expression>, Box<Expression>),
