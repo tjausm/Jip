@@ -300,13 +300,6 @@ fn flatten_tupple<'ctx, A>((l, r): (Result<A, Error>, Result<A, Error>)) -> Resu
     }
 }
 
-fn flatten2<'ctx, A>(r: (Result<Result<A, Error>, Error>)) -> Result<A, Error> {
-    match r {
-        Ok(r) => r,
-        Err(err) => Err(err),
-    }
-}
-
 fn as_bool_or_error<'ctx>(d: Dynamic<'ctx>) -> Result<Bool<'ctx>, Error> {
     match d.as_bool() {
         Some(b) => Ok(b),

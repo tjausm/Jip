@@ -1,14 +1,25 @@
 lalrpop_mod!(pub parser); // synthesized by LALRPOP
 
+use std::fmt;
 use crate::ast::*;
 use petgraph::graph::{Graph, NodeIndex};
 use petgraph::dot::Dot; 
 
-#[derive(Debug)]
 pub enum CfgNode {
     Start,
     Statement(Statement),
     End,
+}
+
+impl fmt::Debug for CfgNode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            CfgNode::Start => write!(f, "Start"),
+            CfgNode::Statement(stmt) => write!(f, "{:?}", stmt),
+            CfgNode::End => write!(f, "End"),
+        }
+
+    }
 }
 
 pub type CFG = Graph<CfgNode, ()>;
