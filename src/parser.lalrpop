@@ -95,7 +95,7 @@ Expression6 : Expression = {
 }
 
 Expression7 : Expression = {
-    <l:Expression8> "*" <r:Expression7> => Expression::Times(Box::new(l), Box::new(r)),
+    <l:Expression8> "*" <r:Expression7> => Expression::Multiply(Box::new(l), Box::new(r)),
     <l:Expression8> "/" <r:Expression7> => Expression::Divide(Box::new(l), Box::new(r)),
     <l:Expression8> "%" <r:Expression7> => Expression::Mod(Box::new(l), Box::new(r)),
     Expression8

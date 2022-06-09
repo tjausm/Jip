@@ -80,7 +80,7 @@ pub enum Expression {
     Minus(Box<Expression>, Box<Expression>),
     
     //Expression7
-    Times(Box<Expression>, Box<Expression>),
+    Multiply(Box<Expression>, Box<Expression>),
     Divide(Box<Expression>, Box<Expression>),
     Mod(Box<Expression>, Box<Expression>),
 
@@ -133,7 +133,7 @@ impl fmt::Debug for Expression {
             Expression::LEQ(l_expr, r_expr) => write!(f, "{:?} >= {:?}", l_expr, r_expr),
             Expression::Plus(l_expr, r_expr) => write!(f, "{:?} + {:?}", l_expr, r_expr),
             Expression::Minus(l_expr, r_expr) => write!(f, "{:?} - {:?}", l_expr, r_expr),
-            Expression::Times(l_expr, r_expr) => write!(f, "{:?} * {:?}", l_expr, r_expr),
+            Expression::Multiply(l_expr, r_expr) => write!(f, "{:?} * {:?}", l_expr, r_expr),
             Expression::Divide(l_expr, r_expr) => write!(f, "{:?} / {:?}", l_expr, r_expr),
             Expression::Mod(l_expr, r_expr) => write!(f, "{:?} % {:?}", l_expr, r_expr),
             Expression::Negative(expr) => write!(f, "-{:?}", expr),
