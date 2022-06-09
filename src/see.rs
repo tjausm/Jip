@@ -4,7 +4,6 @@ use crate::paths::{generate_execution_paths, Depth};
 use crate::z3::{Error, verify_path, print_formula};
 lalrpop_mod!(pub parser); // synthesized by LALRPOP
 
-use std::path::PathBuf;
 use std::fs;
 
 const PROG_CORRECT : &str = "Program is correct";

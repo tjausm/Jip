@@ -2,7 +2,6 @@
 extern crate lalrpop_util;
 
 use clap::{ArgEnum, Parser, Subcommand};
-use std::path::Path;
 use std::process::exit;
 
 // module declarations

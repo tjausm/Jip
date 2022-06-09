@@ -1,7 +1,7 @@
 extern crate z3;
 
 use z3::ast::{Ast, Bool, Dynamic, Int};
-use z3::{ast, AstKind, Config, Context, SatResult, Solver};
+use z3::{ast, Config, Context, SatResult, Solver};
 
 use std::collections::HashMap;
 use std::rc::Rc;
