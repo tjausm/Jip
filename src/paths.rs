@@ -1,10 +1,9 @@
 use crate::ast::*;
 use crate::cfg::{generate_cfg, CFG, CfgNode};
 
-use petgraph::graph::{Graph, NodeIndex, EdgeReference};
-use petgraph::visit::{ EdgeRef};
-use petgraph::dot::Dot; //for transforming graph to image
-use std::rc::Rc;
+use petgraph::graph::{NodeIndex};
+use petgraph::visit::{EdgeRef};
+
 use std::collections::VecDeque;
 
 pub type ExecutionPath = Vec<Statement>;

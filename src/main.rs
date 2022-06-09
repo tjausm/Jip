@@ -18,23 +18,33 @@ struct Cli {
     /// How to load the program
     #[clap(arg_enum)]
     load_mode: LoadMode,
-    // Filepath or program as string
+
+    /// Filepath or program as string
     program: String,
 
     /// Print cfg in Dot format / print generated z3 formulas / verify program 
-    #[clap(arg_enum)]
+    #[clap(subcommand)]
     mode: Mode,
 
-    // Up to which depth program is evaluated
-    #[clap(default_value_t = 40)]
-    depth: paths::Depth,
+
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ArgEnum)]
+#[derive(Subcommand)]
 enum Mode {
-    PrintCFG,
-    PrintFormulas,
-    VerifyProgram,
+    /// Verify program and print result
+    VerifyProgram {
+        // Up to which depth program is evaluated
+        #[clap(default_value_t = 40)]
+        depth: paths::Depth,
+    },
+    /// Print generated z3 formulas
+    PrintFormulas {
+        // Up to which depth program is evaluated
+        #[clap(default_value_t = 40)]
+        depth: paths::Depth,
+    },
+    /// Print cfg in Dot format
+    PrintCFG
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ArgEnum)]
@@ -50,6 +60,7 @@ fn main() {
         exit(exit_code);
     };
 
+    // attempt to load program, and exit with exitcode and error if fails
     let program = match cli.load_mode {
         LoadMode::File => match see::load_program(cli.program) {
             Err(why) => exit(why),
@@ -57,9 +68,11 @@ fn main() {
         },
         LoadMode::String => cli.program,
     };
+
+    // if program loaded execute function corresponding to cmd and exit with the result
     match cli.mode {
         Mode::PrintCFG => exit(see::print_cfg(&program)),
-        Mode::PrintFormulas => exit(see::print_formulas(&program, cli.depth)),
-        Mode::VerifyProgram => exit(see::print_verification(&program, cli.depth)),
+        Mode::PrintFormulas {depth} => exit(see::print_formulas(&program, depth)),
+        Mode::VerifyProgram {depth} => exit(see::print_verification(&program, depth)),
     };
 }
