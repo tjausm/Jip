@@ -71,7 +71,6 @@ pub mod tests {
     }
 
     pub const MAX: &str = "int x; int y; int z; if (x >= y) z := x; else z := y; assert z >= x && z >= y;";
-    pub const FAULTY_MAX: &str = "int x; int y; int z; if (y >= x) z := x; else z := y; assert z >= x && z >= y;";
 
     #[test]
     fn max_function() {

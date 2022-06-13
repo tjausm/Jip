@@ -1,9 +1,9 @@
 lalrpop_mod!(pub parser); // synthesized by LALRPOP
 
-use std::fmt;
 use crate::ast::*;
+use petgraph::dot::Dot;
 use petgraph::graph::{Graph, NodeIndex};
-use petgraph::dot::Dot; 
+use std::fmt;
 
 pub enum CfgNode {
     Start,
@@ -18,15 +18,14 @@ impl fmt::Debug for CfgNode {
             CfgNode::Statement(stmt) => write!(f, "{:?}", stmt),
             CfgNode::End => write!(f, "End"),
         }
-
     }
 }
 
 pub type CFG = Graph<CfgNode, ()>;
 
 // generates cfg in vizualizable Dot format(visualizable at http://viz-js.com/)
-pub fn generate_dot_cfg(stmts: Statements) -> String{
-    let (_,cfg) = generate_cfg(stmts);
+pub fn generate_dot_cfg(stmts: Statements) -> String {
+    let (_, cfg) = generate_cfg(stmts);
     return format!("{:?}", Dot::new(&cfg));
 }
 
@@ -110,8 +109,23 @@ fn stmts_to_cfgp(
                 // add edges from end of while body to begin and edge from while body to rest of stmts
                 cfg.add_edge(body_ending, assume_node, ());
                 cfg.add_edge(body_ending, assume_not_node, ());
-                
                 return (vec![assume_node, assume_not_node], end_remainder, cfg);
+            }
+            // split declareAssign to sequential 2 nodes (declaration & assignment)
+            Statement::DeclareAssign((t, id, rhs)) => {
+                let declare_node = cfg.add_node(CfgNode::Statement(Statement::Declaration((
+                    t,
+                    (&id).to_string(),
+                ))));
+                let assign_node = cfg.add_node(CfgNode::Statement(Statement::Assignment((
+                    Lhs::Identifier(id),
+                    rhs,
+                ))));
+                for start_node in start_nodes {
+                    cfg.add_edge(start_node, declare_node, ());
+                }
+                cfg.add_edge(declare_node, assign_node, ());
+                return stmts_to_cfgp(*stmts, cfg, vec![assign_node], ending_node);
             }
             //add edge from start to stmt and recurse
             other => {
@@ -149,7 +163,6 @@ mod tests {
     fn build_test(input: &str, correct_cfg: CFG) {
         let stmts = parser::StatementsParser::new().parse(input).unwrap();
         let (_, generated_cfg) = generate_cfg(stmts);
-        
         println!("Generated cfg: \n{:?}", Dot::new(&generated_cfg));
         println!("Correct cfg: \n{:?}", Dot::new(&correct_cfg));
         assert!(is_isomorphic(&generated_cfg, &correct_cfg));

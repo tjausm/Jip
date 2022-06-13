@@ -91,6 +91,8 @@ mod tests {
     #[test]
     fn assignment() {
         assert!(parser::StatementsParser::new().parse("x := 2;").is_ok());
+        assert!(parser::StatementsParser::new().parse("divisible := (i * k == x);").is_ok());
+        assert!(parser::StatementsParser::new().parse("int x := 2;").is_ok());
     }
 
     #[test]

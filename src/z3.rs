@@ -70,7 +70,8 @@ pub fn verify_path<'a>(path: ExecutionPath) -> Result<(), Error> {
     };
 }
 
-//optimise idea: pass program and build env once
+// building the env during evaluation requires to do multiple immutable and mutable borrows
+// for this to work we need some magic with lifetimes which I haven't been able to figure out..
 fn build_env<'ctx, 'p>(
     ctx: &'ctx Context,
     path: &'p ExecutionPath,

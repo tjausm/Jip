@@ -1,0 +1,10 @@
+class Main {
+    static void main(){
+        int x := 3;
+        Main.test();
+        assert x == 3;
+    }
+    static void test(){
+        int x := 2;
+    }
+}

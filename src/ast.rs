@@ -1,9 +1,32 @@
 use std::fmt;
+/*
+use non_empty_vec::NonEmpty;
 
 //naming convention:
 // - syntactical labels are taken as is from Stefan's thesis
 // - each syntactical label's first symbol is transformed to uppercase (program -> Program)
 // - labels with only 1 ´option´ are type aliases, , 1 < options are enums
+
+type Program = Vec<Class>;
+
+type Class = (Identifier, Vec<Member>);
+
+pub enum Member {
+    //Constructor(Constructor),
+    Method(Method),
+    //Field(Field)
+}
+
+pub enum Method {
+    Static(Methodcontent),
+    Nonstatic(Methodcontent)
+}
+
+type Methodcontent = (Type, Identifier, Body);
+
+type Body = NonEmpty<Statement>;
+*/
+
 
 #[derive(Debug, Clone)]
 pub enum Statements {
@@ -13,6 +36,7 @@ pub enum Statements {
 
 #[derive(Clone)]
 pub enum Statement {
+    DeclareAssign(DeclareAssign),
     Declaration(Declaration),
     Assignment(Assignment),
     Ite(Ite),
@@ -22,11 +46,19 @@ pub enum Statement {
     While(While)
 }
 
+// Todo: add to syntax & semantics in thesis
+pub type DeclareAssign = (Nonvoidtype, Identifier, Rhs);
+
 pub type Declaration = (Nonvoidtype, Identifier);
 
 pub type While = (Expression, Box<Statement>);
 
-#[derive(Debug, Clone)]
+pub enum Type {
+    Void,
+    Nonvoidtype(Nonvoidtype)
+}
+
+#[derive(Clone)]
 pub enum Nonvoidtype {
     Primitivetype(Primitivetype),
 }
@@ -59,6 +91,9 @@ pub enum Expression {
     //expression1
     Forall(Identifier, Box<Expression>),
     Exists(Identifier, Box<Expression>),
+    
+    //expression2
+    Implies(Box<Expression>, Box<Expression>),
 
     //expression3
     And(Box<Expression>, Box<Expression>),
@@ -105,8 +140,8 @@ impl fmt::Debug for Statement {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         
         match self {
-            Statement::Declaration((Nonvoidtype::Primitivetype(Primitivetype::Bool), id)) => write!(f, "Bool {};", id),
-            Statement::Declaration((Nonvoidtype::Primitivetype(Primitivetype::Int), id)) => write!(f, "Int {};", id),
+            Statement::DeclareAssign((t, id, rhs)) => write!(f, "{:?} {:?}", t, Statement::Assignment((Lhs::Identifier(id.to_string()), rhs.clone()))),
+            Statement::Declaration((t, id)) => write!(f, "{:?} {};", t, id),
             Statement::Assignment((Lhs::Identifier(id), Rhs::Expr(expr))) => write!(f, "{} := {:?};", id, expr),
             Statement::Ite((cond, if_expr, else_expr)) => write!(f, "if ({:?}) then {:?} else {:?}", cond, if_expr, else_expr),
             Statement::Block(stmts) => write!(f, "{{ {:?} }}", stmts),
@@ -123,6 +158,7 @@ impl fmt::Debug for Expression {
         match self {
             Expression::Forall(id, body) => write!(f, "forall {} : {:?}", id, body),
             Expression::Exists(id, body) => write!(f, "exists {} : {:?}", id, body),
+            Expression::Implies(l_expr, r_expr) => write!(f, "{:?} ==> {:?}", l_expr, r_expr),
             Expression::And(l_expr, r_expr) => write!(f, "{:?} && {:?}", l_expr, r_expr),
             Expression::Or(l_expr, r_expr) => write!(f, "{:?} || {:?}", l_expr, r_expr),
             Expression::EQ(l_expr, r_expr) => write!(f, "{:?} == {:?}", l_expr, r_expr),
@@ -141,6 +177,16 @@ impl fmt::Debug for Expression {
             Expression::Identifier(id) => write!(f, "{}", id),
             Expression::Literal(Literal::Boolean(val)) => write!(f, "{:?}", val),
             Expression::Literal(Literal::Integer(val)) => write!(f, "{:?}", val),
+        }   
+
+    }
+}
+impl fmt::Debug for Nonvoidtype {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        
+        match self {
+            Nonvoidtype::Primitivetype(Primitivetype::Bool) => write!(f, "bool"),
+            Nonvoidtype::Primitivetype(Primitivetype::Int) => write!(f, "int"),
         }   
 
     }

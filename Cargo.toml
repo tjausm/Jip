@@ -16,5 +16,5 @@ regex = "1"
 petgraph = "0.5.1"
 z3 = {version="0.11.2", features = ["static-link-z3"]}
 clap = { version = "3.1.18", features = ["derive"] }
-assert_cmd = "2.0.4"
-predicates = "2.1.1"
+assert_cmd = "2.0.4" #integration testing through cmd line
+non-empty-vec = "0.2.3" #to represent non-empty structures in syntax 
