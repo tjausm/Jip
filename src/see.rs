@@ -138,6 +138,14 @@ mod tests {
             .parse("while (1 < 2) x := y;")
             .is_ok());
     }
+    #[test]
+    fn Program() {
+        assert!(parser::ProgramParser::new()
+            .parse("class Main {static void main(){int x := 2;}}")
+            .is_ok());
+    }
+
+
 
     #[test]
     fn faulty_input() {

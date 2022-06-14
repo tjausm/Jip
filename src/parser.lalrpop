@@ -3,10 +3,37 @@ use crate::ast::*;
 
 grammar;
 
-pub Statements : Statements = {
-    <s:Statement> <ss:Statements> => Statements::Cons(s, Box::new(ss)),
-    () => Statements::Nil
+pub Program = <Class*>; 
+
+Class : Class = "class" <Identifier> "{" <Member*> "}";
+
+Member : Member = {
+    Method => Member::Method(<>),
 }
+
+Method : Method = {
+    "static" <Type> <Identifier> "()" <Body> => Method::Static((<>)),
+    <Type> <Identifier> "()" <Body> => Method::Nonstatic((<>)),
+}
+
+Body : Statements = "{" <Statement+> "}";
+
+Type : Type = {
+    "void" => Type::Void,
+    Nonvoidtype
+}
+
+Nonvoidtype : Type = {
+    Primitivetype,
+}
+
+Primitivetype : Type = {
+    "int" => Type::Int,
+    "bool" => Type::Bool 
+}
+
+
+pub Statements  = Statement*;
 
 pub Statement : Statement = {
     DeclareAssign => Statement::DeclareAssign(<>),
@@ -26,16 +53,6 @@ DeclareAssign : DeclareAssign = {
 Declaration : Declaration = {
     <l:Nonvoidtype> <r:Identifier> ";" => (<>)
 }
-
-Nonvoidtype : Nonvoidtype = {
-    Primitivetype => Nonvoidtype::Primitivetype(<>)
-}
-
-Primitivetype : Primitivetype = {
-    "int" => Primitivetype::Int,
-    "bool" => Primitivetype::Bool 
-}
-
 
 Assignment : Assignment = {
     <l:Lhs> ":=" <r:Rhs> ";" => (<>) 
@@ -61,21 +78,16 @@ Assert : Expression = {
     "assert" <s:VerificationExpression> ";" => (<>)
 }
 
-Assume : Expression = {
-    "assume" <s:VerificationExpression> ";" => (<>)
-}
+Assume : Expression = "assume" <VerificationExpression> ";";
 
-While : While = {
-    "while (" <v:Expression> ")" <s:Statement>  => (v, Box::new(s))
-}
+While : While = "while (" <v:Expression> ")" <s : Statement>  => (v, Box::new(s));
 
 Expression : Expression = {
     Expression2
 }
 
-pub VerificationExpression : Expression = {
-    Expression1
-}
+pub VerificationExpression : Expression = Expression1;
+
 
 pub Expression1 : Expression = {
     "forall" <id:Identifier> ":" <r:Expression1> => Expression::Forall(id, Box::new(r)),

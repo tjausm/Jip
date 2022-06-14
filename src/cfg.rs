@@ -31,7 +31,8 @@ pub fn generate_dot_cfg(stmts: Statements) -> String {
 
 // fuctions as the set-up for the recursive  stmts_to_cfg function
 // returns cfg, and the start_node for search algorithms
-pub fn generate_cfg(stmts: Statements) -> (NodeIndex, CFG) {
+pub fn generate_cfg(mut stmts: Statements) -> (NodeIndex, CFG) {
+    stmts.reverse(); //stmt_to_cfg requires reversed list
     let mut cfg = Graph::<CfgNode, ()>::new();
     let start_node = cfg.add_node(CfgNode::Start);
     let end_node = cfg.add_node(CfgNode::End);
@@ -62,17 +63,17 @@ fn stmt_to_cfgp(
     }
 }
 
-// recursively unpacks Statements and returns start, end and cfg itself
+// processes vec<Statement> in REVERSE order
 // adds edges from all passed start nodes to first node it generates from stmts
 // and adds edges from the last nodes it generates to the ending node if it is specified
 fn stmts_to_cfgp(
-    stmts: Statements,
+    mut stmts: Statements,
     mut cfg: CFG,
     start_nodes: Vec<NodeIndex>,
     ending_node: Option<NodeIndex>,
 ) -> (Vec<NodeIndex>, NodeIndex, CFG) {
-    match stmts {
-        Statements::Cons(stmt, stmts) => match stmt {
+    match stmts.pop() {
+        Some(stmt) => match stmt {
             Statement::Ite((cond, s1, s2)) => {
                 // add condition as assume and assume_not to the cfg
                 let assume = CfgNode::Statement(Statement::Assume(cond.clone()));
@@ -89,7 +90,7 @@ fn stmts_to_cfgp(
                 // add the if and else branch to the cfg
                 let (_, if_ending, cfg) = stmt_to_cfgp(*s1, cfg, assume_node, None);
                 let (_, else_ending, cfg) = stmt_to_cfgp(*s2, cfg, assume_not_node, None);
-                return stmts_to_cfgp(*stmts, cfg, vec![if_ending, else_ending], ending_node);
+                return stmts_to_cfgp(stmts, cfg, vec![if_ending, else_ending], ending_node);
             }
             Statement::While((cond, body)) => {
                 // add condition as assume and assume_not to the cfg
@@ -105,7 +106,7 @@ fn stmts_to_cfgp(
                 // calculate cfg for body of while and cfg for the remainder of the stmts
                 let (_, body_ending, cfg) = stmt_to_cfgp(*body, cfg, assume_node, None);
                 let (_, end_remainder, mut cfg) =
-                    stmts_to_cfgp(*stmts, cfg, vec![assume_not_node], ending_node);
+                    stmts_to_cfgp(stmts, cfg, vec![assume_not_node], ending_node);
                 // add edges from end of while body to begin and edge from while body to rest of stmts
                 cfg.add_edge(body_ending, assume_node, ());
                 cfg.add_edge(body_ending, assume_not_node, ());
@@ -125,7 +126,7 @@ fn stmts_to_cfgp(
                     cfg.add_edge(start_node, declare_node, ());
                 }
                 cfg.add_edge(declare_node, assign_node, ());
-                return stmts_to_cfgp(*stmts, cfg, vec![assign_node], ending_node);
+                return stmts_to_cfgp(stmts, cfg, vec![assign_node], ending_node);
             }
             //add edge from start to stmt and recurse
             other => {
@@ -133,10 +134,10 @@ fn stmts_to_cfgp(
                 for start_node in start_nodes {
                     cfg.add_edge(start_node, stmt_node, ());
                 }
-                return stmts_to_cfgp(*stmts, cfg, vec![stmt_node], ending_node);
+                return stmts_to_cfgp(stmts, cfg, vec![stmt_node], ending_node);
             }
         },
-        Statements::Nil => match ending_node {
+        None => match ending_node {
             Some(end_node) => {
                 for start_node in &start_nodes {
                     cfg.add_edge(*start_node, end_node, ());

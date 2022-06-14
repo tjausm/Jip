@@ -6,10 +6,16 @@ use non_empty_vec::NonEmpty;
 // - syntactical labels are taken as is from Stefan's thesis
 // - each syntactical label's first symbol is transformed to uppercase (program -> Program)
 // - labels with only 1 ´option´ are type aliases, , 1 < options are enums
+*/
 
-type Program = Vec<Class>;
+pub enum Program {
+    Cons(Class, Box<Class>),
+    Nil
+}
 
-type Class = (Identifier, Vec<Member>);
+pub type Class = (Identifier, Vec<Member>);
+
+pub type Members = Vec<Member>;
 
 pub enum Member {
     //Constructor(Constructor),
@@ -22,17 +28,9 @@ pub enum Method {
     Nonstatic(Methodcontent)
 }
 
-type Methodcontent = (Type, Identifier, Body);
+type Methodcontent = (Type, Identifier, Statements);
 
-type Body = NonEmpty<Statement>;
-*/
-
-
-#[derive(Debug, Clone)]
-pub enum Statements {
-    Cons(Statement, Box<Statements>),
-    Nil,
-}
+pub type Statements = Vec<Statement>;
 
 #[derive(Clone)]
 pub enum Statement {
@@ -47,27 +45,20 @@ pub enum Statement {
 }
 
 // Todo: add to syntax & semantics in thesis
-pub type DeclareAssign = (Nonvoidtype, Identifier, Rhs);
+pub type DeclareAssign = (Type, Identifier, Rhs);
 
-pub type Declaration = (Nonvoidtype, Identifier);
+pub type Declaration = (Type, Identifier);
 
 pub type While = (Expression, Box<Statement>);
 
+#[derive(Clone)]
 pub enum Type {
     Void,
-    Nonvoidtype(Nonvoidtype)
-}
-
-#[derive(Clone)]
-pub enum Nonvoidtype {
-    Primitivetype(Primitivetype),
-}
-
-#[derive(Debug, Clone)]
-pub enum Primitivetype {
     Int,
-    Bool,
+    Bool
 }
+ 
+//TODO: ga type alleen nog maar implementeren in parser en als 1 type opslaan uiteindelijk
 
 pub type Assignment = (Lhs, Rhs);
 
@@ -82,8 +73,6 @@ pub enum Rhs {
 }
 
 pub type Ite = (Expression, Box<Statement>, Box<Statement>);
-
-//Todo: change to Expr1 when implemented
 
 #[derive(Clone)]
 pub enum Expression {
@@ -181,12 +170,13 @@ impl fmt::Debug for Expression {
 
     }
 }
-impl fmt::Debug for Nonvoidtype {
+impl fmt::Debug for Type {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         
         match self {
-            Nonvoidtype::Primitivetype(Primitivetype::Bool) => write!(f, "bool"),
-            Nonvoidtype::Primitivetype(Primitivetype::Int) => write!(f, "int"),
+            Type::Void => write!(f, "void"),
+            Type::Bool => write!(f, "bool"),
+            Type::Int => write!(f, "int"),
         }   
 
     }

@@ -70,6 +70,7 @@ pub fn verify_path<'a>(path: ExecutionPath) -> Result<(), Error> {
     };
 }
 
+// TODO: change in result type to remove panic (that is, if I keep the env like this)
 // building the env during evaluation requires to do multiple immutable and mutable borrows
 // for this to work we need some magic with lifetimes which I haven't been able to figure out..
 fn build_env<'ctx, 'p>(
@@ -80,12 +81,13 @@ fn build_env<'ctx, 'p>(
     for stmt in path {
         match stmt {
             Statement::Declaration((ty, id)) => match ty {
-                Nonvoidtype::Primitivetype(Primitivetype::Int) => {
+                Type::Int => {
                     env.insert(id, Variable::Int(Int::new_const(&ctx, id.clone())));
                 }
-                Nonvoidtype::Primitivetype(Primitivetype::Bool) => {
+                Type::Bool => {
                     env.insert(id, Variable::Bool(Bool::new_const(&ctx, id.clone())));
-                }
+                },
+                weird_type => panic!("Huh, declaration of type {:?} can't be added to the env", weird_type)
             },
             _ => (),
         }
