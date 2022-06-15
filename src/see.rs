@@ -1,12 +1,13 @@
-use crate::ast::Statements;
+use crate::ast::Program;
 use crate::cfg::{generate_cfg, generate_dot_cfg};
+use crate::errors::Error;
 use crate::paths::{generate_execution_paths, Depth};
-use crate::z3::{Error, verify_path, print_formula};
+use crate::z3::{print_formula, verify_path};
 lalrpop_mod!(pub parser); // synthesized by LALRPOP
 
 use std::fs;
 
-const PROG_CORRECT : &str = "Program is correct";
+const PROG_CORRECT: &str = "Program is correct";
 
 // 0 = validated program, 1 = validation error, 2 = all other errors
 pub type ExitCode = i32;
@@ -17,70 +18,77 @@ fn print_result(r: Result<(), Error>) -> (ExitCode, String) {
         Err(Error::Semantics(why)) => (2, format!("Semantics error: {}", why)),
         Err(Error::Other(why)) => (2, format!("{}", why)),
         Err(Error::Verification(why)) => (1, format!("{}", why)),
-        Ok(_) => (0, PROG_CORRECT.to_string())
+        Ok(_) => (0, PROG_CORRECT.to_string()),
     }
 }
 
 pub fn load_program(program: String) -> Result<String, (ExitCode, String)> {
     match fs::read_to_string(program) {
         Err(why) => Err(print_result(Err(Error::Other(format!("{}", why))))),
-        Ok(content) => Ok(content) 
+        Ok(content) => Ok(content),
     }
 }
 
 pub fn print_cfg(program: &str) -> (ExitCode, String) {
     match parse_program(program) {
-        Err(why) => print_result(Err(why)),
-        Ok(stmts) => (0, generate_dot_cfg(stmts))
+        Err(parse_err) => print_result(Err(parse_err)),
+        Ok(stmts) => match generate_dot_cfg(stmts) {
+            Ok(cfg) => (0, cfg),
+            Err(sem_err) => print_result(Err(sem_err)),
+        },
     }
 }
 
-pub fn print_formulas(program: &str, d:Depth) -> (ExitCode, String){
+pub fn print_formulas(program: &str, d: Depth) -> (ExitCode, String) {
     match parse_program(program) {
-        Err(pe) => return print_result(Err(pe)),
+        Err(parse_err) => return print_result(Err(parse_err)),
         Ok(stmts) => {
-            let (start_node, cfg) = generate_cfg(stmts);
-            for path in generate_execution_paths(start_node, cfg, d) {
-                match print_formula(path) {
-                    Ok(formula) => println!("{}", formula),
-                    Err(err) => return print_result(Err(err)),
-                }
+            match generate_cfg(stmts) {
+                Ok((start_node, cfg)) => {
+                    for path in generate_execution_paths(start_node, cfg, d) {
+                        match print_formula(path) {
+                            Ok(formula) => println!("{}", formula),
+                            Err(err) =>  return print_result(Err(err)),
+                        }
+                    }
+                },
+                Err(sem_err) => return print_result(Err(sem_err))
             }
+
         }
     }
+    //if all formulas are printed we end with success exitcode and empty msg
     return (0, "".to_string());
-
 }
 
 pub fn print_verification(program: &str, d: Depth) -> (ExitCode, String) {
     return print_result(verify(program, d));
 }
 
-
-
 fn verify(program: &str, d: Depth) -> Result<(), Error> {
     match parse_program(program) {
-        Err(pe) => return Err(pe),
-        Ok(stmts) => {
-            let (start_node, cfg) = generate_cfg(stmts);
-            for path in generate_execution_paths(start_node, cfg, d) {
-                match verify_path(path) {
-                    Ok(_) => continue,
-                    Err(err) => return Err(err),
+        Err(parse_error) => return Err(parse_error),
+        Ok(prog) => match generate_cfg(prog) {
+            Ok((start_node, cfg)) => {
+                for path in generate_execution_paths(start_node, cfg, d) {
+                    match verify_path(path) {
+                        Ok(_) => continue,
+                        Err(verification_error) => return Err(verification_error),
+                    }
                 }
             }
-        }
+            Err(semantics_error) => return Err(semantics_error),
+        },
     }
     return Ok(());
 }
 
-fn parse_program(program:&str) -> Result<Statements, Error> {
-    match parser::StatementsParser::new().parse(program) {
-        Err(pe) => return Err(Error::Syntax(format!("{}", pe))),
-        Ok(stmts) => {return Ok(stmts)}
-        }
+fn parse_program(program: &str) -> Result<Program, Error> {
+    match parser::ProgramParser::new().parse(program) {
+        Err(parse_err) => return Err(Error::Syntax(format!("{}", parse_err))),
+        Ok(program) => return Ok(program),
     }
-
+}
 
 // put parser test here since parser mod is auto-generated
 #[cfg(test)]
@@ -91,18 +99,32 @@ mod tests {
     #[test]
     fn assignment() {
         assert!(parser::StatementsParser::new().parse("x := 2;").is_ok());
-        assert!(parser::StatementsParser::new().parse("divisible := (i * k == x);").is_ok());
+        assert!(parser::StatementsParser::new()
+            .parse("divisible := (i * k == x);")
+            .is_ok());
         assert!(parser::StatementsParser::new().parse("int x := 2;").is_ok());
     }
 
     #[test]
     fn expressions() {
-        assert!(parser::VerificationExpressionParser::new().parse("2 < 1").is_ok());
-        assert!(parser::VerificationExpressionParser::new().parse("!true && false").is_ok());
-        assert!(parser::VerificationExpressionParser::new().parse("-1").is_ok());
-        assert!(parser::VerificationExpressionParser::new().parse("y && z || a").is_ok());
-        assert!(parser::VerificationExpressionParser::new().parse("1 == 2 != 3").is_ok());
-        assert!(parser::VerificationExpressionParser::new().parse("1 + 2 - 3 / 4 % 5 * 6").is_ok());
+        assert!(parser::VerificationExpressionParser::new()
+            .parse("2 < 1")
+            .is_ok());
+        assert!(parser::VerificationExpressionParser::new()
+            .parse("!true && false")
+            .is_ok());
+        assert!(parser::VerificationExpressionParser::new()
+            .parse("-1")
+            .is_ok());
+        assert!(parser::VerificationExpressionParser::new()
+            .parse("y && z || a")
+            .is_ok());
+        assert!(parser::VerificationExpressionParser::new()
+            .parse("1 == 2 != 3")
+            .is_ok());
+        assert!(parser::VerificationExpressionParser::new()
+            .parse("1 + 2 - 3 / 4 % 5 * 6")
+            .is_ok());
     }
     #[test]
     fn declaration() {
@@ -144,8 +166,6 @@ mod tests {
             .parse("class Main {static void main(){int x := 2;}}")
             .is_ok());
     }
-
-
 
     #[test]
     fn faulty_input() {

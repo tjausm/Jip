@@ -1,6 +1,7 @@
 lalrpop_mod!(pub parser); // synthesized by LALRPOP
 
 use crate::ast::*;
+use crate::errors::Error;
 use petgraph::dot::Dot;
 use petgraph::graph::{Graph, NodeIndex};
 use std::fmt;
@@ -24,20 +25,41 @@ impl fmt::Debug for CfgNode {
 pub type CFG = Graph<CfgNode, ()>;
 
 // generates cfg in vizualizable Dot format(visualizable at http://viz-js.com/)
-pub fn generate_dot_cfg(stmts: Statements) -> String {
-    let (_, cfg) = generate_cfg(stmts);
-    return format!("{:?}", Dot::new(&cfg));
+pub fn generate_dot_cfg(program: Program) -> Result<String, Error> {
+    match generate_cfg(program) {
+        Ok((_, cfg)) => Ok(format!("{:?}", Dot::new(&cfg))),
+        Err(why) => Err(why)
+    }
 }
 
 // fuctions as the set-up for the recursive  stmts_to_cfg function
 // returns cfg, and the start_node for search algorithms
-pub fn generate_cfg(mut stmts: Statements) -> (NodeIndex, CFG) {
-    stmts.reverse(); //stmt_to_cfg requires reversed list
-    let mut cfg = Graph::<CfgNode, ()>::new();
-    let start_node = cfg.add_node(CfgNode::Start);
-    let end_node = cfg.add_node(CfgNode::End);
-    let (_, _, cfg) = stmts_to_cfgp(stmts, cfg, vec![start_node], Some(end_node));
-    return (start_node, cfg);
+pub fn generate_cfg(program: Program) -> Result<(NodeIndex, CFG), Error> {
+    //extract main.main method from program
+    let main_class = program.iter().find(|(id, _)| (*id).to_lowercase() == "main".to_string());
+    let main_method = main_class
+        .map(|class| (*class.1).iter())
+        .and_then(|mut members| members.find(|member| 
+            match member {
+                Member::Method(Method::Static((Type::Void, _, _))) => true,
+                _ => false
+            }
+        ));
+
+    match main_method {
+        Some(Member::Method(Method::Static((Type::Void, id, stmts)))) => {
+            let mut stmts = stmts.clone();
+            stmts.reverse(); //stmt_to_cfg requires reversed list
+            let mut cfg = Graph::<CfgNode, ()>::new();
+            let start_node = cfg.add_node(CfgNode::Start);
+            let end_node = cfg.add_node(CfgNode::End);
+            let (_, _, cfg) = stmts_to_cfgp(stmts, cfg, vec![start_node], Some(end_node));
+            return Ok((start_node, cfg));
+        },
+        _ => return Err(Error::Semantics("Couldn't find a 'Main class' and/or 'static void main' method in the 'Main' class".to_string()))
+    }
+
+
 }
 
 // recursively unpacks Statement and returns start and end of cfg and cfg itself
@@ -162,20 +184,12 @@ mod tests {
     }
 
     fn build_test(input: &str, correct_cfg: CFG) {
-        let stmts = parser::StatementsParser::new().parse(input).unwrap();
-        let (_, generated_cfg) = generate_cfg(stmts);
+        let program_str = ["class Main { static void main () {", input, "} }"].join("");
+        let program = parser::ProgramParser::new().parse(&program_str).unwrap();
+        let (_, generated_cfg) = generate_cfg(program).unwrap();
         println!("Generated cfg: \n{:?}", Dot::new(&generated_cfg));
         println!("Correct cfg: \n{:?}", Dot::new(&correct_cfg));
         assert!(is_isomorphic(&generated_cfg, &correct_cfg));
-    }
-
-    #[test]
-    fn empty() {
-        let mut cfg = Graph::<CfgNode, ()>::new();
-        let s = cfg.add_node(CfgNode::Start);
-        let e = cfg.add_node(CfgNode::End);
-        cfg.add_edge(s, e, ());
-        build_test("", cfg);
     }
 
     #[test]

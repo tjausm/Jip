@@ -5,6 +5,7 @@ use clap::{ArgEnum, Parser, Subcommand};
 use std::process::exit;
 
 // module declarations
+mod errors;
 mod ast;
 mod cfg;
 mod paths;

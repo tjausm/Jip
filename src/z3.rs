@@ -7,15 +7,8 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::ast::*;
+use crate::errors::Error;
 use crate::paths::ExecutionPath;
-
-#[derive(Debug)]
-pub enum Error {
-    Syntax(String),
-    Semantics(String),
-    Verification(String),
-    Other(String),
-}
 
 #[derive(Debug, Clone)]
 enum Variable<'a> {

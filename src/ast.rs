@@ -8,12 +8,9 @@ use non_empty_vec::NonEmpty;
 // - labels with only 1 ´option´ are type aliases, , 1 < options are enums
 */
 
-pub enum Program {
-    Cons(Class, Box<Class>),
-    Nil
-}
+pub type Program = Vec<Class>;
 
-pub type Class = (Identifier, Vec<Member>);
+pub type Class = (Identifier, Members);
 
 pub type Members = Vec<Member>;
 
