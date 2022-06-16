@@ -4,11 +4,14 @@ use z3::ast::{Ast, Bool, Dynamic, Int};
 use z3::{ast, Config, Context, SatResult, Solver};
 
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::rc::Rc;
 
 use crate::ast::*;
 use crate::errors::Error;
 use crate::paths::ExecutionPath;
+
+type Identifier = String;
 
 #[derive(Debug, Clone)]
 enum Variable<'a> {
@@ -22,7 +25,7 @@ pub fn print_formula<'a>(path: ExecutionPath) -> Result<String, Error> {
     let ctx = Context::new(&cfg);
 
     //calculate variable hashmap and formula representing our path
-    let env: HashMap<&String, Variable> = build_env(&ctx, &path);
+    let env: HashMap<&Identifier, Variable> = build_env(&ctx, &path);
     let formula = match path_to_formula(&ctx, &path, &env) {
         Ok(formula) => return Ok(format!("{}", &formula.not())),
         Err(why) => return Err(why),
@@ -35,7 +38,7 @@ pub fn verify_path<'a>(path: ExecutionPath) -> Result<(), Error> {
     let ctx = Context::new(&cfg);
 
     //calculate variable hashmap and formula representing our path
-    let env: HashMap<&String, Variable> = build_env(&ctx, &path);
+    let env: HashMap<&Identifier, Variable> = build_env(&ctx, &path);
     let formula = match path_to_formula(&ctx, &path, &env) {
         Ok(formula) => formula,
         Err(why) => return Err(why),
@@ -79,8 +82,11 @@ fn build_env<'ctx, 'p>(
                 }
                 Type::Bool => {
                     env.insert(id, Variable::Bool(Bool::new_const(&ctx, id.clone())));
-                },
-                weird_type => panic!("Huh, declaration of type {:?} can't be added to the env", weird_type)
+                }
+                weird_type => panic!(
+                    "Huh, declaration of type {:?} can't be added to the env",
+                    weird_type
+                ),
             },
             _ => (),
         }
@@ -91,7 +97,7 @@ fn build_env<'ctx, 'p>(
 fn path_to_formula<'ctx>(
     ctx: &'ctx Context,
     path: &'ctx ExecutionPath,
-    env: &'ctx HashMap<&String, Variable>,
+    env: &'ctx HashMap<&Identifier, Variable>,
 ) -> Result<Bool<'ctx>, Error> {
     let mut formula = ast::Bool::from_bool(&ctx, true);
     for stmt in path.iter().rev() {
@@ -163,16 +169,55 @@ fn path_to_formula<'ctx>(
     return Ok(formula.not());
 }
 
+
+// TODO: deze functie gebruiken bij de static analysis?
+fn expression_to_identifiers<'ctx>(expr: &'ctx Expression) -> HashSet<&'ctx Identifier> {
+    let mut exprs: Vec<&'ctx Expression> = vec![expr];
+    let mut identifiers: HashSet<&'ctx Identifier> = HashSet::new();
+    let push_both = |mut vec: &mut Vec<&'ctx Expression>,
+                     l_expr: &'ctx Box<Expression>,
+                     r_expr: &'ctx Box<Expression>| {
+        vec.push(&*l_expr);
+        vec.push(&*r_expr)
+    };
+    while let Some(expr) = exprs.pop() {
+        match expr {
+            Expression::And(l_expr, r_expr) => push_both(&mut exprs, l_expr, r_expr),
+            Expression::Or(l_expr, r_expr) => push_both(&mut exprs, l_expr, r_expr),
+            Expression::EQ(l_expr, r_expr) => push_both(&mut exprs, l_expr, r_expr),
+            Expression::NE(l_expr, r_expr) => push_both(&mut exprs, l_expr, r_expr),
+            Expression::LT(l_expr, r_expr) => push_both(&mut exprs, l_expr, r_expr),
+            Expression::GT(l_expr, r_expr) => push_both(&mut exprs, l_expr, r_expr),
+            Expression::GEQ(l_expr, r_expr) => push_both(&mut exprs, l_expr, r_expr),
+            Expression::LEQ(l_expr, r_expr) => push_both(&mut exprs, l_expr, r_expr),
+            Expression::Plus(l_expr, r_expr) => push_both(&mut exprs, l_expr, r_expr),
+            Expression::Minus(l_expr, r_expr) => push_both(&mut exprs, l_expr, r_expr),
+            Expression::Multiply(l_expr, r_expr) => push_both(&mut exprs, l_expr, r_expr),
+            Expression::Divide(l_expr, r_expr) => push_both(&mut exprs, l_expr, r_expr),
+            Expression::Mod(l_expr, r_expr) => push_both(&mut exprs, l_expr, r_expr),
+            Expression::Negative(expr) => exprs.push(expr),
+            Expression::Not(expr) => exprs.push(expr),
+            Expression::Identifier(id) => {
+                identifiers.insert(id);
+            }
+            Expression::Literal(Literal::Integer(n)) => (),
+            otherwise => panic!(
+                "Expression of the form {:?} is not inspected while building the env",
+                otherwise
+            ),
+        }
+    }
+    return identifiers;
+}
 // deze functie implementeren as switchen tussen types teveel problemen oplevert (bijv bij implementeren Reals)
 fn expression_to_dynamic<'ctx>(
     ctx: &'ctx Context,
-    env: Rc<&'ctx HashMap<&String, Variable<'ctx>>>,
+    env: Rc<&'ctx HashMap<&Identifier, Variable<'ctx>>>,
     expr: &Expression,
 ) -> Result<Dynamic<'ctx>, Error> {
     match expr {
         Expression::And(l_expr, r_expr) => {
             let l = expression_to_dynamic(ctx, Rc::clone(&env), l_expr).and_then(as_bool_or_error);
-
             let r = expression_to_dynamic(ctx, env, r_expr).and_then(as_bool_or_error);
 
             match flatten_tupple((l, r)) {
@@ -182,7 +227,6 @@ fn expression_to_dynamic<'ctx>(
         }
         Expression::Or(l_expr, r_expr) => {
             let l = expression_to_dynamic(ctx, Rc::clone(&env), l_expr).and_then(as_bool_or_error);
-
             let r = expression_to_dynamic(ctx, env, r_expr).and_then(as_bool_or_error);
 
             match flatten_tupple((l, r)) {
@@ -192,7 +236,6 @@ fn expression_to_dynamic<'ctx>(
         }
         Expression::EQ(l_expr, r_expr) => {
             let l = expression_to_dynamic(ctx, Rc::clone(&env), l_expr);
-
             let r = expression_to_dynamic(ctx, env, r_expr);
 
             match flatten_tupple((l, r)) {
@@ -202,7 +245,6 @@ fn expression_to_dynamic<'ctx>(
         }
         Expression::NE(l_expr, r_expr) => {
             let l = expression_to_dynamic(ctx, Rc::clone(&env), l_expr);
-
             let r = expression_to_dynamic(ctx, env, r_expr);
 
             match flatten_tupple((l, r)) {
@@ -212,7 +254,6 @@ fn expression_to_dynamic<'ctx>(
         }
         Expression::LT(l_expr, r_expr) => {
             let l = expression_to_dynamic(ctx, Rc::clone(&env), l_expr).and_then(as_int_or_error);
-
             let r = expression_to_dynamic(ctx, env, r_expr).and_then(as_int_or_error);
 
             match flatten_tupple((l, r)) {
@@ -222,7 +263,6 @@ fn expression_to_dynamic<'ctx>(
         }
         Expression::GT(l_expr, r_expr) => {
             let l = expression_to_dynamic(ctx, Rc::clone(&env), l_expr).and_then(as_int_or_error);
-
             let r = expression_to_dynamic(ctx, env, r_expr).and_then(as_int_or_error);
 
             match flatten_tupple((l, r)) {
@@ -232,7 +272,6 @@ fn expression_to_dynamic<'ctx>(
         }
         Expression::GEQ(l_expr, r_expr) => {
             let l = expression_to_dynamic(ctx, Rc::clone(&env), l_expr).and_then(as_int_or_error);
-
             let r = expression_to_dynamic(ctx, env, r_expr).and_then(as_int_or_error);
 
             match flatten_tupple((l, r)) {
@@ -242,8 +281,8 @@ fn expression_to_dynamic<'ctx>(
         }
         Expression::LEQ(l_expr, r_expr) => {
             let l = expression_to_dynamic(ctx, Rc::clone(&env), l_expr).and_then(as_int_or_error);
-
             let r = expression_to_dynamic(ctx, env, r_expr).and_then(as_int_or_error);
+
             match flatten_tupple((l, r)) {
                 Ok((l, r)) => return Ok(Dynamic::from(l.le(&r))),
                 Err(why) => Err(why),
@@ -251,7 +290,6 @@ fn expression_to_dynamic<'ctx>(
         }
         Expression::Plus(l_expr, r_expr) => {
             let l = expression_to_dynamic(ctx, Rc::clone(&env), l_expr).and_then(as_int_or_error);
-
             let r = expression_to_dynamic(ctx, env, r_expr).and_then(as_int_or_error);
 
             match flatten_tupple((l, r)) {
@@ -261,7 +299,6 @@ fn expression_to_dynamic<'ctx>(
         }
         Expression::Minus(l_expr, r_expr) => {
             let l = expression_to_dynamic(ctx, Rc::clone(&env), l_expr).and_then(as_int_or_error);
-
             let r = expression_to_dynamic(ctx, env, r_expr).and_then(as_int_or_error);
 
             match flatten_tupple((l, r)) {
@@ -271,7 +308,6 @@ fn expression_to_dynamic<'ctx>(
         }
         Expression::Multiply(l_expr, r_expr) => {
             let l = expression_to_dynamic(ctx, Rc::clone(&env), l_expr).and_then(as_int_or_error);
-
             let r = expression_to_dynamic(ctx, env, r_expr).and_then(as_int_or_error);
 
             match flatten_tupple((l, r)) {
@@ -281,7 +317,6 @@ fn expression_to_dynamic<'ctx>(
         }
         Expression::Divide(l_expr, r_expr) => {
             let l = expression_to_dynamic(ctx, Rc::clone(&env), l_expr).and_then(as_int_or_error);
-
             let r = expression_to_dynamic(ctx, env, r_expr).and_then(as_int_or_error);
 
             match flatten_tupple((l, r)) {
@@ -291,7 +326,6 @@ fn expression_to_dynamic<'ctx>(
         }
         Expression::Mod(l_expr, r_expr) => {
             let l = expression_to_dynamic(ctx, Rc::clone(&env), l_expr).and_then(as_int_or_error);
-
             let r = expression_to_dynamic(ctx, env, r_expr).and_then(as_int_or_error);
 
             match flatten_tupple((l, r)) {
