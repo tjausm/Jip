@@ -11,13 +11,14 @@ use crate::ast::*;
 use crate::errors::Error;
 use crate::paths::ExecutionPath;
 
-type Identifier = String;
-
+pub type Identifier = String;
 #[derive(Debug, Clone)]
-enum Variable<'a> {
+pub enum Variable<'a> {
     Int(Int<'a>),
     Bool(Bool<'a>),
 }
+
+pub type Env<'a> =  HashMap<&'a Identifier, Variable<'a>>;
 
 pub fn print_formula<'a>(path: ExecutionPath) -> Result<String, Error> {
     //init the 'accounting' z3 needs
@@ -98,118 +99,25 @@ fn path_to_formula<'ctx>(
     path: &'ctx ExecutionPath,
     env: &'ctx HashMap<&Identifier, Variable>,
 ) -> Result<Bool<'ctx>, Error> {
-    let mut formula = ast::Bool::from_bool(&ctx, true);
-    let mut env_stack = vec![build_env(&ctx, &path);]
 
-    for stmt in path.iter().rev() {
-        match stmt {
-            Statement::Declaration(_) => (),
-            Statement::Assignment((lhs, Rhs::Expr(rhs))) => {
-                match lhs {
-                    Lhs::Identifier(id) => {
-                        let rc_env = Rc::new(env);
-                        match env.get(id) {
-                            // TODO: refactor this to avoid duplicate code on adding a type
-                            // (tried this once but can't get the types right here without boxing and unboxing alot)
-                            Some(Variable::Int(l_ast)) => {
-                                let r_ast = expression_to_dynamic(&ctx, Rc::clone(&rc_env), rhs)
-                                    .and_then(as_int_or_error);
-
-                                match r_ast {
-                                    Ok(r_ast) => formula = formula.substitute(&[(l_ast, &r_ast)]),
-                                    Err(why) => return Err(why),
-                                };
-                            }
-                            Some(Variable::Bool(l_ast)) => {
-                                let r_ast = expression_to_dynamic(&ctx, Rc::clone(&rc_env), rhs)
-                                    .and_then(as_bool_or_error);
-
-                                match r_ast {
-                                    Ok(r_ast) => formula = formula.substitute(&[(l_ast, &r_ast)]),
-                                    Err(why) => return Err(why),
-                                };
-                            }
-                            None => {
-                                return Err(Error::Semantics(format!(
-                                    "Variable {} is undeclared",
-                                    id
-                                )))
-                            }
-                        }
-                    }
-                }
-            }
-            Statement::Assert(expr) => {
-                let rc_env = Rc::new(env);
-                let ast = expression_to_dynamic(&ctx, Rc::clone(&rc_env), expr)
-                    .and_then(as_bool_or_error);
-
-                match ast {
-                    Ok(ast) => formula = Bool::and(&ctx, &[&ast, &formula]),
-                    Err(why) => return Err(why),
-                };
-            }
-            Statement::Assume(expr) => {
-                let rc_env = Rc::new(env);
-                let ast = expression_to_dynamic(&ctx, Rc::clone(&rc_env), expr)
-                    .and_then(as_bool_or_error);
-
-                match ast {
-                    Ok(ast) => formula = Bool::implies(&ast, &formula),
-                    Err(why) => return Err(why),
-                };
-            }
-            otherwise => {
-                return Err(Error::Semantics(format!(
-                    "Statements of the form {:?} should not be in an executionpath",
-                    otherwise
-                )));
-            }
-        }
-    }
-    return Ok(formula.not());
+   panic!("to be removed")
 }
 
-
-// TODO: deze functie gebruiken bij de static analysis?
-fn expression_to_identifiers<'ctx>(expr: &'ctx Expression) -> HashSet<&'ctx Identifier> {
-    let mut exprs: Vec<&'ctx Expression> = vec![expr];
-    let mut identifiers: HashSet<&'ctx Identifier> = HashSet::new();
-    let push_both = |mut vec: &mut Vec<&'ctx Expression>,
-                     l_expr: &'ctx Box<Expression>,
-                     r_expr: &'ctx Box<Expression>| {
-        vec.push(&*l_expr);
-        vec.push(&*r_expr)
-    };
-    while let Some(expr) = exprs.pop() {
-        match expr {
-            Expression::And(l_expr, r_expr) => push_both(&mut exprs, l_expr, r_expr),
-            Expression::Or(l_expr, r_expr) => push_both(&mut exprs, l_expr, r_expr),
-            Expression::EQ(l_expr, r_expr) => push_both(&mut exprs, l_expr, r_expr),
-            Expression::NE(l_expr, r_expr) => push_both(&mut exprs, l_expr, r_expr),
-            Expression::LT(l_expr, r_expr) => push_both(&mut exprs, l_expr, r_expr),
-            Expression::GT(l_expr, r_expr) => push_both(&mut exprs, l_expr, r_expr),
-            Expression::GEQ(l_expr, r_expr) => push_both(&mut exprs, l_expr, r_expr),
-            Expression::LEQ(l_expr, r_expr) => push_both(&mut exprs, l_expr, r_expr),
-            Expression::Plus(l_expr, r_expr) => push_both(&mut exprs, l_expr, r_expr),
-            Expression::Minus(l_expr, r_expr) => push_both(&mut exprs, l_expr, r_expr),
-            Expression::Multiply(l_expr, r_expr) => push_both(&mut exprs, l_expr, r_expr),
-            Expression::Divide(l_expr, r_expr) => push_both(&mut exprs, l_expr, r_expr),
-            Expression::Mod(l_expr, r_expr) => push_both(&mut exprs, l_expr, r_expr),
-            Expression::Negative(expr) => exprs.push(expr),
-            Expression::Not(expr) => exprs.push(expr),
-            Expression::Identifier(id) => {
-                identifiers.insert(id);
-            }
-            Expression::Literal(Literal::Integer(n)) => (),
-            otherwise => panic!(
-                "Expression of the form {:?} is not inspected while building the env",
-                otherwise
-            ),
-        }
-    }
-    return identifiers;
+pub fn expression_to_int<'ctx>(
+    ctx: &'ctx Context,
+    env: Rc<&'ctx HashMap<&Identifier, Variable<'ctx>>>,
+    expr: &Expression,
+) -> Result<Int<'ctx>, Error> {
+    return expression_to_dynamic(ctx, env, expr).and_then(as_int_or_error);
 }
+pub fn expression_to_bool<'ctx>(
+    ctx: &'ctx Context,
+    env: Rc<&'ctx HashMap<&Identifier, Variable<'ctx>>>,
+    expr: &Expression,
+) -> Result<Bool<'ctx>, Error> {
+    return expression_to_dynamic(ctx, env, expr).and_then(as_bool_or_error);
+}
+
 // deze functie implementeren as switchen tussen types teveel problemen oplevert (bijv bij implementeren Reals)
 fn expression_to_dynamic<'ctx>(
     ctx: &'ctx Context,

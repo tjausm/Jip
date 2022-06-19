@@ -1,11 +1,19 @@
-use crate::ast::Program;
-use crate::cfg::{generate_cfg, generate_dot_cfg};
+use crate::ast::{Expression, Program, Statement, Type, Rhs, Lhs};
+use crate::cfg::{generate_cfg, generate_dot_cfg, CfgNode};
 use crate::errors::Error;
 use crate::paths::{generate_execution_paths, Depth};
-use crate::z3::{print_formula, verify_path};
-lalrpop_mod!(pub parser); // synthesized by LALRPOP
+use crate::z3::{print_formula, expression_to_bool, expression_to_int, Identifier, Variable};
 
+lalrpop_mod!(pub parser); // synthesized by LALRPOP
+use petgraph::graph::NodeIndex;
+use petgraph::visit::EdgeRef;
+use z3::ast::{Bool, Int};
+use z3::{Config, Context, SatResult, Solver};
+
+use std::collections::HashMap;
+use std::collections::VecDeque;
 use std::fs;
+use std::rc::Rc;
 
 const PROG_CORRECT: &str = "Program is correct";
 
@@ -42,20 +50,17 @@ pub fn print_cfg(program: &str) -> (ExitCode, String) {
 pub fn print_formulas(program: &str, d: Depth) -> (ExitCode, String) {
     match parse_program(program) {
         Err(parse_err) => return print_result(Err(parse_err)),
-        Ok(stmts) => {
-            match generate_cfg(stmts) {
-                Ok((start_node, cfg)) => {
-                    for path in generate_execution_paths(start_node, cfg, d) {
-                        match print_formula(path) {
-                            Ok(formula) => println!("{}", formula),
-                            Err(err) =>  return print_result(Err(err)),
-                        }
+        Ok(stmts) => match generate_cfg(stmts) {
+            Ok((start_node, cfg)) => {
+                for path in generate_execution_paths(start_node, cfg, d) {
+                    match print_formula(path) {
+                        Ok(formula) => println!("{}", formula),
+                        Err(err) => return print_result(Err(err)),
                     }
-                },
-                Err(sem_err) => return print_result(Err(sem_err))
+                }
             }
-
-        }
+            Err(sem_err) => return print_result(Err(sem_err)),
+        },
     }
     //if all formulas are printed we end with success exitcode and empty msg
     return (0, "".to_string());
@@ -65,29 +70,129 @@ pub fn print_verification(program: &str, d: Depth) -> (ExitCode, String) {
     return print_result(verify(program, d));
 }
 
-fn verify(program: &str, d: Depth) -> Result<(), Error> {
-    match parse_program(program) {
-        Err(parse_error) => return Err(parse_error),
-        Ok(prog) => match generate_cfg(prog) {
-            Ok((start_node, cfg)) => {
-                for path in generate_execution_paths(start_node, cfg, d) {
-                    match verify_path(path) {
-                        Ok(_) => continue,
-                        Err(verification_error) => return Err(verification_error),
-                    }
-                }
-            }
-            Err(semantics_error) => return Err(semantics_error),
-        },
-    }
-    return Ok(());
-}
-
 fn parse_program(program: &str) -> Result<Program, Error> {
     match parser::ProgramParser::new().parse(program) {
         Err(parse_err) => return Err(Error::Syntax(format!("{}", parse_err))),
         Ok(program) => return Ok(program),
     }
+}
+
+fn verify(program: &str, d: Depth) -> Result<(), Error> {
+    let (start_node, cfg) = match parse_program(program) {
+        Err(parse_error) => return Err(parse_error),
+        Ok(prog) => match generate_cfg(prog) {
+            Ok(cfg) => cfg,
+            Err(semantics_error) => return Err(semantics_error),
+        },
+    };
+    //TODO: what happens if we use the same z3 ctx for all solving
+    //init the 'accounting' z3 needs
+    let z3_cfg = Config::new();
+    let ctx = Context::new(&z3_cfg);
+
+    let mut q: VecDeque<(HashMap<&Identifier, Variable>, Depth, NodeIndex)> = VecDeque::new();
+    q.push_back((HashMap::new(), d, start_node));
+
+    while let Some(triple) = q.pop_front() {
+        match triple {
+            (_, 0, _) => continue,
+            (mut env, d, node_index) => {
+                match &cfg[node_index] {
+                    // enqueue all starting statements of program
+                    CfgNode::Start => {
+                        for edge in cfg.edges(node_index) {
+                            let next = edge.target();
+                            q.push_back((env.clone(), d, next));
+                        }
+                    }
+                    // Assert -> build & verify z3 formula, return error if disproven
+                    // Assume -> build & verify z3 formula, stop evaluating pad if disproven
+                    // assignment -> evaluate rhs and update env
+                    CfgNode::Statement(stmt) => {
+                        match stmt {
+                            Statement::Declaration((ty, id)) => match (env.contains_key(id), ty) {
+                                (true, _) => {
+                                    return Err(Error::Semantics(format!(
+                                        "Variable {} is declared twice",
+                                        id
+                                    )))
+                                }
+                                (_, Type::Int) => {
+                                    env.insert(
+                                        &id,
+                                        Variable::Int(Int::new_const(&ctx, id.clone())),
+                                    );
+                                }
+                                (_, Type::Bool) => {
+                                    env.insert(
+                                        &id,
+                                        Variable::Bool(Bool::new_const(&ctx, id.clone())),
+                                    );
+                                }
+                                (_, weird_type) => {
+                                    return Err(Error::Semantics(format!(
+                                        "Declaring a var of type {:?} isn't possible",
+                                        weird_type
+                                    )))
+                                }
+                            },
+                            //if assume is disproven we stop exploring
+                            Statement::Assume(expr) => match verify_expression(&ctx, &env, &expr) {
+                                Err(_) => continue,
+                                _ => (),
+                            },
+                            //if assert is disproven we stop exploring
+                            Statement::Assert(expr) => match verify_expression(&ctx, &env, &expr) {
+                                Err(why) => return Err(why),
+                                _ => (),
+                            },
+                            //if assert is disproven we stop exploring
+                            Statement::Assignment((Lhs::Identifier(id), Rhs::Expr(expr))) => 
+                                match env.get(id) {
+                                None =>  
+                                return Err(Error::Semantics(format!(
+                                    "Variable {} is undeclared",
+                                    id
+                                ))),
+                                Some(Variable::Int(_)) => {
+                                    let ast = match expression_to_int(&ctx, Rc::new(&env), &expr) {
+                                        Ok(ast) => ast,
+                                        Err(why) => return Err(why),
+                                    };
+                                    env.insert(id, Variable::Int(ast));
+                                }
+                                Some(Variable::Bool(_)) => {   
+                                    let cloned_env = env.clone(); 
+                                    let rc_env = Rc::new(&cloned_env);
+                                    match expression_to_bool(&ctx, rc_env, &expr) {
+                                        Ok(ast) => env.insert(id, Variable::Bool(ast)),
+                                        Err(why) => return Err(why),
+                                    };
+                                }
+                            },
+                            _ => (),
+                        }
+                        
+                        for edge in cfg.edges(node_index) {
+                            let next = edge.target();
+                            q.push_back((env.clone(), d - 1, next));
+                        }
+                    }
+                    // if end node is reached path is pushed to result vec
+                    CfgNode::End => return Ok(()),
+                }
+            }
+        }
+    }
+    return Ok(());
+}
+
+fn verify_expression<'ctx>(
+    ctx: &'ctx Context,
+    env: &'ctx HashMap<&Identifier, Variable<'ctx>>,
+    expr: &Expression,
+) -> Result<(), Error> {
+    panic!("not implemented")
 }
 
 // put parser test here since parser mod is auto-generated
