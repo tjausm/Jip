@@ -1,0 +1,3 @@
+Fixing env with scopes:
+Easy idea: build_env only does so for the current scope of the path, once entering a new scope we call build_env again and push the result on the env_stack
+Hard idea: we builda graph of envs for each scope using the CFG and then we model the env stack as said graph + vec<NodeIndex> representing the path through our graph we took to get in the scope

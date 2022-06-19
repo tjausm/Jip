@@ -67,8 +67,7 @@ pub fn verify_path<'a>(path: ExecutionPath) -> Result<(), Error> {
 }
 
 // TODO: change in result type to remove panic (that is, if I keep the env like this)
-// building the env during evaluation requires to do multiple immutable and mutable borrows
-// for this to work we need some magic with lifetimes which I haven't been able to figure out..
+//TODO: change env to only build for the current scope of the path
 fn build_env<'ctx, 'p>(
     ctx: &'ctx Context,
     path: &'p ExecutionPath,
@@ -100,6 +99,8 @@ fn path_to_formula<'ctx>(
     env: &'ctx HashMap<&Identifier, Variable>,
 ) -> Result<Bool<'ctx>, Error> {
     let mut formula = ast::Bool::from_bool(&ctx, true);
+    let mut env_stack = vec![build_env(&ctx, &path);]
+
     for stmt in path.iter().rev() {
         match stmt {
             Statement::Declaration(_) => (),
