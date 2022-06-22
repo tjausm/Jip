@@ -1,8 +1,8 @@
-use crate::ast::{Expression, Program, Statement, Type, Rhs, Lhs};
+use crate::ast::{Expression, Lhs, Program, Rhs, Statement, Type};
 use crate::cfg::{generate_cfg, generate_dot_cfg, CfgNode};
 use crate::errors::Error;
 use crate::paths::{generate_execution_paths, Depth};
-use crate::z3::{print_formula, expression_to_bool, expression_to_int, Identifier, Variable};
+use crate::z3::{expression_to_bool, expression_to_int, print_formula, Identifier, Variable};
 
 lalrpop_mod!(pub parser); // synthesized by LALRPOP
 use petgraph::graph::NodeIndex;
@@ -85,6 +85,7 @@ fn verify(program: &str, d: Depth) -> Result<(), Error> {
             Err(semantics_error) => return Err(semantics_error),
         },
     };
+
     //TODO: what happens if we use the same z3 ctx for all solving
     //init the 'accounting' z3 needs
     let z3_cfg = Config::new();
@@ -109,70 +110,79 @@ fn verify(program: &str, d: Depth) -> Result<(), Error> {
                     // Assume -> build & verify z3 formula, stop evaluating pad if disproven
                     // assignment -> evaluate rhs and update env
                     CfgNode::Statement(stmt) => {
-                        match stmt {
-                            Statement::Declaration((ty, id)) => match (env.contains_key(id), ty) {
-                                (true, _) => {
-                                    return Err(Error::Semantics(format!(
-                                        "Variable {} is declared twice",
-                                        id
-                                    )))
+                        let maybe_ast : Option<(&Identifier, Variable)> =
+                            match stmt {
+                                Statement::Declaration((ty, id)) => match (env.contains_key(id), ty) {
+                                    (true, _) => {
+                                        return Err(Error::Semantics(format!(
+                                            "Variable {} is declared twice",
+                                            id
+                                        )))
+                                    }
+                                    (_, Type::Int) => {
+                                        env.insert(
+                                            &id,
+                                            Variable::Int(Int::new_const(&ctx, id.clone())),
+                                        );
+                                        None
+                                    }
+                                    (_, Type::Bool) => {
+                                        env.insert(
+                                            &id,
+                                            Variable::Bool(Bool::new_const(&ctx, id.clone())),
+                                        );
+                                        None
+                                    }
+                                    (_, weird_type) => {
+                                        return Err(Error::Semantics(format!(
+                                            "Declaring a var of type {:?} isn't possible",
+                                            weird_type
+                                        )))
+                                    }
+                                },
+                                //if assume is disproven we stop exploring
+                                Statement::Assume(expr) => match verify_expression(&ctx, &env, &expr) {
+                                    Err(_) => continue,
+                                    _ => None,
+                                },
+                                //if assert is disproven we stop exploring
+                                Statement::Assert(expr) => match verify_expression(&ctx, &env, &expr) {
+                                    Err(why) => return Err(why),
+                                    _ => None,
+                                },
+                                //if assert is disproven we stop exploring
+                                Statement::Assignment((Lhs::Identifier(id), Rhs::Expr(expr))) => {
+                                    match env.get(id) {
+                                        None => {
+                                            return Err(Error::Semantics(format!(
+                                                "Variable {} is undeclared",
+                                                id
+                                            )))
+                                        }
+                                        Some(Variable::Int(_)) => {
+                                                match expression_to_int(&ctx, Rc::new(&env), &expr) {
+                                                    Ok(ast) => Some((id, Variable::Int(ast))),
+                                                    Err(why) => return Err(why),
+                                                }
+                                            
+                                        }
+
+                                        Some(Variable::Bool(_)) => 
+                                            match expression_to_bool(&ctx, Rc::new(&env), &expr) {
+                                                Ok(ast) => Some((id, Variable::Bool(ast))),
+                                                Err(why) => return Err(why),
+                                            }
+                                        
+                                    }
                                 }
-                                (_, Type::Int) => {
-                                    env.insert(
-                                        &id,
-                                        Variable::Int(Int::new_const(&ctx, id.clone())),
-                                    );
-                                }
-                                (_, Type::Bool) => {
-                                    env.insert(
-                                        &id,
-                                        Variable::Bool(Bool::new_const(&ctx, id.clone())),
-                                    );
-                                }
-                                (_, weird_type) => {
-                                    return Err(Error::Semantics(format!(
-                                        "Declaring a var of type {:?} isn't possible",
-                                        weird_type
-                                    )))
-                                }
-                            },
-                            //if assume is disproven we stop exploring
-                            Statement::Assume(expr) => match verify_expression(&ctx, &env, &expr) {
-                                Err(_) => continue,
-                                _ => (),
-                            },
-                            //if assert is disproven we stop exploring
-                            Statement::Assert(expr) => match verify_expression(&ctx, &env, &expr) {
-                                Err(why) => return Err(why),
-                                _ => (),
-                            },
-                            //if assert is disproven we stop exploring
-                            Statement::Assignment((Lhs::Identifier(id), Rhs::Expr(expr))) => 
-                                match env.get(id) {
-                                None =>  
-                                return Err(Error::Semantics(format!(
-                                    "Variable {} is undeclared",
-                                    id
-                                ))),
-                                Some(Variable::Int(_)) => {
-                                    let ast = match expression_to_int(&ctx, Rc::new(&env), &expr) {
-                                        Ok(ast) => ast,
-                                        Err(why) => return Err(why),
-                                    };
-                                    env.insert(id, Variable::Int(ast));
-                                }
-                                Some(Variable::Bool(_)) => {   
-                                    let cloned_env = env.clone(); 
-                                    let rc_env = Rc::new(&cloned_env);
-                                    match expression_to_bool(&ctx, rc_env, &expr) {
-                                        Ok(ast) => env.insert(id, Variable::Bool(ast)),
-                                        Err(why) => return Err(why),
-                                    };
-                                }
-                            },
-                            _ => (),
+                                _ => None,
+                            };
+
+                        match maybe_ast {
+                            Some((id, ast)) => {env.insert(id, ast);},
+                            None => ()
                         }
-                        
+
                         for edge in cfg.edges(node_index) {
                             let next = edge.target();
                             q.push_back((env.clone(), d - 1, next));
