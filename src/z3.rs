@@ -4,48 +4,27 @@ use z3::ast::{Ast, Bool, Dynamic, Int};
 use z3::{ast, Config, Context, SatResult, Solver};
 
 use std::collections::HashMap;
-use std::collections::HashSet;
 use std::rc::Rc;
 
 use crate::ast::*;
 use crate::errors::Error;
-use crate::paths::ExecutionPath;
 
 pub type Identifier = String;
+
 #[derive(Debug, Clone)]
 pub enum Variable<'a> {
     Int(Int<'a>),
     Bool(Bool<'a>),
 }
 
-pub type Env<'a> =  HashMap<&'a Identifier, Variable<'a>>;
+pub type Environment<'a> =  HashMap<&'a Identifier, Variable<'a>>;
 
-pub fn print_formula<'a>(path: ExecutionPath) -> Result<String, Error> {
-    //init the 'accounting' z3 needs
-    let cfg = Config::new();
-    let ctx = Context::new(&cfg);
-
-    //calculate variable hashmap and formula representing our path
-    let env: HashMap<&Identifier, Variable> = build_env(&ctx, &path);
-    let formula = match path_to_formula(&ctx, &path, &env) {
-        Ok(formula) => return Ok(format!("{}", &formula.not())),
-        Err(why) => return Err(why),
-    };
-}
-
-pub fn verify_path<'a>(path: ExecutionPath) -> Result<(), Error> {
-    //init the 'accounting' z3 needs
-    let cfg = Config::new();
-    let ctx = Context::new(&cfg);
-
-    //calculate variable hashmap and formula representing our path
-    let env: HashMap<&Identifier, Variable> = build_env(&ctx, &path);
-    let formula = match path_to_formula(&ctx, &path, &env) {
-        Ok(formula) => formula,
-        Err(why) => return Err(why),
-    };
-
-    //negate formula to 'disprove' validity of path
+//return error if there is a true negation of given expression
+pub fn verify_bool<'ctx>(
+    ctx: &'ctx Context,
+    env: &'ctx Environment<'ctx>,
+    formula: &Bool<'ctx>,
+) -> Result<(), Error> {
     let solver = Solver::new(&ctx);
     solver.assert(&formula);
     let result = solver.check();
@@ -67,62 +46,25 @@ pub fn verify_path<'a>(path: ExecutionPath) -> Result<(), Error> {
     };
 }
 
-// TODO: change in result type to remove panic (that is, if I keep the env like this)
-//TODO: change env to only build for the current scope of the path
-fn build_env<'ctx, 'p>(
-    ctx: &'ctx Context,
-    path: &'p ExecutionPath,
-) -> HashMap<&'p String, Variable<'ctx>> {
-    let mut env: HashMap<&'p String, Variable<'ctx>> = HashMap::new();
-    for stmt in path {
-        match stmt {
-            Statement::Declaration((ty, id)) => match ty {
-                Type::Int => {
-                    env.insert(id, Variable::Int(Int::new_const(&ctx, id.clone())));
-                }
-                Type::Bool => {
-                    env.insert(id, Variable::Bool(Bool::new_const(&ctx, id.clone())));
-                }
-                weird_type => panic!(
-                    "Huh, declaration of type {:?} can't be added to the env",
-                    weird_type
-                ),
-            },
-            _ => (),
-        }
-    }
-    return env;
-}
-
-fn path_to_formula<'ctx>(
-    ctx: &'ctx Context,
-    path: &'ctx ExecutionPath,
-    env: &'ctx HashMap<&Identifier, Variable>,
-) -> Result<Bool<'ctx>, Error> {
-
-   panic!("to be removed")
-}
-
 pub fn expression_to_int<'ctx>(
     ctx: &'ctx Context,
-    env: Rc<&HashMap<&Identifier, Variable<'ctx>>>,
+    env: &Environment<'ctx>,
     expr: &Expression,
 ) -> Result<Int<'ctx>, Error> {
-    return expression_to_dynamic(ctx, env, expr).and_then(as_int_or_error);
+    return expression_to_dynamic(ctx, Rc::new(env), expr).and_then(as_int_or_error);
 }
 
 pub fn expression_to_bool<'ctx>(
     ctx: &'ctx Context,
-    env: Rc<&HashMap<&Identifier, Variable<'ctx>>>,
+    env: &Environment<'ctx>,
     expr: &Expression,
 ) -> Result<Bool<'ctx>, Error> {
-    return expression_to_dynamic(ctx, env, expr).and_then(as_bool_or_error);
+    return expression_to_dynamic(ctx, Rc::new(env), expr).and_then(as_bool_or_error);
 }
 
-// deze functie implementeren as switchen tussen types teveel problemen oplevert (bijv bij implementeren Reals)
-pub fn expression_to_dynamic<'ctx>(
+fn expression_to_dynamic<'ctx>(
     ctx: &'ctx Context,
-    env: Rc<&HashMap<&Identifier, Variable<'ctx>>>,
+    env: Rc<&Environment<'ctx>>,
     expr: &Expression,
 ) -> Result<Dynamic<'ctx>, Error> {
     match expr {

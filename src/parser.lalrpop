@@ -1,6 +1,5 @@
 use std::str::FromStr;
 use crate::ast::*;
-
 grammar;
 
 pub Program = <Class*>; 

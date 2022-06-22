@@ -1,3 +1,15 @@
-Fixing env with scopes:
-Easy idea: build_env only does so for the current scope of the path, once entering a new scope we call build_env again and push the result on the env_stack
-Hard idea: we builda graph of envs for each scope using the CFG and then we model the env stack as said graph + vec<NodeIndex> representing the path through our graph we took to get in the scope
+TODO: get updating the env with newly generated expressions right
+
+problem = ctx en env zijn aan elkaar gebonden door lifetimes
+
+why do we need env: to now the types of our vars and check 
+
+apply variable renaming to program
+
+Hoi Wishnu,
+
+My current method is as follows: 
+1. using the cfg generate a path (= a list of statements) through the program  
+2. go over said path(
+
+I think that with variable renaming and some static analysis

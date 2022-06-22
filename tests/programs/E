@@ -1,8 +1,8 @@
 
 class Main {
     static void main(){
-        assume 1 < x;
         int x;
+        assume 1 < x;
         while (0 < x) x := x - 1;
         int y := x;
         assert y < 1;

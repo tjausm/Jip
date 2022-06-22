@@ -8,7 +8,6 @@ use std::process::exit;
 mod errors;
 mod ast;
 mod cfg;
-mod paths;
 mod see;
 mod z3;
 
@@ -35,13 +34,13 @@ enum Mode {
     VerifyProgram {
         // Up to which depth program is evaluated
         #[clap(default_value_t = 40)]
-        depth: paths::Depth,
+        depth: see::Depth,
     },
     /// Print generated z3 formulas
     PrintFormulas {
         // Up to which depth program is evaluated
         #[clap(default_value_t = 40)]
-        depth: paths::Depth,
+        depth: see::Depth,
     },
     /// Print cfg in Dot format
     PrintCFG

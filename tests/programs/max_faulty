@@ -1,4 +1,3 @@
-
 class Main {
     static void main(){
         int x; 
