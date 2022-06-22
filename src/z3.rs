@@ -105,7 +105,7 @@ fn path_to_formula<'ctx>(
 
 pub fn expression_to_int<'ctx>(
     ctx: &'ctx Context,
-    env: Rc<&'ctx HashMap<&Identifier, Variable<'ctx>>>,
+    env: Rc<&HashMap<&Identifier, Variable<'ctx>>>,
     expr: &Expression,
 ) -> Result<Int<'ctx>, Error> {
     return expression_to_dynamic(ctx, env, expr).and_then(as_int_or_error);
@@ -113,7 +113,7 @@ pub fn expression_to_int<'ctx>(
 
 pub fn expression_to_bool<'ctx>(
     ctx: &'ctx Context,
-    env: Rc<&'ctx HashMap<&Identifier, Variable<'ctx>>>,
+    env: Rc<&HashMap<&Identifier, Variable<'ctx>>>,
     expr: &Expression,
 ) -> Result<Bool<'ctx>, Error> {
     return expression_to_dynamic(ctx, env, expr).and_then(as_bool_or_error);
@@ -122,7 +122,7 @@ pub fn expression_to_bool<'ctx>(
 // deze functie implementeren as switchen tussen types teveel problemen oplevert (bijv bij implementeren Reals)
 pub fn expression_to_dynamic<'ctx>(
     ctx: &'ctx Context,
-    env: Rc<&'ctx HashMap<&Identifier, Variable<'ctx>>>,
+    env: Rc<&HashMap<&Identifier, Variable<'ctx>>>,
     expr: &Expression,
 ) -> Result<Dynamic<'ctx>, Error> {
     match expr {
