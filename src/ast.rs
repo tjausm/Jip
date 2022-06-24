@@ -25,6 +25,7 @@ pub enum Method {
     Nonstatic(Methodcontent)
 }
 
+//TODO: add args hier
 type Methodcontent = (Type, Identifier, Statements);
 
 pub type Statements = Vec<Statement>;
@@ -34,6 +35,7 @@ pub enum Statement {
     DeclareAssign(DeclareAssign),
     Declaration(Declaration),
     Assignment(Assignment),
+    Call(Invocation),
     Ite(Ite),
     Block(Box<Statements>),
     Assert(Expression),
@@ -54,8 +56,6 @@ pub enum Type {
     Int,
     Bool
 }
- 
-//TODO: ga type alleen nog maar implementeren in parser en als 1 type opslaan uiteindelijk
 
 pub type Assignment = (Lhs, Rhs);
 
@@ -68,6 +68,9 @@ pub enum Lhs {
 pub enum Rhs {
     Expr(Expression),
 }
+
+//TODO: add args hier
+pub type Invocation = (Identifier, Identifier);
 
 pub type Ite = (Expression, Box<Statement>, Box<Statement>);
 
@@ -129,6 +132,7 @@ impl fmt::Debug for Statement {
             Statement::DeclareAssign((t, id, rhs)) => write!(f, "{:?} {:?}", t, Statement::Assignment((Lhs::Identifier(id.to_string()), rhs.clone()))),
             Statement::Declaration((t, id)) => write!(f, "{:?} {};", t, id),
             Statement::Assignment((Lhs::Identifier(id), Rhs::Expr(expr))) => write!(f, "{} := {:?};", id, expr),
+            Statement::Call((l, r)) => write!(f, "{}.{}();", l, r),
             Statement::Ite((cond, if_expr, else_expr)) => write!(f, "if ({:?}) then {:?} else {:?}", cond, if_expr, else_expr),
             Statement::Block(stmts) => write!(f, "{{ {:?} }}", stmts),
             Statement::Assert(expr) => write!(f, "assert {:?};", expr),

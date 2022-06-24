@@ -1,15 +1,4 @@
-TODO: get updating the env with newly generated expressions right
+Now doing: scoping
 
-problem = ctx en env zijn aan elkaar gebonden door lifetimes
-
-why do we need env: to now the types of our vars and check 
-
-apply variable renaming to program
-
-Hoi Wishnu,
-
-My current method is as follows: 
-1. using the cfg generate a path (= a list of statements) through the program  
-2. go over said path(
-
-I think that with variable renaming and some static analysis
+TODO: add function arguments 
+unrecovarable errors in panics veranderen

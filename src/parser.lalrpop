@@ -38,6 +38,7 @@ pub Statement : Statement = {
     DeclareAssign => Statement::DeclareAssign(<>),
     Declaration => Statement::Declaration(<>),
     Assignment => Statement::Assignment(<>),
+    <Invocation> ";" => Statement::Call(<>),
     Ite => Statement::Ite(<>),
     Block => Statement::Block(<>),
     Assert => Statement::Assert(<>),
@@ -63,6 +64,10 @@ Lhs : Lhs = {
 
 Rhs : Rhs= {
     Expression => Rhs::Expr(<>)
+}
+
+Invocation : Invocation = {
+    <Identifier> "." <Identifier> "()" => (<>)
 }
 
 Ite : Ite = {
