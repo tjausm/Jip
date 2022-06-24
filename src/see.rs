@@ -1,12 +1,14 @@
 use crate::ast::{Lhs, Program, Rhs, Statement, Type};
 use crate::cfg::{generate_cfg, generate_dot_cfg, CfgNode};
 use crate::errors::Error;
-use crate::z3::{expression_to_bool, expression_to_int, verify_bool, Identifier, Variable};
+use crate::z3::{
+    expression_to_bool, expression_to_int, fresh_bool, fresh_int, mk_assert, mk_assume,
+    solve_constraints, Environment, Identifier, PathConstraint, Variable,
+};
 
 lalrpop_mod!(pub parser); // synthesized by LALRPOP
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
-use z3::ast::{Bool, Int};
 use z3::{Config, Context};
 
 use std::collections::HashMap;
@@ -52,16 +54,11 @@ pub fn print_cfg(program: &str) -> (ExitCode, String) {
     }
 }
 
-pub fn print_formulas(program: &str, d: Depth) -> (ExitCode, String) {
-    verify(program, d, true);
-    return (0, "".to_string());
-}
-
 pub fn print_verification(program: &str, d: Depth) -> (ExitCode, String) {
-    return print_result(verify(program, d, false));
+    return print_result(verify(program, d));
 }
 
-fn verify(program: &str, d: Depth, only_print: bool) -> Result<(), Error> {
+fn verify(program: &str, d: Depth) -> Result<(), Error> {
     let (start_node, cfg) = match parse_program(program) {
         Err(parse_error) => return Err(parse_error),
         Ok(prog) => match generate_cfg(prog) {
@@ -70,13 +67,12 @@ fn verify(program: &str, d: Depth, only_print: bool) -> Result<(), Error> {
         },
     };
 
-    //init the 'accounting' z3 needs
     let z3_cfg = Config::new();
     let ctx = Context::new(&z3_cfg);
 
     //init our bfs through the cfg
-    let mut q: VecDeque<(HashMap<&Identifier, Variable>, Depth, NodeIndex)> = VecDeque::new();
-    q.push_back((HashMap::new(), d, start_node));
+    let mut q: VecDeque<(Environment, PathConstraint, Depth, NodeIndex)> = VecDeque::new();
+    q.push_back((HashMap::new(), PathConstraint::None, d, start_node));
 
     // Assert -> build & verify z3 formula, return error if disproven
     // Assume -> build & verify z3 formula, stop evaluating pad if disproven
@@ -84,14 +80,14 @@ fn verify(program: &str, d: Depth, only_print: bool) -> Result<(), Error> {
     // then we enque all connected nodes, till d=0 or we reach end of cfg
     while let Some(triple) = q.pop_front() {
         match triple {
-            (_, 0, _) => continue,
-            (mut env, d, node_index) => {
+            (_, _, 0, _) => continue,
+            (mut env, mut pc, d, node_index) => {
                 match &cfg[node_index] {
                     // enqueue all starting statements of program
                     CfgNode::Start => {
                         for edge in cfg.edges(node_index) {
                             let next = edge.target();
-                            q.push_back((env.clone(), d, next));
+                            q.push_back((env.clone(), pc.clone(), d, next));
                         }
                     }
                     CfgNode::Statement(stmt) => {
@@ -104,16 +100,10 @@ fn verify(program: &str, d: Depth, only_print: bool) -> Result<(), Error> {
                                     )))
                                 }
                                 (_, Type::Int) => {
-                                    env.insert(
-                                        &id,
-                                        Variable::Int(Int::new_const(&ctx, id.clone())),
-                                    );
+                                    env.insert(&id, fresh_int(&ctx, id.clone()));
                                 }
                                 (_, Type::Bool) => {
-                                    env.insert(
-                                        &id,
-                                        Variable::Bool(Bool::new_const(&ctx, id.clone())),
-                                    );
+                                    env.insert(&id, fresh_bool(&ctx, id.clone()));
                                 }
                                 (_, weird_type) => {
                                     return Err(Error::Semantics(format!(
@@ -122,35 +112,21 @@ fn verify(program: &str, d: Depth, only_print: bool) -> Result<(), Error> {
                                     )))
                                 }
                             },
-                            //if assume is disproven stop exploring this path
+                            //add assumes to path (TODO: when can we stop exploring a path?)
                             //or print path in path printing mode
                             Statement::Assume(expr) => {
                                 match expression_to_bool(&ctx, &env, &expr) {
-                                    Err(why) => {
-                                        if only_print {
-                                            println!("{:?}", why)
-                                        }
-                                        return Err(why);
-                                    },
-                                    Ok(ast) => match (only_print, verify_bool(&ctx, &env, &ast)) {
-                                        (true, _) => println!("{}", &ast.not()),
-                                        (_, Err(why)) => continue,
-                                        (_, Ok(_)) => (),
-                                    },
+                                    Err(why) => return Err(why),
+                                    Ok(ast) => pc = mk_assume(&ctx, &pc, &ast)
                                 }
-                            }
+                                },
+                                // not (1 < x => not (0 < x) =>  x < 1)
                             Statement::Assert(expr) => {
                                 match expression_to_bool(&ctx, &env, &expr) {
-                                    Err(why) => {
-                                        if only_print {
-                                            println!("{:?}", why)
-                                        }
-                                        return Err(why);
-                                    }
-                                    Ok(ast) => match (only_print, verify_bool(&ctx, &env, &ast)) {
-                                        (true, _) => println!("{}", &ast.not()),
-                                        (_, Err(why)) => return Err(why),
-                                        (_, Ok(_)) => (),
+                                    Err(why) => return Err(why),
+                                    Ok(ast) => match solve_constraints(&ctx, &pc, &ast) {
+                                        Err(why) => return Err(why),
+                                        Ok(_) => pc = mk_assert(&ctx, &pc, &ast),
                                     },
                                 }
                             }
@@ -182,7 +158,7 @@ fn verify(program: &str, d: Depth, only_print: bool) -> Result<(), Error> {
                         }
                         for edge in cfg.edges(node_index) {
                             let next = edge.target();
-                            q.push_back((env.clone(), d - 1, next));
+                            q.push_back((env.clone(), pc.clone(), d - 1, next));
                         }
                     }
                     CfgNode::End => (),

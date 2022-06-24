@@ -36,12 +36,6 @@ enum Mode {
         #[clap(default_value_t = 40)]
         depth: see::Depth,
     },
-    /// Print generated z3 formulas
-    PrintFormulas {
-        // Up to which depth program is evaluated
-        #[clap(default_value_t = 40)]
-        depth: see::Depth,
-    },
     /// Print cfg in Dot format
     PrintCFG
 }
@@ -71,7 +65,6 @@ fn main() {
     // if program loaded execute function corresponding to cmd and exit with the result
     match cli.mode {
         Mode::PrintCFG => exit(see::print_cfg(&program)),
-        Mode::PrintFormulas {depth} => exit(see::print_formulas(&program, depth)),
         Mode::VerifyProgram {depth} => exit(see::print_verification(&program, depth)),
     };
 }

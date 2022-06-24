@@ -2,7 +2,7 @@ class Main {
     static void main(){
         int x; 
         int y; 
-        int z; 
+        int z;
         if (y >= x) 
             z := x; 
         else 

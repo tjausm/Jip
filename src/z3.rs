@@ -4,6 +4,7 @@ use z3::ast::{Ast, Bool, Dynamic, Int};
 use z3::{ast, Config, Context, SatResult, Solver};
 
 use std::collections::HashMap;
+use std::fmt;
 use std::rc::Rc;
 
 use crate::ast::*;
@@ -17,16 +18,74 @@ pub enum Variable<'a> {
     Bool(Bool<'a>),
 }
 
-pub type Environment<'a> =  HashMap<&'a Identifier, Variable<'a>>;
+pub type Environment<'a> = HashMap<&'a Identifier, Variable<'a>>;
 
-//return error if there is a true negation of given expression
-pub fn verify_bool<'ctx>(
+#[derive(Clone)]
+pub enum PathConstraint<'a> {
+    Assume(Bool<'a>),
+    Assert(Bool<'a>),
+    None,
+}
+
+impl fmt::Debug for PathConstraint<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            PathConstraint::Assume(pc) => write!(f, "{}", pc),
+            PathConstraint::Assert(pc) => write!(f, "{}", pc),
+            PathConstraint::None => write!(f, ""),
+        }
+    }
+}
+
+pub fn fresh_int<'ctx>(ctx: &'ctx Context, id: String) -> Variable<'ctx> {
+    return Variable::Int(Int::new_const(&ctx, id));
+}
+
+pub fn fresh_bool<'ctx>(ctx: &'ctx Context, id: String) -> Variable<'ctx> {
+    return Variable::Bool(Bool::new_const(&ctx, id));
+}
+
+pub fn mk_assume<'ctx>(
     ctx: &'ctx Context,
-    env: &'ctx Environment<'ctx>,
+    path_constraint: &PathConstraint<'ctx>,
+    formula: &Bool<'ctx>,
+) -> PathConstraint<'ctx> {
+    match path_constraint {
+        PathConstraint::Assume(pc) => PathConstraint::Assume(Bool::implies(pc, formula)),
+        PathConstraint::Assert(pc) => PathConstraint::Assume(Bool::and(&ctx, &[pc, formula])),
+        PathConstraint::None => PathConstraint::Assume(formula.clone()),
+    }
+}
+pub fn mk_assert<'ctx>(
+    ctx: &'ctx Context,
+    path_constraint: &PathConstraint<'ctx>,
+    formula: &Bool<'ctx>,
+) -> PathConstraint<'ctx> {
+    match path_constraint {
+        PathConstraint::Assume(pc) => PathConstraint::Assert(Bool::implies(pc, formula)),
+        PathConstraint::Assert(pc) => PathConstraint::Assert(Bool::and(&ctx, &[pc, formula])),
+        PathConstraint::None => PathConstraint::Assert(formula.clone()),
+    }
+}
+
+// combines the constraints and check correctness
+//(if last constr was assert than we combine using And if was assume we combine using Imply)
+pub fn solve_constraints<'ctx>(
+    ctx: &'ctx Context,
+    path_constraints: &PathConstraint<'ctx>,
     formula: &Bool<'ctx>,
 ) -> Result<(), Error> {
+    let combined_constraints = (match path_constraints {
+        PathConstraint::Assert(pc) => Bool::and(ctx, &[pc, formula]),
+        PathConstraint::Assume(pc) => Bool::implies(pc, formula),
+        PathConstraint::None => formula.clone(),
+    })
+    .not();
+
+    println!("{}", combined_constraints);
+
     let solver = Solver::new(&ctx);
-    solver.assert(&formula);
+    solver.assert(&combined_constraints);
     let result = solver.check();
     let model = solver.get_model();
 
@@ -51,7 +110,7 @@ pub fn expression_to_int<'ctx>(
     env: &Environment<'ctx>,
     expr: &Expression,
 ) -> Result<Int<'ctx>, Error> {
-    return expression_to_dynamic(ctx, Rc::new(env), expr).and_then(as_int_or_error);
+    return expression_to_dynamic(&ctx, Rc::new(env), expr).and_then(as_int_or_error);
 }
 
 pub fn expression_to_bool<'ctx>(
@@ -59,9 +118,10 @@ pub fn expression_to_bool<'ctx>(
     env: &Environment<'ctx>,
     expr: &Expression,
 ) -> Result<Bool<'ctx>, Error> {
-    return expression_to_dynamic(ctx, Rc::new(env), expr).and_then(as_bool_or_error);
+    return expression_to_dynamic(&ctx, Rc::new(env), expr).and_then(as_bool_or_error);
 }
 
+//main function translating oox expressions to z3 ast
 fn expression_to_dynamic<'ctx>(
     ctx: &'ctx Context,
     env: Rc<&Environment<'ctx>>,
