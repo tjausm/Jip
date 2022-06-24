@@ -2,7 +2,7 @@ use crate::ast::{Lhs, Program, Rhs, Statement, Type};
 use crate::cfg::{generate_cfg, generate_dot_cfg, CfgNode};
 use crate::errors::Error;
 use crate::z3::{
-    expression_to_bool, expression_to_int, fresh_bool, fresh_int, mk_assert, mk_assume,
+    expression_to_bool, expression_to_int, fresh_bool, fresh_int,
     solve_constraints, Environment, Identifier, PathConstraint, Variable,
 };
 
@@ -71,8 +71,8 @@ fn verify(program: &str, d: Depth) -> Result<(), Error> {
     let ctx = Context::new(&z3_cfg);
 
     //init our bfs through the cfg
-    let mut q: VecDeque<(Environment, PathConstraint, Depth, NodeIndex)> = VecDeque::new();
-    q.push_back((HashMap::new(), PathConstraint::None, d, start_node));
+    let mut q: VecDeque<(Environment, Vec<PathConstraint>, Depth, NodeIndex)> = VecDeque::new();
+    q.push_back((HashMap::new(), vec![], d, start_node));
 
     // Assert -> build & verify z3 formula, return error if disproven
     // Assume -> build & verify z3 formula, stop evaluating pad if disproven
@@ -117,16 +117,15 @@ fn verify(program: &str, d: Depth) -> Result<(), Error> {
                             Statement::Assume(expr) => {
                                 match expression_to_bool(&ctx, &env, &expr) {
                                     Err(why) => return Err(why),
-                                    Ok(ast) => pc = mk_assume(&ctx, &pc, &ast)
+                                    Ok(ast) => pc.push(PathConstraint::Assume(ast))
                                 }
                                 },
-                                // not (1 < x => not (0 < x) =>  x < 1)
                             Statement::Assert(expr) => {
                                 match expression_to_bool(&ctx, &env, &expr) {
                                     Err(why) => return Err(why),
                                     Ok(ast) => match solve_constraints(&ctx, &pc, &ast) {
                                         Err(why) => return Err(why),
-                                        Ok(_) => pc = mk_assert(&ctx, &pc, &ast),
+                                        Ok(_) => pc.push(PathConstraint::Assert(ast)),
                                     },
                                 }
                             }
