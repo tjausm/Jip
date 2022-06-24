@@ -83,8 +83,6 @@ pub fn solve_constraints<'ctx>(
     };
 }
 
-(not (=> (< 1 x) (=> (not (< 0 x))  (< x 1))))
-(not (=> (< 1 x) (=> (not (< 0 x))  (< x 1))))
 
 pub fn expression_to_int<'ctx>(
     ctx: &'ctx Context,
