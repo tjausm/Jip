@@ -160,6 +160,8 @@ fn verify(program: &str, d: Depth) -> Result<(), Error> {
                             q.push_back((env.clone(), pc.clone(), d - 1, next));
                         }
                     }
+                    CfgNode::EnterScope(_) => panic!(""),
+                    CfgNode::LeaveScope(_) => panic!(""),
                     CfgNode::End => (),
                 }
             }

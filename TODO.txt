@@ -1,4 +1,5 @@
 Now doing: scoping
+TODO: add scope enters/leaves to cfg and connect the cfg created from a method with said enters and leaves
 
 TODO: add function arguments 
-unrecovarable errors in panics veranderen
+unrecovarable errors in panics veranderen, dit levert wel hele lelijke errors op...

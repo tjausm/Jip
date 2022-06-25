@@ -123,7 +123,7 @@ pub enum Literal {
     Integer(i64),
 }
 
-type Identifier = String;
+pub type Identifier = String;
 
 impl fmt::Debug for Statement {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
