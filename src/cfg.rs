@@ -50,7 +50,10 @@ pub fn generate_cfg(prog: Program) -> Result<(NodeIndex, CFG), Error> {
             let mut cfg = Graph::<CfgNode, ()>::new();
             let start_node = cfg.add_node(CfgNode::Start);
             let end_node = cfg.add_node(CfgNode::End);
-            let (_, _, cfg) = stmts_to_cfg(&prog, stmts, cfg, vec![start_node], Some(end_node));
+            let (_, _, cfg) = match stmts_to_cfg(&prog, stmts, cfg, vec![start_node], Some(end_node)) {
+                Ok(res) => res,
+                Err(why) => return Err(why)
+            };
             return Ok((start_node, cfg));
         },
         _ => return Err(Error::Semantics("Couldn't find a 'Main class' and/or 'static void main' method in the 'Main' class".to_string()))
@@ -80,7 +83,7 @@ fn stmt_to_cfg(
     mut cfg: CFG,
     start_node: NodeIndex,
     end_node: Option<NodeIndex>,
-) -> (Vec<NodeIndex>, NodeIndex, CFG) {
+) -> Result<(Vec<NodeIndex>, NodeIndex, CFG), Error> {
     match stmt {
         Statement::Block(stmts) => return stmts_to_cfg(prog, *stmts, cfg, vec![start_node], end_node),
         other => {
@@ -89,9 +92,9 @@ fn stmt_to_cfg(
             match end_node {
                 Some(end_node) => {
                     cfg.add_edge(stmt_node, end_node, ());
-                    return (vec![start_node], end_node, cfg);
+                    return Ok((vec![start_node], end_node, cfg));
                 }
-                None => return (vec![start_node], stmt_node, cfg),
+                None => return Ok((vec![start_node], stmt_node, cfg)),
             }
         }
     }
@@ -106,7 +109,7 @@ fn stmts_to_cfg(
     mut cfg: CFG,
     start_nodes: Vec<NodeIndex>,
     ending_node: Option<NodeIndex>,
-) -> (Vec<NodeIndex>, NodeIndex, CFG) {
+) -> Result<(Vec<NodeIndex>, NodeIndex, CFG), Error> {
     match stmts.pop() {
         Some(stmt) => match stmt {
             Statement::Ite((cond, s1, s2)) => {
@@ -123,8 +126,14 @@ fn stmts_to_cfg(
                 }
 
                 // add the if and else branch to the cfg
-                let (_, if_ending, cfg) = stmt_to_cfg(prog, *s1, cfg, assume_node, None);
-                let (_, else_ending, cfg) = stmt_to_cfg(prog, *s2, cfg, assume_not_node, None);
+                let (_, if_ending, cfg) = match stmt_to_cfg(prog, *s1, cfg, assume_node, None) {
+                    Ok(res) => res,
+                    Err(why) => return Err(why)
+                };
+                let (_, else_ending, cfg) = match stmt_to_cfg(prog, *s2, cfg, assume_not_node, None) {
+                    Ok(res) => res,
+                    Err(why) => return Err(why)
+                };
                 return stmts_to_cfg(prog, stmts, cfg, vec![if_ending, else_ending], ending_node);
             }
             Statement::While((cond, body)) => {
@@ -139,13 +148,19 @@ fn stmts_to_cfg(
                     cfg.add_edge(start_node, assume_not_node, ());
                 }
                 // calculate cfg for body of while and cfg for the remainder of the stmts
-                let (_, body_ending, cfg) = stmt_to_cfg(prog, *body, cfg, assume_node, None);
+                let (_, body_ending, cfg) = match stmt_to_cfg(prog, *body, cfg, assume_node, None) {
+                    Ok(res) => res,
+                    Err(why) => return Err(why)
+                };
                 let (_, end_remainder, mut cfg) =
-                    stmts_to_cfg(prog, stmts, cfg, vec![assume_not_node], ending_node);
+                    match stmts_to_cfg(prog, stmts, cfg, vec![assume_not_node], ending_node) {
+                        Ok(res) => res,
+                        Err(why) => return Err(why)
+                    };
                 // add edges from end of while body to begin and edge from while body to rest of stmts
                 cfg.add_edge(body_ending, assume_node, ());
                 cfg.add_edge(body_ending, assume_not_node, ());
-                return (vec![assume_node, assume_not_node], end_remainder, cfg);
+                return Ok((vec![assume_node, assume_not_node], end_remainder, cfg));
             }
             Statement::Call((class, method)) => {
                 
@@ -160,12 +175,15 @@ fn stmts_to_cfg(
                     Some(class) => match get_method(&class, &method) {
                         Some(Method::Nonstatic((_, _, body))) => body,
                         Some(Method::Static((_, _, body))) => body,
-                        None => panic!("Implement error here") 
+                        None => return Err(Error::Semantics(format!("Method {} doesn't exist", method)))
                     }
-                    None => panic!("Implement class not found error here")
+                    None => return Err(Error::Semantics(format!("Class {} doesn't exist", class)))
                 };
 
-                let (_, _, cfg) = stmts_to_cfg(prog, method_body.clone(), cfg, vec![enter_scope], Some(leave_scope));
+                let (_, _, cfg) = match  stmts_to_cfg(prog, method_body.clone(), cfg, vec![enter_scope], Some(leave_scope)){
+                    Ok(res) => res,
+                    Err(why) => return Err(why)
+                };
                 return stmts_to_cfg(prog, stmts, cfg, vec![leave_scope], ending_node);
             }
             // split declareAssign to sequential 2 nodes (declaration & assignment)
@@ -198,9 +216,9 @@ fn stmts_to_cfg(
                 for start_node in &start_nodes {
                     cfg.add_edge(*start_node, end_node, ());
                 }
-                return (start_nodes, end_node, cfg);
+                return Ok((start_nodes, end_node, cfg));
             }
-            None => return (start_nodes.clone(), start_nodes[0], cfg),
+            None => return Ok((start_nodes.clone(), start_nodes[0], cfg)),
         },
     }
 }
