@@ -4,6 +4,7 @@ use z3::ast::{Ast, Bool, Dynamic, Int};
 use z3::{ast, Context, SatResult, Solver};
 
 use std::collections::HashMap;
+use std::vec;
 use std::fmt;
 use std::rc::Rc;
 
@@ -18,7 +19,7 @@ pub enum Variable<'a> {
     Bool(Bool<'a>),
 }
 
-pub type Environment<'a> = HashMap<&'a Identifier, Variable<'a>>;
+pub type Environment<'a> = Vec<HashMap<&'a Identifier, Variable<'a>>>;
 
 #[derive(Clone)]
 pub enum PathConstraint<'a> {
@@ -33,6 +34,31 @@ impl fmt::Debug for PathConstraint<'_> {
             PathConstraint::Assert(pc) => write!(f, "{}", pc),
         }
     }
+}
+
+pub fn insert_into_env<'ctx>(env : &mut Environment<'ctx>, id: &'ctx Identifier, var: Variable<'ctx>) -> () {
+    let len = env.len();
+    env[len - 1].insert(id, var);
+}
+
+pub fn get_from_env<'ctx>(env_stack : Rc<&Environment<'ctx>>, id: &Identifier) -> Option<Variable<'ctx>> {
+    for env in env_stack.iter().rev() {
+        match env.get(id) {
+            Some(var) => return Some(var.clone()),
+            None => ()
+        }
+    }
+    return None
+}
+
+pub fn env_contains_key(env_stack : &Environment, id: &Identifier) -> bool {
+    for env in env_stack.iter().rev() {
+        match env.contains_key(id) {
+            true => return true,
+            _ => ()
+        }
+    }
+    return false
 }
 
 pub fn fresh_int<'ctx>(ctx: &'ctx Context, id: String) -> Variable<'ctx> {
@@ -241,7 +267,7 @@ fn expression_to_dynamic<'ctx>(
             }
         }
 
-        Expression::Identifier(id) => match env.get(id) {
+        Expression::Identifier(id) => match get_from_env(env, id) {
             Some(var) => match var {
                 Variable::Int(i) => {
                     //klopt dit, moet ik niet de reference naar de variable in de env passen?

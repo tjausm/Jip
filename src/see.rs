@@ -2,7 +2,7 @@ use crate::ast::{Lhs, Program, Rhs, Statement, Type};
 use crate::cfg::{generate_cfg, generate_dot_cfg, CfgNode};
 use crate::errors::Error;
 use crate::z3::{
-    expression_to_bool, expression_to_int, fresh_bool, fresh_int,
+    expression_to_bool, expression_to_int, insert_into_env, get_from_env, env_contains_key, fresh_bool, fresh_int,
     solve_constraints, Environment, Identifier, PathConstraint, Variable,
 };
 
@@ -14,6 +14,7 @@ use z3::{Config, Context};
 use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::fs;
+use std::rc::Rc;
 
 const PROG_CORRECT: &str = "Program is correct";
 
@@ -72,7 +73,7 @@ fn verify(program: &str, d: Depth) -> Result<(), Error> {
 
     //init our bfs through the cfg
     let mut q: VecDeque<(Environment, Vec<PathConstraint>, Depth, NodeIndex)> = VecDeque::new();
-    q.push_back((HashMap::new(), vec![], d, start_node));
+    q.push_back((vec![HashMap::new()], vec![], d, start_node));
 
     // Assert -> build & verify z3 formula, return error if disproven
     // Assume -> build & verify z3 formula, stop evaluating pad if disproven
@@ -92,7 +93,7 @@ fn verify(program: &str, d: Depth) -> Result<(), Error> {
                     }
                     CfgNode::Statement(stmt) => {
                         match stmt {
-                            Statement::Declaration((ty, id)) => match (env.contains_key(id), ty) {
+                            Statement::Declaration((ty, id)) => match (env_contains_key(&env, id), ty) {
                                 (true, _) => {
                                     return Err(Error::Semantics(format!(
                                         "Variable {} is declared twice",
@@ -100,10 +101,10 @@ fn verify(program: &str, d: Depth) -> Result<(), Error> {
                                     )))
                                 }
                                 (_, Type::Int) => {
-                                    env.insert(&id, fresh_int(&ctx, id.clone()));
+                                    insert_into_env(&mut env, &id, fresh_int(&ctx, id.clone()));
                                 }
                                 (_, Type::Bool) => {
-                                    env.insert(&id, fresh_bool(&ctx, id.clone()));
+                                    insert_into_env(&mut env, &id, fresh_bool(&ctx, id.clone()));
                                 }
                                 (_, weird_type) => {
                                     return Err(Error::Semantics(format!(
@@ -130,7 +131,7 @@ fn verify(program: &str, d: Depth) -> Result<(), Error> {
                                 }
                             }
                             Statement::Assignment((Lhs::Identifier(id), Rhs::Expr(expr))) => {
-                                match env.get(id) {
+                                match get_from_env(Rc::new(&env), id) {
                                     None => {
                                         return Err(Error::Semantics(format!(
                                             "Variable {} is undeclared",
@@ -142,12 +143,12 @@ fn verify(program: &str, d: Depth) -> Result<(), Error> {
                                             Ok(ast) => ast,
                                             Err(why) => return Err(why),
                                         };
-                                        env.insert(id, Variable::Int(ast));
+                                        insert_into_env(&mut env, &id, Variable::Int(ast));
                                     }
 
                                     Some(Variable::Bool(_)) => {
                                         match expression_to_bool(&ctx, &env, &expr) {
-                                            Ok(ast) => env.insert(id, Variable::Bool(ast)),
+                                            Ok(ast) => insert_into_env(&mut env, &id, Variable::Bool(ast)),
                                             Err(why) => return Err(why),
                                         };
                                     }
@@ -160,8 +161,8 @@ fn verify(program: &str, d: Depth) -> Result<(), Error> {
                             q.push_back((env.clone(), pc.clone(), d - 1, next));
                         }
                     }
-                    CfgNode::EnterScope(_) => panic!(""),
-                    CfgNode::LeaveScope(_) => panic!(""),
+                    CfgNode::EnterScope(_) => env.push(HashMap::new()),
+                    CfgNode::LeaveScope(_) => {env.pop();},
                     CfgNode::End => (),
                 }
             }
