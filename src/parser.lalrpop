@@ -2,6 +2,16 @@ use std::str::FromStr;
 use crate::ast::*;
 grammar;
 
+Comma<T>: Vec<T> = { // (1)
+    <mut v:(<T> ",")*> <e:T?> => match e { // (2)
+        None => v,
+        Some(e) => {
+            v.push(e);
+            v
+        }
+    }
+};
+
 pub Program = <Class*>; 
 
 Class : Class = "class" <Identifier> "{" <Member*> "}";
@@ -11,9 +21,12 @@ Member : Member = {
 }
 
 Method : Method = {
-    "static" <Type> <Identifier> "()" <Body> => Method::Static((<>)),
-    <Type> <Identifier> "()" <Body> => Method::Nonstatic((<>)),
+    "static" <Type> <Identifier> "(" <Comma<Parameter>> ")" <Body> => Method::Static((<>)),
+    <Type> <Identifier> "(" <Comma<Parameter>> ")" <Body> => Method::Nonstatic((<>)),
 }
+
+Parameter : Parameter = <Nonvoidtype> <Identifier>;
+
 
 Body : Statements = "{" <Statement+> "}";
 
@@ -40,6 +53,7 @@ pub Statement : Statement = {
     Assignment => Statement::Assignment(<>),
     <Invocation> ";" => Statement::Call(<>),
     Ite => Statement::Ite(<>),
+    "return" <Expression> ";" => Statement::Return(<>),
     Block => Statement::Block(<>),
     Assert => Statement::Assert(<>),
     Assume => Statement::Assume(<>),
@@ -63,11 +77,12 @@ Lhs : Lhs = {
 }
 
 Rhs : Rhs= {
-    Expression => Rhs::Expr(<>)
+    Expression => Rhs::Expression(<>),
+    Invocation => Rhs::Invocation(<>)
 }
 
 Invocation : Invocation = {
-    <Identifier> "." <Identifier> "()" => (<>)
+    <Identifier> "." <Identifier> "(" <Comma<Expression>> ")" => (<>)
 }
 
 Ite : Ite = {

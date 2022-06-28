@@ -4,9 +4,9 @@ use z3::ast::{Ast, Bool, Dynamic, Int};
 use z3::{ast, Context, SatResult, Solver};
 
 use std::collections::HashMap;
-use std::vec;
 use std::fmt;
 use std::rc::Rc;
+use std::vec;
 
 use crate::ast::*;
 use crate::errors::Error;
@@ -36,29 +36,31 @@ impl fmt::Debug for PathConstraint<'_> {
     }
 }
 
-pub fn insert_into_env<'ctx>(env : &mut Environment<'ctx>, id: &'ctx Identifier, var: Variable<'ctx>) -> () {
-    let len = env.len();
-    env[len - 1].insert(id, var);
+// note if identifier equals "retval" we insert its value 1 scope above current
+pub fn insert_into_env<'ctx>(
+    env: &mut Environment<'ctx>,
+    id: &'ctx Identifier,
+    var: Variable<'ctx>,
+) -> () {
+    let index = if id == "retval" {
+        env.len() - 2
+    } else {
+        env.len() - 1
+    };
+    env[index].insert(id, var);
 }
 
-pub fn get_from_env<'ctx>(env_stack : Rc<&Environment<'ctx>>, id: &Identifier) -> Option<Variable<'ctx>> {
+pub fn get_from_env<'ctx>(
+    env_stack: Rc<&Environment<'ctx>>,
+    id: &Identifier,
+) -> Option<Variable<'ctx>> {
     for env in env_stack.iter().rev() {
         match env.get(id) {
             Some(var) => return Some(var.clone()),
-            None => ()
+            None => (),
         }
     }
-    return None
-}
-
-pub fn env_contains_key(env_stack : &Environment, id: &Identifier) -> bool {
-    for env in env_stack.iter().rev() {
-        match env.contains_key(id) {
-            true => return true,
-            _ => ()
-        }
-    }
-    return false
+    return None;
 }
 
 pub fn fresh_int<'ctx>(ctx: &'ctx Context, id: String) -> Variable<'ctx> {
@@ -69,8 +71,8 @@ pub fn fresh_bool<'ctx>(ctx: &'ctx Context, id: String) -> Variable<'ctx> {
     return Variable::Bool(Bool::new_const(&ctx, id));
 }
 
-// combines the constraints and check correctness
-//(if last constr was assert than we combine using And if was assume we combine using Imply)
+// combines the constraints in reversed order and check correctness
+//(e.g. if constraints are 'assume x', 'assert y', 'assume z' we get 'x -> (y && z)')
 pub fn solve_constraints<'ctx>(
     ctx: &'ctx Context,
     path_constraints: &Vec<PathConstraint<'ctx>>,
@@ -86,12 +88,14 @@ pub fn solve_constraints<'ctx>(
         }
     }
 
-    println!("{}", constraints.not());
+    //println!("{}", constraints.not());
 
     let solver = Solver::new(&ctx);
     solver.assert(&constraints.not());
     let result = solver.check();
     let model = solver.get_model();
+
+    //println!("{:?}", model);
 
     match (result, model) {
         (SatResult::Unsat, _) => return Ok(()),
@@ -108,7 +112,6 @@ pub fn solve_constraints<'ctx>(
         }
     };
 }
-
 
 pub fn expression_to_int<'ctx>(
     ctx: &'ctx Context,

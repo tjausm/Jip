@@ -1,0 +1,18 @@
+class Main {
+    static void main(){
+        Counter c := new Counter(7);
+        c.increment();
+        c.increment();
+        c.increment();
+        c.decrement();
+        assert c.value == 9;
+    }
+}
+
+class Counter {
+    int count;
+    Counter(int initial) {this.count := initial; }
+    void increment() {this.count := this.count + 1;}
+    void decrement() {this.count := this.count - 1;}
+    int value() {return this.count;}
+}

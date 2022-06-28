@@ -26,7 +26,11 @@ pub enum Method {
 }
 
 //TODO: add args hier
-type Methodcontent = (Type, Identifier, Statements);
+pub type Methodcontent = (Type, Identifier, Parameters, Statements);
+
+pub type Parameters = Vec<Parameter>;
+
+pub type Parameter = (Type, Identifier);
 
 pub type Statements = Vec<Statement>;
 
@@ -37,6 +41,7 @@ pub enum Statement {
     Assignment(Assignment),
     Call(Invocation),
     Ite(Ite),
+    Return(Expression),
     Block(Box<Statements>),
     Assert(Expression),
     Assume(Expression),
@@ -66,11 +71,14 @@ pub enum Lhs {
 
 #[derive(Debug, Clone)]
 pub enum Rhs {
-    Expr(Expression),
+    Expression(Expression),
+    Invocation(Invocation)
 }
 
 //TODO: add args hier
-pub type Invocation = (Identifier, Identifier);
+pub type Invocation = (Identifier, Identifier, Arguments);
+
+pub type Arguments = Vec<Expression>;
 
 pub type Ite = (Expression, Box<Statement>, Box<Statement>);
 
@@ -131,9 +139,11 @@ impl fmt::Debug for Statement {
         match self {
             Statement::DeclareAssign((t, id, rhs)) => write!(f, "{:?} {:?}", t, Statement::Assignment((Lhs::Identifier(id.to_string()), rhs.clone()))),
             Statement::Declaration((t, id)) => write!(f, "{:?} {};", t, id),
-            Statement::Assignment((Lhs::Identifier(id), Rhs::Expr(expr))) => write!(f, "{} := {:?};", id, expr),
-            Statement::Call((l, r)) => write!(f, "{}.{}();", l, r),
+            Statement::Assignment((Lhs::Identifier(id), Rhs::Expression(expr))) => write!(f, "{} := {:?};", id, expr),
+            Statement::Assignment((Lhs::Identifier(id), Rhs::Invocation((class, fun, args)))) => write!(f, "{} := {}.{}({:?});", id, class, fun, args),
+            Statement::Call((l, r, args)) => write!(f, "{}.{}({:?});", l, r, args),
             Statement::Ite((cond, if_expr, else_expr)) => write!(f, "if ({:?}) then {:?} else {:?}", cond, if_expr, else_expr),
+            Statement::Return(expr) => write!(f, "return {:?};", expr),
             Statement::Block(stmts) => write!(f, "{{ {:?} }}", stmts),
             Statement::Assert(expr) => write!(f, "assert {:?};", expr),
             Statement::Assume(expr) => write!(f, "assume {:?};", expr),

@@ -19,7 +19,7 @@
                     "kind": "bin"
                 }
             },
-            "args": ["file", "tests/programs/max_faulty", "verify-program"],
+            "args": ["file", "tests/programs/arguments", "verify-program"],
             "cwd": "${workspaceFolder}"
         },
         {

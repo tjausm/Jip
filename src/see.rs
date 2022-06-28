@@ -2,7 +2,7 @@ use crate::ast::{Lhs, Program, Rhs, Statement, Type};
 use crate::cfg::{generate_cfg, generate_dot_cfg, CfgNode};
 use crate::errors::Error;
 use crate::z3::{
-    expression_to_bool, expression_to_int, insert_into_env, get_from_env, env_contains_key, fresh_bool, fresh_int,
+    expression_to_bool, expression_to_int, insert_into_env, get_from_env, fresh_bool, fresh_int,
     solve_constraints, Environment, Identifier, PathConstraint, Variable,
 };
 
@@ -85,28 +85,16 @@ fn verify(program: &str, d: Depth) -> Result<(), Error> {
             (mut env, mut pc, d, node_index) => {
                 match &cfg[node_index] {
                     // enqueue all starting statements of program
-                    CfgNode::Start => {
-                        for edge in cfg.edges(node_index) {
-                            let next = edge.target();
-                            q.push_back((env.clone(), pc.clone(), d, next));
-                        }
-                    }
                     CfgNode::Statement(stmt) => {
                         match stmt {
-                            Statement::Declaration((ty, id)) => match (env_contains_key(&env, id), ty) {
-                                (true, _) => {
-                                    return Err(Error::Semantics(format!(
-                                        "Variable {} is declared twice",
-                                        id
-                                    )))
-                                }
-                                (_, Type::Int) => {
+                            Statement::Declaration((ty, id)) => match  ty {
+                                Type::Int => {
                                     insert_into_env(&mut env, &id, fresh_int(&ctx, id.clone()));
                                 }
-                                (_, Type::Bool) => {
+                                Type::Bool => {
                                     insert_into_env(&mut env, &id, fresh_bool(&ctx, id.clone()));
                                 }
-                                (_, weird_type) => {
+                                weird_type => {
                                     return Err(Error::Semantics(format!(
                                         "Declaring a var of type {:?} isn't possible",
                                         weird_type
@@ -130,7 +118,7 @@ fn verify(program: &str, d: Depth) -> Result<(), Error> {
                                     },
                                 }
                             }
-                            Statement::Assignment((Lhs::Identifier(id), Rhs::Expr(expr))) => {
+                            Statement::Assignment((Lhs::Identifier(id), Rhs::Expression(expr))) => {
                                 match get_from_env(Rc::new(&env), id) {
                                     None => {
                                         return Err(Error::Semantics(format!(
@@ -156,14 +144,15 @@ fn verify(program: &str, d: Depth) -> Result<(), Error> {
                             }
                             _ => (),
                         }
-                        for edge in cfg.edges(node_index) {
-                            let next = edge.target();
-                            q.push_back((env.clone(), pc.clone(), d - 1, next));
-                        }
                     }
                     CfgNode::EnterScope(_) => env.push(HashMap::new()),
                     CfgNode::LeaveScope(_) => {env.pop();},
-                    CfgNode::End => (),
+                    _ => (),
+                }
+                //enqueue all connected nodes with the updated env and constraints
+                for edge in cfg.edges(node_index) {
+                    let next = edge.target();
+                    q.push_back((env.clone(), pc.clone(), d-1, next));
                 }
             }
         }
