@@ -17,8 +17,12 @@ pub Program = <Class*>;
 Class : Class = "class" <Identifier> "{" <Member*> "}";
 
 Member : Member = {
+    Constructor => Member::Constructor(<>),
     Method => Member::Method(<>),
+    Field => Member::Field(<>)
 }
+
+Constructor : Constructor = <Identifier> "(" <Comma<Parameter>> ")" <Body>;
 
 Method : Method = {
     "static" <Type> <Identifier> "(" <Comma<Parameter>> ")" <Body> => Method::Static((<>)),
@@ -27,6 +31,9 @@ Method : Method = {
 
 Parameter : Parameter = <Nonvoidtype> <Identifier>;
 
+//TODO: how can i adhere to original grammar here?
+// removing field gens conflict between field & method when evaluating class members
+Field : Field = "-" <Nonvoidtype> <Identifier> ";";
 
 Body : Statements = "{" <Statement+> "}";
 
@@ -37,12 +44,22 @@ Type : Type = {
 
 Nonvoidtype : Type = {
     Primitivetype,
+    Referencetype
 }
 
 Primitivetype : Type = {
     "int" => Type::Int,
     "bool" => Type::Bool 
 }
+
+Referencetype : Type = {
+    Classtype
+}
+
+Classtype : Type = {
+    <Identifier> => Type::Classtype(<>),
+}
+
 
 
 pub Statements  = Statement*;
@@ -73,17 +90,22 @@ Assignment : Assignment = {
 }
 
 Lhs : Lhs = {
-    Identifier => Lhs::Identifier(<>)
+    Identifier => Lhs::Identifier(<>),
+    <Identifier> "." <Identifier> => Lhs::Accessfield(<>)
 }
 
 Rhs : Rhs= {
     Expression => Rhs::Expression(<>),
-    Invocation => Rhs::Invocation(<>)
+    <Identifier> "." <Identifier> => Rhs::Accessfield(<>),
+    Invocation => Rhs::Invocation(<>),
+    "new" <Identifier> "(" <Arguments> ")" => Rhs::Newobject(<>)
 }
 
 Invocation : Invocation = {
-    <Identifier> "." <Identifier> "(" <Comma<Expression>> ")" => (<>)
+    <Identifier> "." <Identifier> "(" <Arguments> ")" => (<>)
 }
+
+Arguments : Arguments = <Comma<Expression>>;
 
 Ite : Ite = {
     "if" "(" <e:Expression> ")" <s1:Statement> "else" <s2:Statement> => (e, Box::new(s1), Box::new(s2))

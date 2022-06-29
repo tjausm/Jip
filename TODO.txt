@@ -1,5 +1,11 @@
-Now doing: scoping
-TODO: add scope enters/leaves to cfg and connect the cfg created from a method with said enters and leaves
+TODO: formulas worden nog niet goed gegenereerd, en print-formulas genereert andere dingen dan verify-program
 
-TODO: add function arguments 
-unrecovarable errors in panics veranderen, dit levert wel hele lelijke errors op...
+misschien toch maar print formula vervangen for een block met consolelogs die ik in- en uitcomment
+
+500 - 8s
+500 - 19s
+
+1000 - 33s
+
+returns automatisch 1 scope hoger aan retval assignen
+de assignment vervangen voor een retval

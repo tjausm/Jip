@@ -5,14 +5,15 @@ class Main {
         c.increment();
         c.increment();
         c.decrement();
-        assert c.value == 9;
+        int cvalue := c.value;
+        assert cvalue == 9;
     }
 }
 
 class Counter {
-    int count;
+    -int count;
     Counter(int initial) {this.count := initial; }
-    void increment() {this.count := this.count + 1;}
-    void decrement() {this.count := this.count - 1;}
-    int value() {return this.count;}
+    void increment() {int i := this.count; this.count := i + 1;}
+    void decrement() {int i := this.count; this.count := i - 1;}
+    int value() {int count := this.count; return count;}
 }
