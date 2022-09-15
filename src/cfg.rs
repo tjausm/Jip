@@ -1,3 +1,6 @@
+//! Transforms object of the `Program` type to a Control Flow Graph (CFG)
+//! 
+//! 
 lalrpop_mod!(pub parser); // synthesized by LALRPOP
 
 use crate::ast::*;
@@ -29,7 +32,7 @@ impl fmt::Debug for CfgNode {
 
 pub type CFG = Graph<CfgNode, ()>;
 
-// generates cfg in vizualizable Dot format(visualizable at http://viz-js.com/)
+/// Generates cfg in vizualizable Dot format (visualizable at http://viz-js.com/)
 pub fn generate_dot_cfg(program: Program) -> Result<String, Error> {
     match generate_cfg(program) {
         Ok((_, cfg)) => Ok(format!("{:?}", Dot::new(&cfg))),
@@ -38,7 +41,7 @@ pub fn generate_dot_cfg(program: Program) -> Result<String, Error> {
 }
 
 // fuctions as the set-up for the recursive  stmts_to_cfg function
-// returns cfg, and the start_node for search algorithms
+/// Returns cfg, and the start_node representing entry point of the program
 pub fn generate_cfg(prog: Program) -> Result<(NodeIndex, CFG), Error> {
     //extract main.main method from program
     let main_class = get_class(&prog, "Main");
@@ -78,6 +81,7 @@ fn get_class<'a>(prog: &'a Program, class_name: &str) -> Option<&'a Class> {
 }
 
 fn get_method<'a>(class: &'a Class, method_name: &str) -> Option<&'a Method> {
+    
     for member in class.1.iter() {
         match member {
             Member::Method(method) => match method {
@@ -113,7 +117,7 @@ fn get_methodcontent<'a>(
     };
 }
 
-// recursively unpacks Statement and returns start and end of cfg and cfg itself
+/// Recursively unpacks Statement and returns start and end of cfg and cfg itself
 fn stmt_to_cfg(
     prog: &Program,
     stmt: Statement,
@@ -139,9 +143,9 @@ fn stmt_to_cfg(
     }
 }
 
-// processes vec<Statement> in REVERSE order
-// adds edges from all passed start nodes to first node it generates from stmts
-// and adds edges from the last nodes it generates to the ending node if it is specified
+/// processes vec<Statement> in REVERSE order, 
+/// adds edges from all passed start nodes to first node it generates from stmts
+/// and adds edges from the last nodes it generates to the ending node if it is specified.
 fn stmts_to_cfg(
     prog: &Program,
     mut stmts: Statements,

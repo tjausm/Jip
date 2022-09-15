@@ -19,7 +19,7 @@
                     "kind": "bin"
                 }
             },
-            "args": ["file", "tests/programs/arguments", "verify-program"],
+            "args": ["file", "tests/programs/arguments_faulty", "verify-program"],
             "cwd": "${workspaceFolder}"
         },
         {

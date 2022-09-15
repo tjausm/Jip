@@ -1,3 +1,6 @@
+//! Transforms a program path to a logical formula and test satisfiability using theorem prover Z3
+//! 
+
 extern crate z3;
 
 use z3::ast::{Ast, Bool, Dynamic, Int};
@@ -71,8 +74,8 @@ pub fn fresh_bool<'ctx>(ctx: &'ctx Context, id: String) -> Variable<'ctx> {
     return Variable::Bool(Bool::new_const(&ctx, id));
 }
 
-// combines the constraints in reversed order and check correctness
-//(e.g. if constraints are 'assume x', 'assert y', 'assume z' we get 'x -> (y && z)')
+/// Combine the constraints in reversed order and check correctness
+/// `solve_constraints(ctx, vec![assume x, assert y, assume z] = x -> (y && z)`
 pub fn solve_constraints<'ctx>(
     ctx: &'ctx Context,
     path_constraints: &Vec<PathConstraint<'ctx>>,
@@ -100,10 +103,12 @@ pub fn solve_constraints<'ctx>(
     match (result, model) {
         (SatResult::Unsat, _) => return Ok(()),
         (SatResult::Sat, Some(model)) => {
+            let x = format!("{:?}", model);
+            println!("{}",x);
             return Err(Error::Verification(format!(
                 "Following configuration violates program:\n{:?}",
                 model
-            )))
+            )));
         }
         _ => {
             return Err(Error::Verification(
@@ -129,7 +134,6 @@ pub fn expression_to_bool<'ctx>(
     return expression_to_dynamic(&ctx, Rc::new(env), expr).and_then(as_bool_or_error);
 }
 
-//main function translating oox expressions to z3 ast
 fn expression_to_dynamic<'ctx>(
     ctx: &'ctx Context,
     env: Rc<&Environment<'ctx>>,
@@ -299,7 +303,7 @@ fn expression_to_dynamic<'ctx>(
     }
 }
 
-//flatten result to ok, or the first error encountered
+/// Flatten tupple of results to Ok, or the first error encountered
 fn flatten_tupple<'ctx, A>((l, r): (Result<A, Error>, Result<A, Error>)) -> Result<(A, A), Error> {
     match (l, r) {
         (Ok(l), Ok(r)) => return Ok((l, r)),

@@ -1,8 +1,11 @@
+//! Symbolic Execution Engine (SEE) combines parser, CFG creation, program path generation, transformation from path to formula and verification of said formula by Z3
+//!
+
 use crate::ast::{Lhs, Program, Rhs, Statement, Type};
 use crate::cfg::{generate_cfg, generate_dot_cfg, CfgNode};
 use crate::errors::Error;
 use crate::z3::{
-    expression_to_bool, expression_to_int, insert_into_env, get_from_env, fresh_bool, fresh_int,
+    expression_to_bool, expression_to_int, fresh_bool, fresh_int, get_from_env, insert_into_env,
     solve_constraints, Environment, Identifier, PathConstraint, Variable,
 };
 
@@ -18,9 +21,12 @@ use std::rc::Rc;
 
 const PROG_CORRECT: &str = "Program is correct";
 
-// 0 = validated program, 1 = validation error, 2 = all other errors
+/// 0 = validated program, 1 = validation error, 2 = all other errors
 pub type ExitCode = i32;
+
+/// Defines search depth for SEE
 pub type Depth = i32;
+
 fn print_result(r: Result<(), Error>) -> (ExitCode, String) {
     match r {
         Err(Error::Syntax(why)) => (2, format!("Syntax error: {}", why)),
@@ -87,7 +93,7 @@ fn verify(program: &str, d: Depth) -> Result<(), Error> {
                     // enqueue all starting statements of program
                     CfgNode::Statement(stmt) => {
                         match stmt {
-                            Statement::Declaration((ty, id)) => match  ty {
+                            Statement::Declaration((ty, id)) => match ty {
                                 Type::Int => {
                                     insert_into_env(&mut env, &id, fresh_int(&ctx, id.clone()));
                                 }
@@ -106,9 +112,9 @@ fn verify(program: &str, d: Depth) -> Result<(), Error> {
                             Statement::Assume(expr) => {
                                 match expression_to_bool(&ctx, &env, &expr) {
                                     Err(why) => return Err(why),
-                                    Ok(ast) => pc.push(PathConstraint::Assume(ast))
+                                    Ok(ast) => pc.push(PathConstraint::Assume(ast)),
                                 }
-                                },
+                            }
                             Statement::Assert(expr) => {
                                 match expression_to_bool(&ctx, &env, &expr) {
                                     Err(why) => return Err(why),
@@ -136,7 +142,9 @@ fn verify(program: &str, d: Depth) -> Result<(), Error> {
 
                                     Some(Variable::Bool(_)) => {
                                         match expression_to_bool(&ctx, &env, &expr) {
-                                            Ok(ast) => insert_into_env(&mut env, &id, Variable::Bool(ast)),
+                                            Ok(ast) => {
+                                                insert_into_env(&mut env, &id, Variable::Bool(ast))
+                                            }
                                             Err(why) => return Err(why),
                                         };
                                     }
@@ -146,13 +154,15 @@ fn verify(program: &str, d: Depth) -> Result<(), Error> {
                         }
                     }
                     CfgNode::EnterScope(_) => env.push(HashMap::new()),
-                    CfgNode::LeaveScope(_) => {env.pop();},
+                    CfgNode::LeaveScope(_) => {
+                        env.pop();
+                    }
                     _ => (),
                 }
                 //enqueue all connected nodes with the updated env and constraints
                 for edge in cfg.edges(node_index) {
                     let next = edge.target();
-                    q.push_back((env.clone(), pc.clone(), d-1, next));
+                    q.push_back((env.clone(), pc.clone(), d - 1, next));
                 }
             }
         }
@@ -160,7 +170,7 @@ fn verify(program: &str, d: Depth) -> Result<(), Error> {
     return Ok(());
 }
 
-// put parser test here since parser mod is auto-generated
+/// Contains parser tests since parser mod is auto-generated
 #[cfg(test)]
 mod tests {
 
