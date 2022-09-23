@@ -1,12 +1,14 @@
 //! Transforms object of the `Program` type to a Control Flow Graph (CFG)
-//! 
-//! 
+//!
+//!
 lalrpop_mod!(pub parser); // synthesized by LALRPOP
 
 use crate::ast::*;
 use crate::errors::Error;
+use crate::shared::{get_from_env, insert_into_env};
 use petgraph::dot::Dot;
 use petgraph::graph::{Graph, NodeIndex};
+use std::collections::{HashMap, VecDeque};
 use std::fmt;
 use std::iter::zip;
 
@@ -32,6 +34,8 @@ impl fmt::Debug for CfgNode {
 
 pub type CFG = Graph<CfgNode, ()>;
 
+type TypeEnv = Vec<HashMap<Identifier, Class>>;
+
 /// Generates cfg in vizualizable Dot format (visualizable at http://viz-js.com/)
 pub fn generate_dot_cfg(program: Program) -> Result<String, Error> {
     match generate_cfg(program) {
@@ -55,16 +59,27 @@ pub fn generate_cfg(prog: Program) -> Result<(NodeIndex, CFG), Error> {
                 .map(|arg| Statement::Declaration(arg.clone()))
                 .collect::<Statements>();
             decl_and_body.append(&mut body.clone());
+            let decl_and_body = VecDeque::from(decl_and_body);
 
+            //initiate cfg
             let mut cfg = Graph::<CfgNode, ()>::new();
             let start_node = cfg.add_node(CfgNode::Start);
             let end_node = cfg.add_node(CfgNode::End);
 
-            let (_, _, cfg) =
-                match stmts_to_cfg(&prog, decl_and_body, cfg, vec![start_node], Some(end_node)) {
-                    Ok(res) => res,
-                    Err(why) => return Err(why),
-                };
+            //initiate type env
+            let mut ty_env = vec![HashMap::new()];
+
+            let (_, _, cfg) = match stmts_to_cfg(
+                &mut ty_env,
+                &prog,
+                decl_and_body,
+                cfg,
+                vec![start_node],
+                Some(end_node),
+            ) {
+                Ok(res) => res,
+                Err(why) => return Err(why),
+            };
             return Ok((start_node, cfg));
         }
         _ => {
@@ -81,7 +96,6 @@ fn get_class<'a>(prog: &'a Program, class_name: &str) -> Option<&'a Class> {
 }
 
 fn get_method<'a>(class: &'a Class, method_name: &str) -> Option<&'a Method> {
-    
     for member in class.1.iter() {
         match member {
             Member::Method(method) => match method {
@@ -117,8 +131,24 @@ fn get_methodcontent<'a>(
     };
 }
 
+fn get_constructor<'a>(prog: &'a Program, class_name: &str) -> Option<&'a Constructor> {
+    match get_class(&prog, &class_name) {
+        Some((_, members)) => {
+            for m in members.iter() {
+                match m {
+                    Member::Constructor(c) => return Some(c),
+                    _ => continue,
+                }
+            }
+        }
+        None => return None,
+    };
+    return None;
+}
+
 /// Recursively unpacks Statement and returns start and end of cfg and cfg itself
 fn stmt_to_cfg(
+    ty_env: &mut TypeEnv,
     prog: &Program,
     stmt: Statement,
     mut cfg: CFG,
@@ -127,7 +157,14 @@ fn stmt_to_cfg(
 ) -> Result<(Vec<NodeIndex>, NodeIndex, CFG), Error> {
     match stmt {
         Statement::Block(stmts) => {
-            return stmts_to_cfg(prog, *stmts, cfg, vec![start_node], end_node)
+            return stmts_to_cfg(
+                ty_env,
+                prog,
+                VecDeque::from(*stmts),
+                cfg,
+                vec![start_node],
+                end_node,
+            )
         }
         other => {
             let stmt_node = cfg.add_node(CfgNode::Statement(other));
@@ -143,18 +180,18 @@ fn stmt_to_cfg(
     }
 }
 
-/// processes vec<Statement> in REVERSE order, 
 /// adds edges from all passed start nodes to first node it generates from stmts
-/// and adds edges from the last nodes it generates to the ending node if it is specified.
-fn stmts_to_cfg(
+/// and adds edges from the last nodes it generates to the ending node if one is specified.
+fn stmts_to_cfg<'a>(
+    ty_env: &mut TypeEnv,
     prog: &Program,
-    mut stmts: Statements,
+    mut stmts: VecDeque<Statement>,
     mut cfg: CFG,
     start_nodes: Vec<NodeIndex>,
     ending_node: Option<NodeIndex>,
 ) -> Result<(Vec<NodeIndex>, NodeIndex, CFG), Error> {
-    match stmts.len() > 0 {
-        true => match stmts.remove(0) {
+    match stmts.pop_front() {
+        Some(stmt) => match stmt {
             Statement::Ite((cond, s1, s2)) => {
                 // add condition as assume and assume_not to the cfg
                 let assume = CfgNode::Statement(Statement::Assume(cond.clone()));
@@ -169,16 +206,24 @@ fn stmts_to_cfg(
                 }
 
                 // add the if and else branch to the cfg
-                let (_, if_ending, cfg) = match stmt_to_cfg(prog, *s1, cfg, assume_node, None) {
-                    Ok(res) => res,
-                    Err(why) => return Err(why),
-                };
-                let (_, else_ending, cfg) = match stmt_to_cfg(prog, *s2, cfg, assume_not_node, None)
-                {
-                    Ok(res) => res,
-                    Err(why) => return Err(why),
-                };
-                return stmts_to_cfg(prog, stmts, cfg, vec![if_ending, else_ending], ending_node);
+                let (_, if_ending, cfg) =
+                    match stmt_to_cfg(ty_env, prog, *s1, cfg, assume_node, None) {
+                        Ok(res) => res,
+                        Err(why) => return Err(why),
+                    };
+                let (_, else_ending, cfg) =
+                    match stmt_to_cfg(ty_env, prog, *s2, cfg, assume_not_node, None) {
+                        Ok(res) => res,
+                        Err(why) => return Err(why),
+                    };
+                return stmts_to_cfg(
+                    ty_env,
+                    prog,
+                    stmts,
+                    cfg,
+                    vec![if_ending, else_ending],
+                    ending_node,
+                );
             }
             Statement::While((cond, body)) => {
                 // add condition as assume and assume_not to the cfg
@@ -192,12 +237,14 @@ fn stmts_to_cfg(
                     cfg.add_edge(start_node, assume_not_node, ());
                 }
                 // calculate cfg for body of while and cfg for the remainder of the stmts
-                let (_, body_ending, cfg) = match stmt_to_cfg(prog, *body, cfg, assume_node, None) {
-                    Ok(res) => res,
-                    Err(why) => return Err(why),
-                };
+                let (_, body_ending, cfg) =
+                    match stmt_to_cfg(ty_env, prog, *body, cfg, assume_node, None) {
+                        Ok(res) => res,
+                        Err(why) => return Err(why),
+                    };
                 let (_, end_remainder, mut cfg) =
-                    match stmts_to_cfg(prog, stmts, cfg, vec![assume_not_node], ending_node) {
+                    match stmts_to_cfg(ty_env, prog, stmts, cfg, vec![assume_not_node], ending_node)
+                    {
                         Ok(res) => res,
                         Err(why) => return Err(why),
                     };
@@ -210,6 +257,7 @@ fn stmts_to_cfg(
             //add declaration of new retval type
             //gen cfg of method body and link the ends up with existing cfg
             Statement::Call((class, method, args)) => {
+                // Check whether method exists and it has enough args
                 let (method_type, _, parameters, body) =
                     match get_methodcontent(prog, &class, &method) {
                         Some(ty_and_body) => ty_and_body,
@@ -221,40 +269,51 @@ fn stmts_to_cfg(
                         }
                     };
 
+                if parameters.len() != args.len() {
+                    return Err(Error::Semantics(format!(
+                        "A call of method {}.{} does not have correct number of arguments",
+                        class, method
+                    )));
+                };
+
+                // if method_type == void then graph = start_nodes -> enter_scope
+                // else then graph = start_nodes -> declare_retval -> enter_scope
                 let enter_scope =
                     cfg.add_node(CfgNode::EnterScope((class.clone(), method.clone())));
 
                 let leave_scope =
                     cfg.add_node(CfgNode::LeaveScope((class.clone(), method.clone())));
 
+                let retval_or_enter_scope = match method_type {
+                    Type::Void => enter_scope,
+                    ty => {
+                        let declare_retval = cfg.add_node(CfgNode::Statement(
+                            Statement::Declaration((ty.clone(), "retval".to_string())),
+                        ));
+                        cfg.add_edge(declare_retval, enter_scope, ());
+                        declare_retval
+                    }
+                };
+
                 for start_node in start_nodes {
-                    cfg.add_edge(start_node, enter_scope, ());
+                    cfg.add_edge(start_node, retval_or_enter_scope, ());
                 }
 
-                if (parameters.len() > args.len()) {
-                    return Err(Error::Semantics(format!(
-                        "A call of method {}.{} does not have enough arguments",
-                        class, method
-                    )));
-                };
-                if (parameters.len() < args.len()) {
-                    return Err(Error::Semantics(format!(
-                        "A call of method {}.{} has to many arguments",
-                        class, method
-                    )));
-                };
-
-                // assign the given arguments to the method parameters and prepend declarassigns to method body
-                let mut declassigns_and_body = zip(parameters, args)
+                // assign the given arguments to the method parameters and append method body
+                let mut declassigns_and_body: VecDeque<Statement> = zip(parameters, args)
                     .map(|((ty, id), arg)| {
                         Statement::DeclareAssign((ty.clone(), id.clone(), Rhs::Expression(arg)))
                     })
-                    .collect::<Statements>();
-                declassigns_and_body.append(&mut body.clone());
+                    .collect();
 
-                //generate cfg from body (assign and declare retval in case of non-void call)
-                let (_, _, cfg) = match method_type {
-                    Type::Void => match stmts_to_cfg(
+                declassigns_and_body.append(&mut VecDeque::from(body.clone()));
+
+                //add new scope to ty_env for evaluating method body cfg
+                ty_env.push(HashMap::new());
+
+                //generate cfg c from body starting from enter_scope and ending at leave_scope
+                let (_, _, cfg) =  match stmts_to_cfg(
+                        ty_env,
                         prog,
                         declassigns_and_body,
                         cfg,
@@ -263,68 +322,82 @@ fn stmts_to_cfg(
                     ) {
                         Ok(res) => res,
                         Err(why) => return Err(why),
-                    },
-                    ty => {
-                        let declare_retval = cfg.add_node(CfgNode::Statement(
-                            Statement::Declaration((method_type.clone(), "retval".to_string())),
-                        ));
-                        cfg.add_edge(enter_scope, declare_retval, ());
-                        match stmts_to_cfg(
-                            prog,
-                            declassigns_and_body,
-                            cfg,
-                            vec![declare_retval],
-                            Some(leave_scope),
-                        ) {
-                            Ok(res) => res,
-                            Err(why) => return Err(why),
-                        }
-                    }
-                };
+                    };
 
-                return stmts_to_cfg(prog, stmts, cfg, vec![leave_scope], ending_node);
+                //leave ty_env scope after method body cfg is created
+                ty_env.pop();
+
+                return stmts_to_cfg(ty_env, prog, stmts, cfg, vec![leave_scope], ending_node);
             }
             // replace invocation by retval and prepend the function call
             Statement::Assignment((lhs, Rhs::Invocation((class, method, args)))) => {
-                stmts.insert(
-                    0,
-                    Statement::Assignment((
-                        lhs,
-                        Rhs::Expression(Expression::Identifier("retval".to_string())),
-                    )),
-                );
-                stmts.insert(0, Statement::Call((class, method, args)));
+                stmts.push_front(Statement::Assignment((
+                    lhs,
+                    Rhs::Expression(Expression::Identifier("retval".to_string())),
+                )));
+                stmts.push_front(Statement::Call((class, method, args)));
 
-                return stmts_to_cfg(prog, stmts, cfg, start_nodes, ending_node);
+                return stmts_to_cfg(ty_env, prog, stmts, cfg, start_nodes, ending_node);
             }
+            // replace assignment by this and prepend constructor call
+            Statement::Assignment((lhs, Rhs::Newobject(class, arguments))) => {
+                match get_constructor(prog, &class) {
+                    Some((consName, args, body)) => {
+                        // stmts.push_front(Statement::Call((class, consName, )));
+                    }
+                    None => {
+                        return Err(Error::Semantics(format!(
+                            "Class {} has no constructor",
+                            &class
+                        )))
+                    }
+                }
+
+                return stmts_to_cfg(ty_env, prog, stmts, cfg, start_nodes, ending_node);
+            }
+
             Statement::Return(expr) => {
-                stmts.insert(
-                    0,
-                    Statement::Assignment((
-                        Lhs::Identifier("retval".to_string()),
-                        Rhs::Expression(expr),
-                    )),
-                );
-                return stmts_to_cfg(prog, stmts, cfg, start_nodes, ending_node);
+                stmts.push_front(Statement::Assignment((
+                    Lhs::Identifier("retval".to_string()),
+                    Rhs::Expression(expr),
+                )));
+                return stmts_to_cfg(ty_env, prog, stmts, cfg, start_nodes, ending_node);
             }
             // split declareassign by prepending a declaration and assignment
             Statement::DeclareAssign((t, id, rhs)) => {
-                stmts.insert(0, Statement::Assignment((Lhs::Identifier(id.clone()), rhs)));
-                stmts.insert(0, Statement::Declaration((t, (&id).to_string())));
+                stmts.push_front(Statement::Assignment((Lhs::Identifier(id.clone()), rhs)));
+                stmts.push_front(Statement::Declaration((t, (&id).to_string())));
 
-                return stmts_to_cfg(prog, stmts, cfg, start_nodes, ending_node);
+                return stmts_to_cfg(ty_env, prog, stmts, cfg, start_nodes, ending_node);
             }
-            //add edge from start to stmt and recurse
+
+            // if no special case applies, add statement to cfg, let all start_nodes point to stmt, and make stmt start_node in next recursion step
             other => {
+                // keep track of variable types, to know where to find nonstatic methods called on object
+                match &other {
+                    Statement::Declaration((Type::Classtype(class_name), id)) => {
+                        match get_class(prog, class_name) {
+                            Some(class) => insert_into_env(ty_env, id.clone(), class.clone()),
+                            None => {
+                                return Err(Error::Semantics(format!(
+                                    "Class {} does not exist",
+                                    &class_name
+                                )))
+                            }
+                        }
+                    }
+                    _ => (),
+                }
+
                 let stmt_node = cfg.add_node(CfgNode::Statement(other));
                 for start_node in start_nodes {
                     cfg.add_edge(start_node, stmt_node, ());
                 }
-                return stmts_to_cfg(prog, stmts, cfg, vec![stmt_node], ending_node);
+                return stmts_to_cfg(ty_env, prog, stmts, cfg, vec![stmt_node], ending_node);
             }
         },
         //if stmt stack is empty we connect to end_node and return
-        false => match ending_node {
+        None => match ending_node {
             Some(end_node) => {
                 for start_node in &start_nodes {
                     cfg.add_edge(*start_node, end_node, ());

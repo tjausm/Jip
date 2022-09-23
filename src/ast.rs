@@ -14,6 +14,7 @@ pub type Class = (Identifier, Members);
 
 pub type Members = Vec<Member>;
 
+#[derive(Clone)]
 pub enum Member {
     Constructor(Constructor),
     Method(Method),
@@ -22,6 +23,7 @@ pub enum Member {
 
 pub type Constructor = (Identifier, Parameters, Statements);
 
+#[derive(Clone)]
 pub enum Method {
     Static(Methodcontent),
     Nonstatic(Methodcontent),

@@ -19,6 +19,7 @@ All tests are executed with `cargo test`, we have 2 types of tests:
 ## Todo's
 - [ ] upon looking for a method program now takes lhs, searches a class matching lhs and then seeks the method in that class matching the rhs. Doesn't work when a method is being called on an object aka doesn't handle case of nonstatic methods
 - [ ] object accesing vanaf de heap e.g.
+- [ ] turn Statements into VecDeque<Statement> when creating cfg
 
 - [ ] put all error msgs in one or more enums to 'streamline' them
 - [ ] best practices opzoeken voor variable shadowing

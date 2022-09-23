@@ -6,20 +6,23 @@ extern crate z3;
 use z3::ast::{Ast, Bool, Dynamic, Int};
 use z3::{ast, Context, SatResult, Solver};
 
+use std::cmp::max;
 use std::collections::HashMap;
 use std::fmt;
 use std::rc::Rc;
-use std::vec;
 
 use crate::ast::*;
+use crate::shared::{get_from_env, insert_into_env};
 use crate::errors::Error;
 
 pub type Identifier = String;
+
 
 #[derive(Debug, Clone)]
 pub enum Variable<'a> {
     Int(Int<'a>),
     Bool(Bool<'a>),
+    Object(HashMap<&'a Identifier, Variable<'a>>) // mapping field -> variable
 }
 
 pub type Environment<'a> = Vec<HashMap<&'a Identifier, Variable<'a>>>;
@@ -39,32 +42,6 @@ impl fmt::Debug for PathConstraint<'_> {
     }
 }
 
-// note if identifier equals "retval" we insert its value 1 scope above current
-pub fn insert_into_env<'ctx>(
-    env: &mut Environment<'ctx>,
-    id: &'ctx Identifier,
-    var: Variable<'ctx>,
-) -> () {
-    let index = if id == "retval" {
-        env.len() - 2
-    } else {
-        env.len() - 1
-    };
-    env[index].insert(id, var);
-}
-
-pub fn get_from_env<'ctx>(
-    env_stack: Rc<&Environment<'ctx>>,
-    id: &Identifier,
-) -> Option<Variable<'ctx>> {
-    for env in env_stack.iter().rev() {
-        match env.get(id) {
-            Some(var) => return Some(var.clone()),
-            None => (),
-        }
-    }
-    return None;
-}
 
 pub fn fresh_int<'ctx>(ctx: &'ctx Context, id: String) -> Variable<'ctx> {
     return Variable::Int(Int::new_const(&ctx, id));
@@ -72,6 +49,11 @@ pub fn fresh_int<'ctx>(ctx: &'ctx Context, id: String) -> Variable<'ctx> {
 
 pub fn fresh_bool<'ctx>(ctx: &'ctx Context, id: String) -> Variable<'ctx> {
     return Variable::Bool(Bool::new_const(&ctx, id));
+}
+
+pub fn fresh_object<'ctx>(ctx: &'ctx Context, class: Class, id: String) -> Variable<'ctx> {
+    // TODO: initiate fields hier?
+    return Variable::Object(HashMap::new());
 }
 
 /// Combine the constraints in reversed order and check correctness
@@ -91,7 +73,7 @@ pub fn solve_constraints<'ctx>(
         }
     }
 
-    //println!("{}", constraints.not());
+    println!("{}", constraints.not());
 
     let solver = Solver::new(&ctx);
     solver.assert(&constraints.not());
@@ -274,7 +256,7 @@ fn expression_to_dynamic<'ctx>(
             }
         }
 
-        Expression::Identifier(id) => match get_from_env(env, id) {
+        Expression::Identifier(id) => match get_from_env(&env, id) {
             Some(var) => match var {
                 Variable::Int(i) => {
                     //klopt dit, moet ik niet de reference naar de variable in de env passen?

@@ -4,10 +4,8 @@
 use crate::ast::{Lhs, Program, Rhs, Statement, Type};
 use crate::cfg::{generate_cfg, generate_dot_cfg, CfgNode};
 use crate::errors::Error;
-use crate::z3::{
-    expression_to_bool, expression_to_int, fresh_bool, fresh_int, get_from_env, insert_into_env,
-    solve_constraints, Environment, Identifier, PathConstraint, Variable,
-};
+use crate::z3::*;
+use crate::shared::{get_from_env, insert_into_env};
 
 lalrpop_mod!(pub parser); // synthesized by LALRPOP
 use petgraph::graph::NodeIndex;
@@ -125,7 +123,7 @@ fn verify(program: &str, d: Depth) -> Result<(), Error> {
                                 }
                             }
                             Statement::Assignment((Lhs::Identifier(id), Rhs::Expression(expr))) => {
-                                match get_from_env(Rc::new(&env), id) {
+                                match get_from_env(&env, id) {
                                     None => {
                                         return Err(Error::Semantics(format!(
                                             "Variable {} is undeclared",
@@ -147,6 +145,10 @@ fn verify(program: &str, d: Depth) -> Result<(), Error> {
                                             }
                                             Err(why) => return Err(why),
                                         };
+                                    }
+
+                                    Some(Variable::Object(..)) => {
+                                        return Err(Error::Other("Assigning objects not yet implemented".to_string()));
                                     }
                                 }
                             }

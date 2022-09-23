@@ -13,6 +13,7 @@ mod ast;
 mod cfg;
 mod see;
 mod z3;
+mod shared;
 
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]

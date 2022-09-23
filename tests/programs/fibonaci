@@ -1,0 +1,13 @@
+class Main {
+    static void main(int o){
+        Main.f(o);
+    }
+    static int f(int m){
+        if (m == 1)
+            return 0;
+        else {
+            int l := Main.f(m-1);
+        }
+            return 1 + l;
+    }
+}
