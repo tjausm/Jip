@@ -46,12 +46,13 @@ pub enum Statement {
     Declaration(Declaration),
     Assignment(Assignment),
     Call(Invocation),
+    Skip(Skip),
     Ite(Ite),
     Return(Expression),
     Block(Box<Statements>),
     Assert(Expression),
     Assume(Expression),
-    While(While),
+    While(While)
 }
 
 // Todo: add to syntax & semantics in thesis
@@ -89,6 +90,8 @@ pub enum Rhs {
 pub type Invocation = (Identifier, Identifier, Arguments);
 
 pub type Arguments = Vec<Expression>;
+
+pub type Skip = ();
 
 pub type Ite = (Expression, Box<Statement>, Box<Statement>);
 
@@ -153,6 +156,7 @@ impl fmt::Debug for Statement {
             Statement::Declaration((t, id)) => write!(f, "{:?} {};", t, id),
             Statement::Assignment((lhs, rhs)) => write!(f, "{:?} := {:?};", lhs, rhs),
             Statement::Call((l, r, args)) => write!(f, "{}.{}({:?});", l, r, args),
+            Statement::Skip(()) => write!(f, " ; "),
             Statement::Ite((cond, if_expr, else_expr)) => {
                 write!(f, "if ({:?}) then {:?} else {:?}", cond, if_expr, else_expr)
             }

@@ -1,6 +1,6 @@
 //! Transforms object of the `Program` type to a Control Flow Graph (CFG)
 //!
-//!
+//! TODO: change cfg into mutable reference, instead of passing it around all the time
 lalrpop_mod!(pub parser); // synthesized by LALRPOP
 
 use crate::ast::*;
@@ -10,23 +10,27 @@ use petgraph::dot::Dot;
 use petgraph::graph::{Graph, NodeIndex};
 use std::collections::{HashMap, VecDeque};
 use std::fmt;
-use std::iter::zip;
 
 pub enum CfgNode {
-    Start,
+    EnteringMain(Parameters),
     Statement(Statement),
-    EnterScope((Identifier, Identifier)),
-    LeaveScope((Identifier, Identifier)),
+    /// classname, methodname and list of expressions we assign to parameters
+    EnterFunction((Identifier, Identifier, Arguments)),
+    /// classname, methodname and variable name we assign retval to
+    LeaveFunction((Identifier, Identifier, Option<Lhs>)),
     End,
 }
 
 impl fmt::Debug for CfgNode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            CfgNode::Start => write!(f, "Start"),
+            CfgNode::EnteringMain(_) => write!(f, "Entering Main.main"),
             CfgNode::Statement(stmt) => write!(f, "{:?}", stmt),
-            CfgNode::EnterScope((class, method)) => write!(f, "Entering {}.{}", class, method),
-            CfgNode::LeaveScope((class, method)) => write!(f, "Leaving {}.{}", class, method),
+            CfgNode::EnterFunction((class, method, _)) => {
+                write!(f, "Entering {}.{}", class, method)
+            }
+            CfgNode::LeaveFunction((class, method, None)) => write!(f, "Leaving {}.{}", class, method),
+            CfgNode::LeaveFunction((class, method, Some(lhs))) => write!(f, "Leaving {}.{}\n{:?} := retval", class, method, lhs),
             CfgNode::End => write!(f, "End"),
         }
     }
@@ -34,7 +38,11 @@ impl fmt::Debug for CfgNode {
 
 pub type CFG = Graph<CfgNode, ()>;
 
+/// Map identifier to clas, to know where to find invoked functions e.g. c.increment() can only be performed if we know where to find the increment function
 type TypeEnv = Vec<HashMap<Identifier, Class>>;
+
+/// Map tuple (class, method) to a tuple of start- and end-node for the subgraph of the method
+type FunEnv = HashMap<(Identifier, Identifier), (NodeIndex, NodeIndex)>;
 
 /// Generates cfg in vizualizable Dot format (visualizable at http://viz-js.com/)
 pub fn generate_dot_cfg(program: Program) -> Result<String, Error> {
@@ -53,26 +61,20 @@ pub fn generate_cfg(prog: Program) -> Result<(NodeIndex, CFG), Error> {
 
     match main_method {
         Some(Method::Static((Type::Void, id, args, body))) => {
-            //generate declaration for all arguments passed to main function and append body
-            let mut decl_and_body = args
-                .iter()
-                .map(|arg| Statement::Declaration(arg.clone()))
-                .collect::<Statements>();
-            decl_and_body.append(&mut body.clone());
-            let decl_and_body = VecDeque::from(decl_and_body);
-
             //initiate cfg
-            let mut cfg = Graph::<CfgNode, ()>::new();
-            let start_node = cfg.add_node(CfgNode::Start);
+            let mut cfg: CFG = Graph::<CfgNode, ()>::new();
+            let start_node = cfg.add_node(CfgNode::EnteringMain(args.clone()));
             let end_node = cfg.add_node(CfgNode::End);
 
-            //initiate type env
-            let mut ty_env = vec![HashMap::new()];
+            //initiate environments
+            let mut ty_env: TypeEnv = vec![HashMap::new()];
+            let mut f_env: FunEnv = HashMap::new();
 
             let (_, _, cfg) = match stmts_to_cfg(
                 &mut ty_env,
+                &mut f_env,
                 &prog,
-                decl_and_body,
+                VecDeque::from(body.clone()),
                 cfg,
                 vec![start_node],
                 Some(end_node),
@@ -149,6 +151,7 @@ fn get_constructor<'a>(prog: &'a Program, class_name: &str) -> Option<&'a Constr
 /// Recursively unpacks Statement and returns start and end of cfg and cfg itself
 fn stmt_to_cfg(
     ty_env: &mut TypeEnv,
+    f_env: &mut FunEnv,
     prog: &Program,
     stmt: Statement,
     mut cfg: CFG,
@@ -159,6 +162,7 @@ fn stmt_to_cfg(
         Statement::Block(stmts) => {
             return stmts_to_cfg(
                 ty_env,
+                f_env,
                 prog,
                 VecDeque::from(*stmts),
                 cfg,
@@ -166,6 +170,7 @@ fn stmt_to_cfg(
                 end_node,
             )
         }
+        //TODO klopt dit?
         other => {
             let stmt_node = cfg.add_node(CfgNode::Statement(other));
             cfg.add_edge(start_node, stmt_node, ());
@@ -180,10 +185,12 @@ fn stmt_to_cfg(
     }
 }
 
-/// adds edges from all passed start nodes to first node it generates from stmts
-/// and adds edges from the last nodes it generates to the ending node if one is specified.
+/// adds edges from all passed start nodes to first node it generates from stmts and adds edges from the last nodes it generates to the ending node if one is specified.
+/// - **ty_env ->** map identifiers to classes, to know where to find invoked functions e.g. c.increment() can only be performed if we know where to find the increment function
+/// - **f_env ->**  map methods to the start and end of a functions subgraph
 fn stmts_to_cfg<'a>(
     ty_env: &mut TypeEnv,
+    f_env: &mut FunEnv,
     prog: &Program,
     mut stmts: VecDeque<Statement>,
     mut cfg: CFG,
@@ -207,17 +214,18 @@ fn stmts_to_cfg<'a>(
 
                 // add the if and else branch to the cfg
                 let (_, if_ending, cfg) =
-                    match stmt_to_cfg(ty_env, prog, *s1, cfg, assume_node, None) {
+                    match stmt_to_cfg(ty_env, f_env, prog, *s1, cfg, assume_node, None) {
                         Ok(res) => res,
                         Err(why) => return Err(why),
                     };
                 let (_, else_ending, cfg) =
-                    match stmt_to_cfg(ty_env, prog, *s2, cfg, assume_not_node, None) {
+                    match stmt_to_cfg(ty_env, f_env, prog, *s2, cfg, assume_not_node, None) {
                         Ok(res) => res,
                         Err(why) => return Err(why),
                     };
                 return stmts_to_cfg(
                     ty_env,
+                    f_env,
                     prog,
                     stmts,
                     cfg,
@@ -238,107 +246,83 @@ fn stmts_to_cfg<'a>(
                 }
                 // calculate cfg for body of while and cfg for the remainder of the stmts
                 let (_, body_ending, cfg) =
-                    match stmt_to_cfg(ty_env, prog, *body, cfg, assume_node, None) {
+                    match stmt_to_cfg(ty_env, f_env, prog, *body, cfg, assume_node, None) {
                         Ok(res) => res,
                         Err(why) => return Err(why),
                     };
-                let (_, end_remainder, mut cfg) =
-                    match stmts_to_cfg(ty_env, prog, stmts, cfg, vec![assume_not_node], ending_node)
-                    {
-                        Ok(res) => res,
-                        Err(why) => return Err(why),
-                    };
+                let (_, end_remainder, mut cfg) = match stmts_to_cfg(
+                    ty_env,
+                    f_env,
+                    prog,
+                    stmts,
+                    cfg,
+                    vec![assume_not_node],
+                    ending_node,
+                ) {
+                    Ok(res) => res,
+                    Err(why) => return Err(why),
+                };
                 // add edges from end of while body to begin and edge from while body to rest of stmts
                 cfg.add_edge(body_ending, assume_node, ());
                 cfg.add_edge(body_ending, assume_not_node, ());
                 return Ok((vec![assume_node, assume_not_node], end_remainder, cfg));
             }
 
-            //add declaration of new retval type
-            //gen cfg of method body and link the ends up with existing cfg
+            // generate
             Statement::Call((class, method, args)) => {
-                // Check whether method exists and it has enough args
-                let (method_type, _, parameters, body) =
-                    match get_methodcontent(prog, &class, &method) {
-                        Some(ty_and_body) => ty_and_body,
-                        None => {
-                            return Err(Error::Semantics(format!(
-                                "Method {}.{} doesn't exist",
-                                class, method
-                            )))
-                        }
-                    };
-
-                if parameters.len() != args.len() {
-                    return Err(Error::Semantics(format!(
-                        "A call of method {}.{} does not have correct number of arguments",
-                        class, method
-                    )));
-                };
-
-                // if method_type == void then graph = start_nodes -> enter_scope
-                // else then graph = start_nodes -> declare_retval -> enter_scope
-                let enter_scope =
-                    cfg.add_node(CfgNode::EnterScope((class.clone(), method.clone())));
-
-                let leave_scope =
-                    cfg.add_node(CfgNode::LeaveScope((class.clone(), method.clone())));
-
-                let retval_or_enter_scope = match method_type {
-                    Type::Void => enter_scope,
-                    ty => {
-                        let declare_retval = cfg.add_node(CfgNode::Statement(
-                            Statement::Declaration((ty.clone(), "retval".to_string())),
-                        ));
-                        cfg.add_edge(declare_retval, enter_scope, ());
-                        declare_retval
-                    }
-                };
-
-                for start_node in start_nodes {
-                    cfg.add_edge(start_node, retval_or_enter_scope, ());
-                }
-
-                // assign the given arguments to the method parameters and append method body
-                let mut declassigns_and_body: VecDeque<Statement> = zip(parameters, args)
-                    .map(|((ty, id), arg)| {
-                        Statement::DeclareAssign((ty.clone(), id.clone(), Rhs::Expression(arg)))
-                    })
-                    .collect();
-
-                declassigns_and_body.append(&mut VecDeque::from(body.clone()));
-
-                //add new scope to ty_env for evaluating method body cfg
-                ty_env.push(HashMap::new());
-
-                //generate cfg c from body starting from enter_scope and ending at leave_scope
-                let (_, _, cfg) =  match stmts_to_cfg(
-                        ty_env,
-                        prog,
-                        declassigns_and_body,
-                        cfg,
-                        vec![enter_scope],
-                        Some(leave_scope),
-                    ) {
+                let (f_start_node, f_end_node, mut cfg) = match f_env
+                    .get(&(class.clone(), method.clone()))
+                {
+                    Some((start_node, end_node)) => (*start_node, *end_node, cfg),
+                    None => match fun_to_cfg(&(class, method, args), None, ty_env, f_env, prog, cfg) {
                         Ok(res) => res,
                         Err(why) => return Err(why),
-                    };
+                    },
+                };
 
-                //leave ty_env scope after method body cfg is created
-                ty_env.pop();
+                for node in start_nodes {
+                    cfg.add_edge(node, f_start_node, ());
+                }
 
-                return stmts_to_cfg(ty_env, prog, stmts, cfg, vec![leave_scope], ending_node);
+                return stmts_to_cfg(
+                    ty_env,
+                    f_env,
+                    prog,
+                    stmts,
+                    cfg,
+                    vec![f_end_node],
+                    ending_node,
+                );
             }
-            // replace invocation by retval and prepend the function call
+
+            // prepend function body and 
             Statement::Assignment((lhs, Rhs::Invocation((class, method, args)))) => {
-                stmts.push_front(Statement::Assignment((
-                    lhs,
-                    Rhs::Expression(Expression::Identifier("retval".to_string())),
-                )));
-                stmts.push_front(Statement::Call((class, method, args)));
+                let (f_start_node, f_end_node, mut cfg) = match f_env
+                    .get(&(class.clone(), method.clone()))
+                {
+                    Some((start_node, end_node)) => (*start_node, *end_node, cfg),
+                    None => match fun_to_cfg(&(class, method, args), Some(lhs), ty_env, f_env, prog, cfg) {
+                        Ok(res) => res,
+                        Err(why) => return Err(why),
+                    },
+                };
 
-                return stmts_to_cfg(ty_env, prog, stmts, cfg, start_nodes, ending_node);
+                for node in start_nodes {
+                    cfg.add_edge(node, f_start_node, ());
+                }
+
+                return stmts_to_cfg(
+                    ty_env,
+                    f_env,
+                    prog,
+                    stmts,
+                    cfg,
+                    vec![f_end_node],
+                    ending_node,
+                );
+
             }
+
             // replace assignment by this and prepend constructor call
             Statement::Assignment((lhs, Rhs::Newobject(class, arguments))) => {
                 match get_constructor(prog, &class) {
@@ -353,7 +337,7 @@ fn stmts_to_cfg<'a>(
                     }
                 }
 
-                return stmts_to_cfg(ty_env, prog, stmts, cfg, start_nodes, ending_node);
+                return stmts_to_cfg(ty_env, f_env, prog, stmts, cfg, start_nodes, ending_node);
             }
 
             Statement::Return(expr) => {
@@ -361,14 +345,14 @@ fn stmts_to_cfg<'a>(
                     Lhs::Identifier("retval".to_string()),
                     Rhs::Expression(expr),
                 )));
-                return stmts_to_cfg(ty_env, prog, stmts, cfg, start_nodes, ending_node);
+                return stmts_to_cfg(ty_env, f_env, prog, stmts, cfg, start_nodes, ending_node);
             }
             // split declareassign by prepending a declaration and assignment
             Statement::DeclareAssign((t, id, rhs)) => {
                 stmts.push_front(Statement::Assignment((Lhs::Identifier(id.clone()), rhs)));
                 stmts.push_front(Statement::Declaration((t, (&id).to_string())));
 
-                return stmts_to_cfg(ty_env, prog, stmts, cfg, start_nodes, ending_node);
+                return stmts_to_cfg(ty_env, f_env, prog, stmts, cfg, start_nodes, ending_node);
             }
 
             // if no special case applies, add statement to cfg, let all start_nodes point to stmt, and make stmt start_node in next recursion step
@@ -393,7 +377,15 @@ fn stmts_to_cfg<'a>(
                 for start_node in start_nodes {
                     cfg.add_edge(start_node, stmt_node, ());
                 }
-                return stmts_to_cfg(ty_env, prog, stmts, cfg, vec![stmt_node], ending_node);
+                return stmts_to_cfg(
+                    ty_env,
+                    f_env,
+                    prog,
+                    stmts,
+                    cfg,
+                    vec![stmt_node],
+                    ending_node,
+                );
             }
         },
         //if stmt stack is empty we connect to end_node and return
@@ -409,6 +401,69 @@ fn stmts_to_cfg<'a>(
     }
 }
 
+// add subgraph of given function to cfg
+// insert
+fn fun_to_cfg<'a>(
+    call: &Invocation,
+    assigns_to: Option<Lhs>,
+    ty_env: &mut TypeEnv,
+    f_env: &mut FunEnv,
+    prog: &Program,
+    mut cfg: CFG,
+) -> Result<(NodeIndex, NodeIndex, CFG), Error> {
+    let (class, method, args) = call;
+
+    // Check whether method exists and it has enough args
+    let (method_type, _, parameters, body) = match get_methodcontent(prog, &class, &method) {
+        Some(ty_and_body) => ty_and_body,
+        None => {
+            return Err(Error::Semantics(format!(
+                "Method {}.{} doesn't exist",
+                class, method
+            )))
+        }
+    };
+
+    if parameters.len() != args.len() {
+        return Err(Error::Semantics(format!(
+            "A call of method {}.{} does not have correct number of arguments",
+            class, method
+        )));
+    };
+
+    let enter_function = cfg.add_node(CfgNode::EnterFunction((
+        class.clone(),
+        method.clone(),
+        args.clone(),
+    )));
+
+    let leave_function = cfg.add_node(CfgNode::LeaveFunction((class.clone(), method.clone(), assigns_to)));
+
+    //update environments
+    ty_env.push(HashMap::new());
+    f_env.insert(
+        (class.clone(), method.clone()),
+        (enter_function, leave_function),
+    );
+
+    //generate subgraph from function body starting from enter_function and ending at leave_function node
+    return match stmts_to_cfg(
+        ty_env,
+        f_env,
+        prog,
+        VecDeque::from(body.clone()),
+        cfg,
+        vec![enter_function],
+        Some(leave_function),
+    ) {
+        Ok((_, _, cfg)) => {
+            //leave ty_env scope after method body cfg is created
+            ty_env.pop();
+            Ok((enter_function, leave_function, cfg))
+        }
+        Err(why) => return Err(why),
+    };
+}
 #[cfg(test)]
 mod tests {
 
@@ -433,7 +488,7 @@ mod tests {
     #[test]
     fn straight() {
         let mut cfg = Graph::<CfgNode, ()>::new();
-        let a = cfg.add_node(CfgNode::Start);
+        let a = cfg.add_node(CfgNode::EnteringMain(vec![]));
         let b = cfg.add_node(parse_stmt("int x; "));
         let c = cfg.add_node(parse_stmt("arbitraryId := true;"));
         let d = cfg.add_node(CfgNode::End);
@@ -448,7 +503,7 @@ mod tests {
     #[test]
     fn branch_and_block() {
         let mut cfg = Graph::<CfgNode, ()>::new();
-        let s = cfg.add_node(CfgNode::Start);
+        let s = cfg.add_node(CfgNode::EnteringMain(vec![]));
         let a = cfg.add_node(parse_stmt("assume true; "));
         let b = cfg.add_node(parse_stmt("assume !true;"));
         let c = cfg.add_node(parse_stmt("int x;"));
@@ -472,7 +527,7 @@ mod tests {
     #[test]
     fn while_loop() {
         let mut cfg = Graph::<CfgNode, ()>::new();
-        let s = cfg.add_node(CfgNode::Start);
+        let s = cfg.add_node(CfgNode::EnteringMain(vec![]));
         let a = cfg.add_node(parse_stmt("assume true; "));
         let b = cfg.add_node(parse_stmt("assume !true;"));
         let c = cfg.add_node(parse_stmt("int x;"));

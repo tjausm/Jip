@@ -1,0 +1,8 @@
+class Main {
+    static int main(int o){
+        if (o == 0) { return 0; }
+        else { ; }
+        int x := 2
+        return 2;
+    }
+}

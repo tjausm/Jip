@@ -155,8 +155,8 @@ fn verify(program: &str, d: Depth) -> Result<(), Error> {
                             _ => (),
                         }
                     }
-                    CfgNode::EnterScope(_) => env.push(HashMap::new()),
-                    CfgNode::LeaveScope(_) => {
+                    CfgNode::EnterFunction(_) => env.push(HashMap::new()),
+                    CfgNode::LeaveFunction(_) => {
                         env.pop();
                     }
                     _ => (),
