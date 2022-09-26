@@ -22,6 +22,7 @@ All tests are executed with `cargo test`, we have 2 types of tests:
 - [ ] argument assignment upon function entering
 - [ ] retval assignment upon function leaving
 - [ ] object accesing vanaf de heap e.g.
+- [ ] add question mark instead of endless match expressions
 
 - [ ] put all error msgs in one or more enums to 'streamline' them
 - [ ] best practices opzoeken voor variable shadowing
