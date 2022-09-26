@@ -69,7 +69,7 @@ pub Statement : Statement = {
     Declaration => Statement::Declaration(<>),
     Assignment => Statement::Assignment(<>),
     <Invocation> ";" => Statement::Call(<>),
-    Skip => Statement::Skip(()),
+    Skip => Statement::Skip(<>),
     Ite => Statement::Ite(<>),
     "return" <Expression> ";" => Statement::Return(<>),
     Block => Statement::Block(<>),
@@ -108,7 +108,7 @@ Invocation : Invocation = {
 
 Arguments : Arguments = <Comma<Expression>>;
 
-Skip : Skip = ";";
+Skip : Skip = ";" => (());
 
 Ite : Ite = {
     "if" "(" <e:Expression> ")" <s1:Statement> "else" <s2:Statement> => (e, Box::new(s1), Box::new(s2))

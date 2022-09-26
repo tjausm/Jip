@@ -16,8 +16,10 @@ All tests are executed with `cargo test`, we have 2 types of tests:
 - **Generate docs** -> `cargo doc --open`
 - **Run** -> `cargo build` and then `target/debug/jip.exe`
 
+## vragen
+- every path through a program a valid path? e.g. do we need an ending note to denote the ending or can we just assume that a node without edges is the end
+
 ## Todo's
-- [ ] skip statement implementeren
 - [ ] conditionals programma aan de praat krijgen
 - [ ] argument assignment upon function entering
 - [ ] retval assignment upon function leaving

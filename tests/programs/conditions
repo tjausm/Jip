@@ -1,8 +1,12 @@
 class Main {
-    static int main(int o){
+    static void main(int o){
+        Main.c(1);
+    }
+
+    static int c(int o){
         if (o == 0) { return 0; }
         else { ; }
-        int x := 2
+        int x := 2;
         return 2;
     }
 }
