@@ -12,9 +12,7 @@ use std::fmt;
 use std::rc::Rc;
 
 use crate::ast::*;
-use crate::shared::{get_from_env, insert_into_env};
-use crate::errors::Error;
-
+use crate::shared::{Error, get_from_env, insert_into_env};
 pub type Identifier = String;
 
 

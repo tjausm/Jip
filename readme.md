@@ -20,7 +20,6 @@ All tests are executed with `cargo test`, we have 2 types of tests:
 - every path through a program a valid path? e.g. do we need an ending note to denote the ending or can we just assume that a node without edges is the end
 
 ## Todo's
-- [ ] fix problem where stmt_to_cfg connects end of block to scope_end
 - [ ] argument assignment upon function entering
 - [ ] retval assignment upon function leaving
 - [ ] object accesing vanaf de heap e.g.

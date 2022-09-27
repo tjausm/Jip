@@ -4,8 +4,7 @@
 lalrpop_mod!(pub parser); // synthesized by LALRPOP
 
 use crate::ast::*;
-use crate::errors::Error;
-use crate::shared::{get_from_env, insert_into_env};
+use crate::shared::{Error, get_from_env, insert_into_env, get_method, get_class, get_methodcontent};
 use petgraph::dot::Dot;
 use petgraph::graph::{Graph, NodeIndex};
 use std::collections::{HashMap, VecDeque};
@@ -58,11 +57,10 @@ pub fn generate_dot_cfg(program: Program) -> Result<String, Error> {
 /// Returns cfg, and the start_node representing entry point of the program
 pub fn generate_cfg(prog: Program) -> Result<(NodeIndex, CFG), Error> {
     //extract main.main method from program
-    let main_class = get_class(&prog, "Main");
-    let main_method = main_class.and_then(|class| get_method(&class, "main"));
+    let main_method = get_method(&prog, "Main", "main")?;
 
     match main_method {
-        Some(Method::Static((Type::Void, id, args, body))) => {
+        Method::Static((Type::Void, id, args, body)) => {
             //initiate cfg
             let mut cfg: CFG = Graph::<CfgNode, ()>::new();
             let start_node = cfg.add_node(CfgNode::EnteringMain(args.clone()));
@@ -86,66 +84,25 @@ pub fn generate_cfg(prog: Program) -> Result<(NodeIndex, CFG), Error> {
         }
         _ => {
             return Err(Error::Semantics(
-                "Couldn't find a 'Main class' and/or 'static void main' method in the 'Main' class"
+                "Couldn't find a 'static void main' method"
                     .to_string(),
             ))
         }
     }
 }
 
-fn get_class<'a>(prog: &'a Program, class_name: &str) -> Option<&'a Class> {
-    prog.iter().find(|(id, _)| id == class_name)
-}
 
-fn get_method<'a>(class: &'a Class, method_name: &str) -> Option<&'a Method> {
-    for member in class.1.iter() {
-        match member {
-            Member::Method(method) => match method {
-                Method::Nonstatic((_, id, _, _)) => {
-                    if id == method_name {
-                        return Some(method);
-                    }
-                }
-                Method::Static((_, id, _, _)) => {
-                    if id == method_name {
-                        return Some(method);
-                    }
-                }
-            },
-            _ => (),
-        }
-    }
-    return None;
-}
+fn get_constructor<'a>(prog: &'a Program, class_name: &str) -> Result<&'a Constructor, Error> {
+    let class = get_class(prog, class_name)?;
 
-fn get_methodcontent<'a>(
-    prog: &'a Program,
-    class_name: &str,
-    method_name: &str,
-) -> Option<&'a Methodcontent> {
-    match get_class(&prog, &class_name) {
-        Some(class) => match get_method(&class, &method_name) {
-            Some(Method::Nonstatic(mc)) => return Some(mc),
-            Some(Method::Static(mc)) => return Some(mc),
-            None => return None,
-        },
-        None => return None,
-    };
-}
 
-fn get_constructor<'a>(prog: &'a Program, class_name: &str) -> Option<&'a Constructor> {
-    match get_class(&prog, &class_name) {
-        Some((_, members)) => {
-            for m in members.iter() {
-                match m {
-                    Member::Constructor(c) => return Some(c),
-                    _ => continue,
-                }
+        for m in class.1.iter() {
+            match m {
+                Member::Constructor(c) => return Ok(c),
+                _ => continue,
             }
         }
-        None => return None,
-    };
-    return None;
+    return Err(Error::Semantics(format!("Class {} does not have a constructor", class_name)))
 }
 
 /// Recursively unpacks Statement and returns start and end of cfg and cfg itself
@@ -294,17 +251,8 @@ fn stmts_to_cfg<'a>(
 
             // replace assignment by this and prepend constructor call
             Statement::Assignment((lhs, Rhs::Newobject(class, arguments))) => {
-                match get_constructor(prog, &class) {
-                    Some((consName, args, body)) => {
-                        // stmts.push_front(Statement::Call((class, consName, )));
-                    }
-                    None => {
-                        return Err(Error::Semantics(format!(
-                            "Class {} has no constructor",
-                            &class
-                        )))
-                    }
-                }
+                let constructor = get_constructor(prog, &class)?;
+                // stmts.push_front(Statement::Call((class, consName, )));
 
                 return stmts_to_cfg(ty_env, f_env, prog, stmts, cfg, start_nodes, scope_end);
             }
@@ -341,15 +289,9 @@ fn stmts_to_cfg<'a>(
                 // keep track of variable types, to know where to find nonstatic methods called on object
                 match &other {
                     Statement::Declaration((Type::Classtype(class_name), id)) => {
-                        match get_class(prog, class_name) {
-                            Some(class) => insert_into_env(ty_env, id.clone(), class.clone()),
-                            None => {
-                                return Err(Error::Semantics(format!(
-                                    "Class {} does not exist",
-                                    &class_name
-                                )))
-                            }
-                        }
+                        let class = get_class(prog, class_name)?; 
+                        insert_into_env(ty_env, id.clone(), class.clone())
+
                     }
                     _ => (),
                 }
@@ -379,22 +321,7 @@ fn fun_to_cfg<'a>(
     let (class, method, args) = call;
 
     // Check whether method exists and it has enough args
-    let (method_type, _, parameters, body) = match get_methodcontent(prog, &class, &method) {
-        Some(ty_and_body) => ty_and_body,
-        None => {
-            return Err(Error::Semantics(format!(
-                "Method {}.{} doesn't exist",
-                class, method
-            )))
-        }
-    };
-
-    if parameters.len() != args.len() {
-        return Err(Error::Semantics(format!(
-            "A call of method {}.{} does not have correct number of arguments",
-            class, method
-        )));
-    };
+    let (method_type, _, parameters, body) = get_methodcontent(prog, &class, &method)?;
 
     let enter_function = cfg.add_node(CfgNode::EnterFunction((
         class.clone(),

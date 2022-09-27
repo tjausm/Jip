@@ -1,11 +1,10 @@
 //! Symbolic Execution Engine (SEE) combines parser, CFG creation, program path generation, transformation from path to formula and verification of said formula by Z3
 //!
 
-use crate::ast::{Lhs, Program, Rhs, Statement, Type};
+use crate::ast::*;
 use crate::cfg::{generate_cfg, generate_dot_cfg, CfgNode};
-use crate::errors::Error;
+use crate::shared::{get_from_env, get_methodcontent, insert_into_env, Error};
 use crate::z3::*;
-use crate::shared::{get_from_env, insert_into_env};
 
 lalrpop_mod!(pub parser); // synthesized by LALRPOP
 use petgraph::graph::NodeIndex;
@@ -63,14 +62,9 @@ pub fn print_verification(program: &str, d: Depth) -> (ExitCode, String) {
     return print_result(verify(program, d));
 }
 
-fn verify(program: &str, d: Depth) -> Result<(), Error> {
-    let (start_node, cfg) = match parse_program(program) {
-        Err(parse_error) => return Err(parse_error),
-        Ok(prog) => match generate_cfg(prog) {
-            Ok(cfg) => cfg,
-            Err(semantics_error) => return Err(semantics_error),
-        },
-    };
+fn verify(prog_string: &str, d: Depth) -> Result<(), Error> {
+    let prog = parse_program(prog_string)?;
+    let (start_node, cfg) = generate_cfg(prog.clone())?;
 
     let z3_cfg = Config::new();
     let ctx = Context::new(&z3_cfg);
@@ -88,7 +82,26 @@ fn verify(program: &str, d: Depth) -> Result<(), Error> {
             (_, _, 0, _) => continue,
             (mut env, mut pc, d, node_index) => {
                 match &cfg[node_index] {
-                    // enqueue all starting statements of program
+                    // add all parameters of main as free variables to env
+                    CfgNode::EnteringMain(parameters) => {
+                        for p in parameters {
+                            match p {
+                                (Type::Int, id) => {
+                                    insert_into_env(&mut env, &id, fresh_int(&ctx, id.clone()))
+                                }
+                                (Type::Bool, id) => {
+                                    insert_into_env(&mut env, &id, fresh_bool(&ctx, id.clone()))
+                                }
+                                (ty, id) => {
+                                    return Err(Error::Semantics(format!(
+                                        "Can't call main with parameter {} of type {:?}",
+                                        id, ty
+                                    )))
+                                }
+                            }
+                        }
+                    }
+
                     CfgNode::Statement(stmt) => {
                         match stmt {
                             Statement::Declaration((ty, id)) => match ty {
@@ -148,14 +161,27 @@ fn verify(program: &str, d: Depth) -> Result<(), Error> {
                                     }
 
                                     Some(Variable::Object(..)) => {
-                                        return Err(Error::Other("Assigning objects not yet implemented".to_string()));
+                                        return Err(Error::Other(
+                                            "Assigning objects not yet implemented".to_string(),
+                                        ));
                                     }
                                 }
                             }
                             _ => (),
                         }
                     }
-                    CfgNode::EnterFunction(_) => env.push(HashMap::new()),
+                    CfgNode::EnterFunction((class, method, args)) => {
+                        // TODO: this should be different for static and non-static methods
+                        let (_, _, params, _) = get_methodcontent(&prog, class, method)?;
+                        let variables =
+                            params_to_vars(&ctx, &mut env, &params, &args, class, method)?;
+
+                        env.push(HashMap::new());
+
+                        for (id, var) in variables {
+                            insert_into_env(&mut env, id, var);
+                        }
+                    }
                     CfgNode::LeaveFunction(_) => {
                         env.pop();
                     }
@@ -170,6 +196,53 @@ fn verify(program: &str, d: Depth) -> Result<(), Error> {
         }
     }
     return Ok(());
+}
+
+/// evaluates the parameters & arguments to a mapping id -> variable that can be added to a function scope
+fn params_to_vars<'ctx>(
+    ctx: &'ctx Context,
+    env: &mut Environment<'ctx>,
+    params: &'ctx Parameters,
+    args: &'ctx Arguments,
+    class: &String,
+    method: &String,
+) -> Result<Vec<(&'ctx String, Variable<'ctx>)>, Error> {
+    let mut params_iter = params.iter();
+    let mut args_iter = args.iter();
+    let mut variables = vec![];
+
+    loop {
+        match (params_iter.next(), args_iter.next()) {
+            (Some((Type::Int, id)), Some(expr)) => {
+                let expr = expression_to_int(ctx, env, expr)?;
+                variables.push((id, Variable::Int(expr)));
+            }
+            (Some((Type::Bool, id)), Some(expr)) => {
+                let expr = expression_to_bool(ctx, env, expr)?;
+                variables.push((id, Variable::Bool(expr)));
+            }
+            (Some((ty, _)), Some(_)) => {
+                return Err(Error::Semantics(format!(
+                    "Argument of type {:?} are not implemented",
+                    ty
+                )))
+            }
+            (Some(_), None) => {
+                return Err(Error::Semantics(format!(
+                    "One or more arguments are missing in a call of method {}.{}",
+                    class, method
+                )))
+            }
+            (None, Some(_)) => {
+                return Err(Error::Semantics(format!(
+                    "One or more arguments too much in a call of method {}.{}",
+                    class, method
+                )))
+            }
+            (None, None) => break,
+        }
+    }
+    return Ok(variables);
 }
 
 /// Contains parser tests since parser mod is auto-generated
