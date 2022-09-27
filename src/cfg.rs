@@ -29,8 +29,12 @@ impl fmt::Debug for CfgNode {
             CfgNode::EnterFunction((class, method, _)) => {
                 write!(f, "Entering {}.{}", class, method)
             }
-            CfgNode::LeaveFunction((class, method, None)) => write!(f, "Leaving {}.{}", class, method),
-            CfgNode::LeaveFunction((class, method, Some(lhs))) => write!(f, "Leaving {}.{}\n{:?} := retval", class, method, lhs),
+            CfgNode::LeaveFunction((class, method, None)) => {
+                write!(f, "Leaving {}.{}", class, method)
+            }
+            CfgNode::LeaveFunction((class, method, Some(lhs))) => {
+                write!(f, "Leaving {}.{}\n{:?} := retval", class, method, lhs)
+            }
             CfgNode::End => write!(f, "End"),
         }
     }
@@ -77,7 +81,7 @@ pub fn generate_cfg(prog: Program) -> Result<(NodeIndex, CFG), Error> {
                 VecDeque::from(body.clone()),
                 cfg,
                 vec![start_node],
-                end_cfg
+                end_cfg,
             ) {
                 Ok(res) => res,
                 Err(why) => return Err(why),
@@ -156,7 +160,7 @@ fn stmt_to_cfg(
     stmt: Statement,
     mut cfg: CFG,
     start_node: NodeIndex,
-    end_cfg: NodeIndex
+    end_cfg: NodeIndex,
 ) -> Result<(Vec<NodeIndex>, CFG), Error> {
     match stmt {
         Statement::Block(stmts) => {
@@ -167,7 +171,7 @@ fn stmt_to_cfg(
                 VecDeque::from(*stmts),
                 cfg,
                 vec![start_node],
-                end_cfg
+                end_cfg,
             )
         }
         //TODO klopt dit?
@@ -189,7 +193,7 @@ fn stmts_to_cfg<'a>(
     mut stmts: VecDeque<Statement>,
     mut cfg: CFG,
     start_nodes: Vec<NodeIndex>,
-    scope_end: NodeIndex
+    scope_end: NodeIndex,
 ) -> Result<(Vec<NodeIndex>, CFG), Error> {
     match stmts.pop_front() {
         Some(stmt) => match stmt {
@@ -207,23 +211,20 @@ fn stmts_to_cfg<'a>(
                 }
 
                 // add the if and else branch to the cfg
-                let (if_ending, cfg) = match stmt_to_cfg(ty_env, f_env, prog, *s1, cfg, assume_node, scope_end)
-                {
-                    Ok(res) => res,
-                    Err(why) => return Err(why),
-                };
+                let (if_ending, cfg) =
+                    stmt_to_cfg(ty_env, f_env, prog, *s1, cfg, assume_node, scope_end)?;
+
                 let (else_ending, cfg) =
-                    match stmt_to_cfg(ty_env, f_env, prog, *s2, cfg, assume_not_node, scope_end) {
-                        Ok(res) => res,
-                        Err(why) => return Err(why),
-                    };
+                    stmt_to_cfg(ty_env, f_env, prog, *s2, cfg, assume_not_node, scope_end)?;
+
                 return stmts_to_cfg(
                     ty_env,
                     f_env,
                     prog,
                     stmts,
                     cfg,
-                    [if_ending, else_ending].concat(), scope_end
+                    [if_ending, else_ending].concat(),
+                    scope_end,
                 );
             }
             Statement::While((cond, body)) => {
@@ -239,15 +240,16 @@ fn stmts_to_cfg<'a>(
                 }
                 // calculate cfg for body of while and cfg for the remainder of the stmts
                 let (body_ending, cfg) =
-                    match stmt_to_cfg(ty_env, f_env, prog, *body, cfg, assume_node, scope_end) {
-                        Ok(res) => res,
-                        Err(why) => return Err(why),
-                    };
-                let (end_remainder, mut cfg) =
-                    match stmts_to_cfg(ty_env, f_env, prog, stmts, cfg, vec![assume_not_node], scope_end) {
-                        Ok(res) => res,
-                        Err(why) => return Err(why),
-                    };
+                    stmt_to_cfg(ty_env, f_env, prog, *body, cfg, assume_node, scope_end)?;
+                let (end_remainder, mut cfg) = stmts_to_cfg(
+                    ty_env,
+                    f_env,
+                    prog,
+                    stmts,
+                    cfg,
+                    vec![assume_not_node],
+                    scope_end,
+                )?;
                 // add edges from end of while body to begin and edge from while body to rest of stmts
                 for node in body_ending {
                     cfg.add_edge(node, assume_node, ());
@@ -259,17 +261,11 @@ fn stmts_to_cfg<'a>(
 
             // generate
             Statement::Call((class, method, args)) => {
-                let (f_start_node, f_end_node, mut cfg) = match f_env
-                    .get(&(class.clone(), method.clone()))
-                {
-                    Some((start_node, end_node)) => (*start_node, *end_node, cfg),
-                    None => {
-                        match fun_to_cfg(&(class, method, args), None, ty_env, f_env, prog, cfg) {
-                            Ok(res) => res,
-                            Err(why) => return Err(why),
-                        }
-                    }
-                };
+                let (f_start_node, f_end_node, mut cfg) =
+                    match f_env.get(&(class.clone(), method.clone())) {
+                        Some((start_node, end_node)) => (*start_node, *end_node, cfg),
+                        None => fun_to_cfg(&(class, method, args), None, ty_env, f_env, prog, cfg)?,
+                    };
 
                 for node in start_nodes {
                     cfg.add_edge(node, f_start_node, ());
@@ -283,17 +279,14 @@ fn stmts_to_cfg<'a>(
                 let (f_start_node, f_end_node, mut cfg) =
                     match f_env.get(&(class.clone(), method.clone())) {
                         Some((start_node, end_node)) => (*start_node, *end_node, cfg),
-                        None => match fun_to_cfg(
+                        None => fun_to_cfg(
                             &(class, method, args),
                             Some(lhs),
                             ty_env,
                             f_env,
                             prog,
                             cfg,
-                        ) {
-                            Ok(res) => res,
-                            Err(why) => return Err(why),
-                        },
+                        )?
                     };
 
                 for node in start_nodes {
@@ -365,9 +358,13 @@ fn stmts_to_cfg<'a>(
                 return stmts_to_cfg(ty_env, f_env, prog, stmts, cfg, vec![stmt_node], scope_end);
             }
         },
-        //if stmt stack is empty we connect to end_node and return
+        //if stmt stack is empty we connect to scope_end
         None => {
-            return Ok((start_nodes, cfg))},
+            for node in &start_nodes {
+                cfg.add_edge(*node, scope_end, ());
+            }
+            return Ok((start_nodes, cfg));
+        }
     }
 }
 
@@ -379,7 +376,7 @@ fn fun_to_cfg<'a>(
     ty_env: &mut TypeEnv,
     f_env: &mut FunEnv,
     prog: &Program,
-    mut cfg: CFG
+    mut cfg: CFG,
 ) -> Result<(NodeIndex, NodeIndex, CFG), Error> {
     let (class, method, args) = call;
 
@@ -421,27 +418,23 @@ fn fun_to_cfg<'a>(
     );
 
     //generate subgraph from function body starting from enter_function and ending at leave_function node
-    return match stmts_to_cfg(
+    let (fun_endings, mut cfg) = stmts_to_cfg(
         ty_env,
         f_env,
         prog,
         VecDeque::from(body.clone()),
         cfg,
         vec![enter_function],
-        leave_function
-    ) {
-        Ok((fun_endings, mut cfg)) => {
-            //leave ty_env scope after method body cfg is created
-            ty_env.pop();
-            //connect end of function to leave_function node
-            for node in fun_endings {
-                cfg.add_edge(node, leave_function, ());
-            }
-            
-            Ok((enter_function, leave_function, cfg))
-        }
-        Err(why) => Err(why),
-    };
+        leave_function,
+    )?;
+    //leave ty_env scope after method body cfg is created
+    ty_env.pop();
+    //connect end of function to leave_function node
+    for node in fun_endings {
+        cfg.add_edge(node, leave_function, ());
+    }
+
+    return Ok((enter_function, leave_function, cfg));
 }
 #[cfg(test)]
 mod tests {
@@ -470,9 +463,11 @@ mod tests {
         let a = cfg.add_node(CfgNode::EnteringMain(vec![]));
         let b = cfg.add_node(parse_stmt("int x; "));
         let c = cfg.add_node(parse_stmt("arbitraryId := true;"));
+        let d = cfg.add_node(CfgNode::End);
 
         cfg.add_edge(a, b, ());
         cfg.add_edge(b, c, ());
+        cfg.add_edge(c, d, ());
 
         build_test("int x; arbitraryId := true;", cfg)
     }
@@ -486,6 +481,7 @@ mod tests {
         let c = cfg.add_node(parse_stmt("int x;"));
         let d = cfg.add_node(parse_stmt("int y;"));
         let e = cfg.add_node(parse_stmt("int z;"));
+        let f = cfg.add_node(CfgNode::End);
 
         cfg.add_edge(s, a, ());
         cfg.add_edge(a, c, ());
@@ -494,6 +490,8 @@ mod tests {
         cfg.add_edge(s, b, ());
         cfg.add_edge(b, d, ());
         cfg.add_edge(d, e, ());
+
+        cfg.add_edge(e, f, ());
 
         build_test("if (true) {int x;} else {int y; } int z;", cfg);
     }
@@ -506,6 +504,7 @@ mod tests {
         let b = cfg.add_node(parse_stmt("assume !true;"));
         let c = cfg.add_node(parse_stmt("int x;"));
         let d = cfg.add_node(parse_stmt("int y;"));
+        let e = cfg.add_node(CfgNode::End);
 
         cfg.add_edge(s, a, ());
         cfg.add_edge(a, c, ());
@@ -514,6 +513,7 @@ mod tests {
 
         cfg.add_edge(s, b, ());
         cfg.add_edge(b, d, ());
+        cfg.add_edge(d, e, ());
 
         build_test("while (true) int x; int y;", cfg);
     }
