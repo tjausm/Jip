@@ -160,11 +160,8 @@ fn verify(prog_string: &str, d: Depth) -> Result<(), Error> {
                                         };
                                     }
 
-                                    Some(Variable::Object(..)) => {
-                                        return Err(Error::Other(
-                                            "Assigning objects not yet implemented".to_string(),
-                                        ));
-                                    }
+                                    Some(Variable::Object(..)) => todo!("Assigning objects not yet implemented"),
+                                        
                                 }
                             }
                             _ => (),
@@ -172,18 +169,33 @@ fn verify(prog_string: &str, d: Depth) -> Result<(), Error> {
                     }
                     CfgNode::EnterFunction((class, method, args)) => {
                         // TODO: this should be different for static and non-static methods
-                        let (_, _, params, _) = get_methodcontent(&prog, class, method)?;
+                        let (ty, _, params, _) = get_methodcontent(&prog, class, method)?;
                         let variables =
                             params_to_vars(&ctx, &mut env, &params, &args, class, method)?;
 
                         env.push(HashMap::new());
 
+                        // declare retval with correct type in new scope
+                        match ty {
+                            Type::Int => insert_into_env(&mut env, &"retval".to_string(), fresh_int(&ctx, "retval".to_string())),
+                            Type::Bool => insert_into_env(&mut env, &"retval".to_string(), fresh_bool(&ctx, "retval".to_string())),
+                            _ => (),
+                        }
+
                         for (id, var) in variables {
                             insert_into_env(&mut env, id, var);
                         }
                     }
-                    CfgNode::LeaveFunction(_) => {
+                    CfgNode::LeaveFunction((class, method, return_to)) => {
+                        let retval = get_from_env(&env, &"retval".to_string());
                         env.pop();
+                        match (return_to, retval) {
+                            (Some(Lhs::Identifier(id)), Some(retval)) => (),
+                            (Some(Lhs::Accessfield(..)), Some(retval)) => todo!("assigning objects not implemented"),
+                            (None, None) => (),
+                            (None, Some(_)) => return  Err(Error::Semantics(format!(" Can't assign return value of method {}.{} is invalid", class, method))),
+                            (Some(lhs), None) => return  Err(Error::Semantics(format!(" Can't assign void method {}.{} to {:?}", class, method, lhs))),
+                        }
                     }
                     _ => (),
                 }

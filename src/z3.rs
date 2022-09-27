@@ -238,15 +238,6 @@ fn expression_to_dynamic<'ctx>(
     }
 }
 
-/// Flatten tupple of results to Ok, or the first error encountered
-fn flatten_tupple<'ctx, A>((l, r): (Result<A, Error>, Result<A, Error>)) -> Result<(A, A), Error> {
-    match (l, r) {
-        (Ok(l), Ok(r)) => return Ok((l, r)),
-        (Ok(l), Err(r_err)) => return Err(r_err),
-        (Err(l_err), _) => return Err(l_err),
-    }
-}
-
 fn as_bool_or_error<'ctx>(d: Dynamic<'ctx>) -> Result<Bool<'ctx>, Error> {
     match d.as_bool() {
         Some(b) => Ok(b),
