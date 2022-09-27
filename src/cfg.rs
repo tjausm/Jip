@@ -17,8 +17,7 @@ pub enum CfgNode {
     /// classname, methodname and list of expressions we assign to parameters
     EnterFunction((Identifier, Identifier, Arguments)),
     /// classname, methodname and variable name we assign retval to
-    LeaveFunction((Identifier, Identifier, Option<Lhs>)),
-    End,
+    LeaveFunction((Identifier, Identifier, Option<Lhs>))
 }
 
 impl fmt::Debug for CfgNode {
@@ -35,7 +34,6 @@ impl fmt::Debug for CfgNode {
             CfgNode::LeaveFunction((class, method, Some(lhs))) => {
                 write!(f, "Leaving {}.{}\n{:?} := retval", class, method, lhs)
             }
-            CfgNode::End => write!(f, "End"),
         }
     }
 }
@@ -68,24 +66,22 @@ pub fn generate_cfg(prog: Program) -> Result<(NodeIndex, CFG), Error> {
             //initiate cfg
             let mut cfg: CFG = Graph::<CfgNode, ()>::new();
             let start_node = cfg.add_node(CfgNode::EnteringMain(args.clone()));
-            let end_cfg = cfg.add_node(CfgNode::End);
 
             //initiate environments
             let mut ty_env: TypeEnv = vec![HashMap::new()];
             let mut f_env: FunEnv = HashMap::new();
+            
 
-            let (_, cfg) = match stmts_to_cfg(
+            let (ending_nodes, cfg) = stmts_to_cfg(
                 &mut ty_env,
                 &mut f_env,
                 &prog,
                 VecDeque::from(body.clone()),
                 cfg,
                 vec![start_node],
-                end_cfg,
-            ) {
-                Ok(res) => res,
-                Err(why) => return Err(why),
-            };
+                None
+            )?;
+            
             return Ok((start_node, cfg));
         }
         _ => {
@@ -160,7 +156,7 @@ fn stmt_to_cfg(
     stmt: Statement,
     mut cfg: CFG,
     start_node: NodeIndex,
-    end_cfg: NodeIndex,
+    end_cfg: Option<NodeIndex>,
 ) -> Result<(Vec<NodeIndex>, CFG), Error> {
     match stmt {
         Statement::Block(stmts) => {
@@ -193,7 +189,7 @@ fn stmts_to_cfg<'a>(
     mut stmts: VecDeque<Statement>,
     mut cfg: CFG,
     start_nodes: Vec<NodeIndex>,
-    scope_end: NodeIndex,
+    scope_end: Option<NodeIndex>,
 ) -> Result<(Vec<NodeIndex>, CFG), Error> {
     match stmts.pop_front() {
         Some(stmt) => match stmt {
@@ -317,13 +313,20 @@ fn stmts_to_cfg<'a>(
             Statement::Return(expr) => {
                 let retval_assign = cfg.add_node(CfgNode::Statement(Statement::Assignment((
                     Lhs::Identifier("retval".to_string()),
-                    Rhs::Expression(expr),
+                    Rhs::Expression(expr.clone()),
                 ))));
                 for node in start_nodes {
                     cfg.add_edge(node, retval_assign, ());
                 }
-                cfg.add_edge(retval_assign, scope_end, ());
-                return Ok((vec![], cfg));
+                match scope_end {
+                    Some(scope_end) => {
+                        cfg.add_edge(retval_assign, scope_end, ());
+                        return Ok((vec![], cfg));
+                    },
+                    None => return Err(Error::Semantics(format!(" 'return {:?}' has no scope to return to.", &expr)))
+                }
+
+
             }
             // split declareassign by prepending a declaration and assignment
             Statement::DeclareAssign((t, id, rhs)) => {
@@ -358,13 +361,8 @@ fn stmts_to_cfg<'a>(
                 return stmts_to_cfg(ty_env, f_env, prog, stmts, cfg, vec![stmt_node], scope_end);
             }
         },
-        //if stmt stack is empty we connect to scope_end
-        None => {
-            for node in &start_nodes {
-                cfg.add_edge(*node, scope_end, ());
-            }
-            return Ok((start_nodes, cfg));
-        }
+        //if stmt stack is empty we return ending node(s)
+        None => return Ok((start_nodes, cfg))
     }
 }
 
@@ -425,7 +423,7 @@ fn fun_to_cfg<'a>(
         VecDeque::from(body.clone()),
         cfg,
         vec![enter_function],
-        leave_function,
+        Some(leave_function),
     )?;
     //leave ty_env scope after method body cfg is created
     ty_env.pop();
@@ -463,11 +461,9 @@ mod tests {
         let a = cfg.add_node(CfgNode::EnteringMain(vec![]));
         let b = cfg.add_node(parse_stmt("int x; "));
         let c = cfg.add_node(parse_stmt("arbitraryId := true;"));
-        let d = cfg.add_node(CfgNode::End);
 
         cfg.add_edge(a, b, ());
         cfg.add_edge(b, c, ());
-        cfg.add_edge(c, d, ());
 
         build_test("int x; arbitraryId := true;", cfg)
     }
@@ -481,7 +477,6 @@ mod tests {
         let c = cfg.add_node(parse_stmt("int x;"));
         let d = cfg.add_node(parse_stmt("int y;"));
         let e = cfg.add_node(parse_stmt("int z;"));
-        let f = cfg.add_node(CfgNode::End);
 
         cfg.add_edge(s, a, ());
         cfg.add_edge(a, c, ());
@@ -491,7 +486,6 @@ mod tests {
         cfg.add_edge(b, d, ());
         cfg.add_edge(d, e, ());
 
-        cfg.add_edge(e, f, ());
 
         build_test("if (true) {int x;} else {int y; } int z;", cfg);
     }
@@ -504,7 +498,6 @@ mod tests {
         let b = cfg.add_node(parse_stmt("assume !true;"));
         let c = cfg.add_node(parse_stmt("int x;"));
         let d = cfg.add_node(parse_stmt("int y;"));
-        let e = cfg.add_node(CfgNode::End);
 
         cfg.add_edge(s, a, ());
         cfg.add_edge(a, c, ());
@@ -513,7 +506,6 @@ mod tests {
 
         cfg.add_edge(s, b, ());
         cfg.add_edge(b, d, ());
-        cfg.add_edge(d, e, ());
 
         build_test("while (true) int x; int y;", cfg);
     }

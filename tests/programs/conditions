@@ -1,5 +1,6 @@
 class Main {
     static void main(int o){
+        return o;
         Main.c(1);
     }
 
