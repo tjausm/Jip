@@ -121,137 +121,92 @@ fn expression_to_dynamic<'ctx>(
 ) -> Result<Dynamic<'ctx>, Error> {
     match expr {
         Expression::And(l_expr, r_expr) => {
-            let l = expression_to_dynamic(ctx, Rc::clone(&env), l_expr).and_then(as_bool_or_error);
-            let r = expression_to_dynamic(ctx, env, r_expr).and_then(as_bool_or_error);
+            let l = expression_to_dynamic(ctx, Rc::clone(&env), l_expr).and_then(as_bool_or_error)?;
+            let r = expression_to_dynamic(ctx, env, r_expr).and_then(as_bool_or_error)?;
 
-            match flatten_tupple((l, r)) {
-                Ok((l, r)) => return Ok(Dynamic::from(Bool::and(ctx, &[&l, &r]))),
-                Err(why) => return Err(why),
-            }
+            return Ok(Dynamic::from(Bool::and(ctx, &[&l, &r])));
         }
         Expression::Or(l_expr, r_expr) => {
-            let l = expression_to_dynamic(ctx, Rc::clone(&env), l_expr).and_then(as_bool_or_error);
-            let r = expression_to_dynamic(ctx, env, r_expr).and_then(as_bool_or_error);
+            let l = expression_to_dynamic(ctx, Rc::clone(&env), l_expr).and_then(as_bool_or_error)?;
+            let r = expression_to_dynamic(ctx, env, r_expr).and_then(as_bool_or_error)?;
 
-            match flatten_tupple((l, r)) {
-                Ok((l, r)) => return Ok(Dynamic::from(Bool::or(ctx, &[&l, &r]))),
-                Err(why) => return Err(why),
-            }
+            return Ok(Dynamic::from(Bool::or(ctx, &[&l, &r])));
         }
         Expression::EQ(l_expr, r_expr) => {
-            let l = expression_to_dynamic(ctx, Rc::clone(&env), l_expr);
-            let r = expression_to_dynamic(ctx, env, r_expr);
+            let l = expression_to_dynamic(ctx, Rc::clone(&env), l_expr)?;
+            let r = expression_to_dynamic(ctx, env, r_expr)?;
 
-            match flatten_tupple((l, r)) {
-                Ok((l, r)) => return Ok(Dynamic::from(l._eq(&r))),
-                Err(why) => return Err(why),
-            }
+            return Ok(Dynamic::from(l._eq(&r)));
         }
         Expression::NE(l_expr, r_expr) => {
-            let l = expression_to_dynamic(ctx, Rc::clone(&env), l_expr);
-            let r = expression_to_dynamic(ctx, env, r_expr);
+            let l = expression_to_dynamic(ctx, Rc::clone(&env), l_expr)?;
+            let r = expression_to_dynamic(ctx, env, r_expr)?;
 
-            match flatten_tupple((l, r)) {
-                Ok((l, r)) => return Ok(Dynamic::from(l._eq(&r).not())),
-                Err(why) => return Err(why),
-            }
+            return Ok(Dynamic::from(l._eq(&r).not()));
         }
         Expression::LT(l_expr, r_expr) => {
-            let l = expression_to_dynamic(ctx, Rc::clone(&env), l_expr).and_then(as_int_or_error);
-            let r = expression_to_dynamic(ctx, env, r_expr).and_then(as_int_or_error);
+            let l = expression_to_dynamic(ctx, Rc::clone(&env), l_expr).and_then(as_int_or_error)?;
+            let r = expression_to_dynamic(ctx, env, r_expr).and_then(as_int_or_error)?;
 
-            match flatten_tupple((l, r)) {
-                Ok((l, r)) => return Ok(Dynamic::from(l.lt(&r))),
-                Err(why) => Err(why),
-            }
+            return Ok(Dynamic::from(l.lt(&r)));
         }
         Expression::GT(l_expr, r_expr) => {
-            let l = expression_to_dynamic(ctx, Rc::clone(&env), l_expr).and_then(as_int_or_error);
-            let r = expression_to_dynamic(ctx, env, r_expr).and_then(as_int_or_error);
+            let l = expression_to_dynamic(ctx, Rc::clone(&env), l_expr).and_then(as_int_or_error)?;
+            let r = expression_to_dynamic(ctx, env, r_expr).and_then(as_int_or_error)?;
 
-            match flatten_tupple((l, r)) {
-                Ok((l, r)) => return Ok(Dynamic::from(l.gt(&r))),
-                Err(why) => Err(why),
-            }
+            return Ok(Dynamic::from(l.gt(&r)));
         }
         Expression::GEQ(l_expr, r_expr) => {
-            let l = expression_to_dynamic(ctx, Rc::clone(&env), l_expr).and_then(as_int_or_error);
-            let r = expression_to_dynamic(ctx, env, r_expr).and_then(as_int_or_error);
+            let l = expression_to_dynamic(ctx, Rc::clone(&env), l_expr).and_then(as_int_or_error)?;
+            let r = expression_to_dynamic(ctx, env, r_expr).and_then(as_int_or_error)?;
 
-            match flatten_tupple((l, r)) {
-                Ok((l, r)) => return Ok(Dynamic::from(l.ge(&r))),
-                Err(why) => Err(why),
-            }
+            return Ok(Dynamic::from(l.ge(&r)));
         }
         Expression::LEQ(l_expr, r_expr) => {
-            let l = expression_to_dynamic(ctx, Rc::clone(&env), l_expr).and_then(as_int_or_error);
-            let r = expression_to_dynamic(ctx, env, r_expr).and_then(as_int_or_error);
+            let l = expression_to_dynamic(ctx, Rc::clone(&env), l_expr).and_then(as_int_or_error)?;
+            let r = expression_to_dynamic(ctx, env, r_expr).and_then(as_int_or_error)?;
 
-            match flatten_tupple((l, r)) {
-                Ok((l, r)) => return Ok(Dynamic::from(l.le(&r))),
-                Err(why) => Err(why),
-            }
+            return Ok(Dynamic::from(l.le(&r)));
         }
         Expression::Plus(l_expr, r_expr) => {
-            let l = expression_to_dynamic(ctx, Rc::clone(&env), l_expr).and_then(as_int_or_error);
-            let r = expression_to_dynamic(ctx, env, r_expr).and_then(as_int_or_error);
+            let l = expression_to_dynamic(ctx, Rc::clone(&env), l_expr).and_then(as_int_or_error)?;
+            let r = expression_to_dynamic(ctx, env, r_expr).and_then(as_int_or_error)?;
 
-            match flatten_tupple((l, r)) {
-                Ok((l, r)) => return Ok(Dynamic::from(ast::Int::add(&ctx, &[&l, &r]))),
-                Err(why) => return Err(why),
-            }
+            return Ok(Dynamic::from(ast::Int::add(&ctx, &[&l, &r])));
         }
         Expression::Minus(l_expr, r_expr) => {
-            let l = expression_to_dynamic(ctx, Rc::clone(&env), l_expr).and_then(as_int_or_error);
-            let r = expression_to_dynamic(ctx, env, r_expr).and_then(as_int_or_error);
+            let l = expression_to_dynamic(ctx, Rc::clone(&env), l_expr).and_then(as_int_or_error)?;
+            let r = expression_to_dynamic(ctx, env, r_expr).and_then(as_int_or_error)?;
 
-            match flatten_tupple((l, r)) {
-                Ok((l, r)) => return Ok(Dynamic::from(ast::Int::sub(&ctx, &[&l, &r]))),
-                Err(why) => return Err(why),
-            }
+            return Ok(Dynamic::from(ast::Int::sub(&ctx, &[&l, &r])));
         }
         Expression::Multiply(l_expr, r_expr) => {
-            let l = expression_to_dynamic(ctx, Rc::clone(&env), l_expr).and_then(as_int_or_error);
-            let r = expression_to_dynamic(ctx, env, r_expr).and_then(as_int_or_error);
+            let l = expression_to_dynamic(ctx, Rc::clone(&env), l_expr).and_then(as_int_or_error)?;
+            let r = expression_to_dynamic(ctx, env, r_expr).and_then(as_int_or_error)?;
 
-            match flatten_tupple((l, r)) {
-                Ok((l, r)) => return Ok(Dynamic::from(ast::Int::mul(&ctx, &[&l, &r]))),
-                Err(why) => return Err(why),
-            }
+            return Ok(Dynamic::from(ast::Int::mul(&ctx, &[&l, &r])));
         }
         Expression::Divide(l_expr, r_expr) => {
-            let l = expression_to_dynamic(ctx, Rc::clone(&env), l_expr).and_then(as_int_or_error);
-            let r = expression_to_dynamic(ctx, env, r_expr).and_then(as_int_or_error);
+            let l = expression_to_dynamic(ctx, Rc::clone(&env), l_expr).and_then(as_int_or_error)?;
+            let r = expression_to_dynamic(ctx, env, r_expr).and_then(as_int_or_error)?;
 
-            match flatten_tupple((l, r)) {
-                Ok((l, r)) => return Ok(Dynamic::from(l.div(&r))),
-                Err(why) => return Err(why),
-            }
+            return Ok(Dynamic::from(l.div(&r)));
         }
         Expression::Mod(l_expr, r_expr) => {
-            let l = expression_to_dynamic(ctx, Rc::clone(&env), l_expr).and_then(as_int_or_error);
-            let r = expression_to_dynamic(ctx, env, r_expr).and_then(as_int_or_error);
+            let l = expression_to_dynamic(ctx, Rc::clone(&env), l_expr).and_then(as_int_or_error)?;
+            let r = expression_to_dynamic(ctx, env, r_expr).and_then(as_int_or_error)?;
 
-            match flatten_tupple((l, r)) {
-                Ok((l, r)) => return Ok(Dynamic::from(l.modulo(&r))),
-                Err(why) => return Err(why),
-            }
+            return Ok(Dynamic::from(l.modulo(&r)));
         }
         Expression::Negative(expr) => {
-            let e = expression_to_dynamic(ctx, Rc::clone(&env), expr).and_then(as_int_or_error);
+            let e = expression_to_dynamic(ctx, Rc::clone(&env), expr).and_then(as_int_or_error)?;
 
-            match e {
-                Ok(e) => return Ok(Dynamic::from(e.unary_minus())),
-                Err(why) => return Err(why),
-            }
+            return Ok(Dynamic::from(e.unary_minus()))
         }
         Expression::Not(expr) => {
-            let expr = expression_to_dynamic(ctx, env, expr).and_then(as_bool_or_error);
+            let expr = expression_to_dynamic(ctx, env, expr).and_then(as_bool_or_error)?;
 
-            match expr {
-                Ok(expr) => return Ok(Dynamic::from(expr.not())),
-                Err(err) => return Err(err),
-            }
+            return Ok(Dynamic::from(expr.not()));
         }
 
         Expression::Identifier(id) => match get_from_env(&env, id) {
