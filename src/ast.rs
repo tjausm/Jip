@@ -154,9 +154,9 @@ impl fmt::Debug for Statement {
                 Statement::Assignment((Lhs::Identifier(id.to_string()), rhs.clone()))
             ),
             Statement::Declaration((t, id)) => write!(f, "{:?} {};", t, id),
-            Statement::Assignment((lhs, rhs)) => write!(f, "{:?} := {:?};", lhs, rhs),
+            Statement::Assignment((lhs, rhs)) => write!(f, "{:?} := {:?}", lhs, rhs),
             Statement::Call((l, r, args)) => write!(f, "{}.{}({:?});", l, r, args),
-            Statement::Skip(()) => write!(f, " ; "),
+            Statement::Skip(()) => write!(f, " skip "),
             Statement::Ite((cond, if_expr, else_expr)) => {
                 write!(f, "if ({:?}) then {:?} else {:?}", cond, if_expr, else_expr)
             }

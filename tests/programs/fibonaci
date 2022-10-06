@@ -1,6 +1,6 @@
 class Main {
     static void main(int o){
-        Main.f(o);
+        int x := Main.f(o);
     }
     static int f(int m){
         if (m == 1)

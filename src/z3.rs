@@ -71,7 +71,7 @@ pub fn solve_constraints<'ctx>(
         }
     }
 
-    println!("{}", constraints.not());
+    //println!("{}", constraints.not());
 
     let solver = Solver::new(&ctx);
     solver.assert(&constraints.not());
@@ -215,12 +215,11 @@ fn expression_to_dynamic<'ctx>(
                     //klopt dit, moet ik niet de reference naar de variable in de env passen?
                     return Ok(Dynamic::from(i.clone()));
                 }
-                _ => {
-                    return Err(Error::Semantics(format!(
-                        "can't convert {:?} to an int",
-                        var
-                    )));
+                Variable::Bool(b) => {
+                    //klopt dit, moet ik niet de reference naar de variable in de env passen?
+                    return Ok(Dynamic::from(b.clone()));
                 }
+                _ => todo!("Variable type not implemented")
             },
             None => {
                 return Err(Error::Semantics(format!("Variable {} is undeclared", id)));
@@ -229,9 +228,12 @@ fn expression_to_dynamic<'ctx>(
         Expression::Literal(Literal::Integer(n)) => {
             return Ok(Dynamic::from(ast::Int::from_i64(ctx, *n)))
         }
+        Expression::Literal(Literal::Boolean(b)) => {
+            return Ok(Dynamic::from(ast::Bool::from_bool(ctx, *b)))
+        }
         otherwise => {
             return Err(Error::Semantics(format!(
-                "Expressions of the form {:?} should not be in an expression",
+                "Expressions of the form {:?} are not valid",
                 otherwise
             )));
         }

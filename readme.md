@@ -18,12 +18,17 @@ All tests are executed with `cargo test`, we have 2 types of tests:
 
 ## vragen
 - every path through a program a valid path? e.g. do we need an ending note to denote the ending or can we just assume that a node without edges is the end
+- how can i test that arguments are currently working e.g. 
 
 ## Todo's
-- [ ] fibonacci cfg klopt nog steeds niet
+- [ ] inschrijving voor thesis
+- [ ] objects representeren in de cfg
+    - if we enter constructor we initialize fields, assign referenc of oject to 'this' and we assign 'this' to 'retval'
+    - if we enter a method we assign reference of object to 'this'
+
 - [ ] change retval_id to a static string in shared?
-- [ ] argument assignment upon function entering
-- [ ] retval assignment upon function leaving
+- [ ] add method parameters as edge weights
+
 - [ ] object accesing vanaf de heap e.g.
 - [ ] add question mark instead of endless match expressions
 

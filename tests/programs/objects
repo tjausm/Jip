@@ -11,7 +11,7 @@ class Main {
 }
 
 class Counter {
-    int count;
+    -int count;
     Counter(int initial) {this.count := initial; }
     void increment() {int i := this.count; this.count := i + 1;}
     void decrement() {int i := this.count; this.count := i - 1;}

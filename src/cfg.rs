@@ -4,7 +4,9 @@
 lalrpop_mod!(pub parser); // synthesized by LALRPOP
 
 use crate::ast::*;
-use crate::shared::{Error, get_from_env, insert_into_env, get_method, get_class, get_methodcontent};
+use crate::shared::{
+    get_class, get_from_env, get_method, get_methodcontent, insert_into_env, Error,
+};
 use petgraph::dot::Dot;
 use petgraph::graph::{Graph, NodeIndex};
 use std::collections::{HashMap, VecDeque};
@@ -13,10 +15,14 @@ use std::fmt;
 pub enum CfgNode {
     EnteringMain(Parameters),
     Statement(Statement),
+    /// objectname, methodname and list of expressions we assign to parameters
+    EnterMethod((Identifier, Identifier, Arguments)),
+    /// objectname, methodname and variable name we assign retval to
+    LeaveMethod((Identifier, Identifier, Option<Lhs>)),
     /// classname, methodname and list of expressions we assign to parameters
-    EnterFunction((Identifier, Identifier, Arguments)),
+    EnterStaticMethod((Identifier, Identifier, Arguments)),
     /// classname, methodname and variable name we assign retval to
-    LeaveFunction((Identifier, Identifier, Option<Lhs>))
+    LeaveStaticMethod((Identifier, Identifier, Option<Lhs>)),
 }
 
 impl fmt::Debug for CfgNode {
@@ -24,13 +30,22 @@ impl fmt::Debug for CfgNode {
         match self {
             CfgNode::EnteringMain(_) => write!(f, "Entering Main.main"),
             CfgNode::Statement(stmt) => write!(f, "{:?}", stmt),
-            CfgNode::EnterFunction((class, method, _)) => {
+            CfgNode::EnterMethod((object, method, _)) => {
+                write!(f, "Entering {}.{}", object, method)
+            }
+            CfgNode::LeaveMethod((object, method, None)) => {
+                write!(f, "Leaving {}.{}", object, method)
+            }
+            CfgNode::LeaveMethod((object, method, Some(lhs))) => {
+                write!(f, "Leaving {}.{}\n{:?} := retval", object, method, lhs)
+            }
+            CfgNode::EnterStaticMethod((class, method, _)) => {
                 write!(f, "Entering {}.{}", class, method)
             }
-            CfgNode::LeaveFunction((class, method, None)) => {
+            CfgNode::LeaveStaticMethod((class, method, None)) => {
                 write!(f, "Leaving {}.{}", class, method)
             }
-            CfgNode::LeaveFunction((class, method, Some(lhs))) => {
+            CfgNode::LeaveStaticMethod((class, method, Some(lhs))) => {
                 write!(f, "Leaving {}.{}\n{:?} := retval", class, method, lhs)
             }
         }
@@ -68,7 +83,6 @@ pub fn generate_cfg(prog: Program) -> Result<(NodeIndex, CFG), Error> {
             //initiate environments
             let mut ty_env: TypeEnv = vec![HashMap::new()];
             let mut f_env: FunEnv = HashMap::new();
-            
 
             let (ending_nodes, cfg) = stmts_to_cfg(
                 &mut ty_env,
@@ -77,32 +91,32 @@ pub fn generate_cfg(prog: Program) -> Result<(NodeIndex, CFG), Error> {
                 VecDeque::from(body.clone()),
                 cfg,
                 vec![start_node],
-                None
+                None,
             )?;
-            
+
             return Ok((start_node, cfg));
         }
         _ => {
             return Err(Error::Semantics(
-                "Couldn't find a 'static void main' method"
-                    .to_string(),
+                "Couldn't find a 'static void main' method".to_string(),
             ))
         }
     }
 }
 
-
 fn get_constructor<'a>(prog: &'a Program, class_name: &str) -> Result<&'a Constructor, Error> {
     let class = get_class(prog, class_name)?;
 
-
-        for m in class.1.iter() {
-            match m {
-                Member::Constructor(c) => return Ok(c),
-                _ => continue,
-            }
+    for m in class.1.iter() {
+        match m {
+            Member::Constructor(c) => return Ok(c),
+            _ => continue,
         }
-    return Err(Error::Semantics(format!("Class {} does not have a constructor", class_name)))
+    }
+    return Err(Error::Semantics(format!(
+        "Class {} does not have a constructor",
+        class_name
+    )));
 }
 
 /// Recursively unpacks Statement and returns start and end of cfg and cfg itself
@@ -113,7 +127,7 @@ fn stmt_to_cfg(
     stmt: Statement,
     mut cfg: CFG,
     start_node: NodeIndex,
-    end_cfg: Option<NodeIndex>,
+    scope_end: Option<NodeIndex>,
 ) -> Result<(Vec<NodeIndex>, CFG), Error> {
     match stmt {
         Statement::Block(stmts) => {
@@ -124,10 +138,13 @@ fn stmt_to_cfg(
                 VecDeque::from(*stmts),
                 cfg,
                 vec![start_node],
-                end_cfg,
+                scope_end,
             )
         }
-        //TODO klopt dit?
+        Statement::Return(expr) => {
+            replace_return(&expr, &mut cfg, vec![start_node], scope_end)?;
+            return Ok((vec![], cfg));
+        }
         other => {
             let stmt_node = cfg.add_node(CfgNode::Statement(other));
             cfg.add_edge(start_node, stmt_node, ());
@@ -137,7 +154,7 @@ fn stmt_to_cfg(
 }
 
 /// adds edges from all passed start nodes to first node it generates from stmts and adds edges from the last nodes it generates to the ending node if one is specified.
-/// - **ty_env ->** map identifiers to classes, to know where to find invoked functions e.g. c.increment() can only be performed if we know where to find the increment function
+/// - **ty_env ->** map identifiers to classes, to know where to find invoked functions e.g. given object c, we can only perform c.increment() if we know the class of c
 /// - **f_env ->**  map methods to the start and end of a functions subgraph
 fn stmts_to_cfg<'a>(
     ty_env: &mut TypeEnv,
@@ -213,7 +230,12 @@ fn stmts_to_cfg<'a>(
             }
 
             // generate
-            Statement::Call((class, method, args)) => {
+            Statement::Call((class_or_object, method, args)) => {
+                //
+                let class = get_from_env(ty_env, class_or_object.clone())
+                    .map(|t| t.0)
+                    .unwrap_or(class_or_object);
+
                 let (f_start_node, f_end_node, mut cfg) =
                     match f_env.get(&(class.clone(), method.clone())) {
                         Some((start_node, end_node)) => (*start_node, *end_node, cfg),
@@ -232,14 +254,9 @@ fn stmts_to_cfg<'a>(
                 let (f_start_node, f_end_node, mut cfg) =
                     match f_env.get(&(class.clone(), method.clone())) {
                         Some((start_node, end_node)) => (*start_node, *end_node, cfg),
-                        None => fun_to_cfg(
-                            &(class, method, args),
-                            Some(lhs),
-                            ty_env,
-                            f_env,
-                            prog,
-                            cfg,
-                        )?
+                        None => {
+                            fun_to_cfg(&(class, method, args), Some(lhs), ty_env, f_env, prog, cfg)?
+                        }
                     };
 
                 for node in start_nodes {
@@ -259,22 +276,8 @@ fn stmts_to_cfg<'a>(
 
             // for 'return x' we assign 'retval := x' and stop recursing
             Statement::Return(expr) => {
-                let retval_assign = cfg.add_node(CfgNode::Statement(Statement::Assignment((
-                    Lhs::Identifier("retval".to_string()),
-                    Rhs::Expression(expr.clone()),
-                ))));
-                for node in start_nodes {
-                    cfg.add_edge(node, retval_assign, ());
-                }
-                match scope_end {
-                    Some(scope_end) => {
-                        cfg.add_edge(retval_assign, scope_end, ());
-                        return Ok((vec![], cfg));
-                    },
-                    None => return Err(Error::Semantics(format!(" 'return {:?}' has no scope to return to.", &expr)))
-                }
-
-
+                replace_return(&expr, &mut cfg, start_nodes, scope_end)?;
+                return Ok((vec![], cfg));
             }
             // split declareassign by prepending a declaration and assignment
             Statement::DeclareAssign((t, id, rhs)) => {
@@ -289,9 +292,8 @@ fn stmts_to_cfg<'a>(
                 // keep track of variable types, to know where to find nonstatic methods called on object
                 match &other {
                     Statement::Declaration((Type::Classtype(class_name), id)) => {
-                        let class = get_class(prog, class_name)?; 
+                        let class = get_class(prog, class_name)?;
                         insert_into_env(ty_env, id.clone(), class.clone())
-
                     }
                     _ => (),
                 }
@@ -304,7 +306,7 @@ fn stmts_to_cfg<'a>(
             }
         },
         //if stmt stack is empty we return ending node(s)
-        None => return Ok((start_nodes, cfg))
+        None => return Ok((start_nodes, cfg)),
     }
 }
 
@@ -323,13 +325,13 @@ fn fun_to_cfg<'a>(
     // Check whether method exists and it has enough args
     let (method_type, _, parameters, body) = get_methodcontent(prog, &class, &method)?;
 
-    let enter_function = cfg.add_node(CfgNode::EnterFunction((
+    let enter_function = cfg.add_node(CfgNode::EnterStaticMethod((
         class.clone(),
         method.clone(),
         args.clone(),
     )));
 
-    let leave_function = cfg.add_node(CfgNode::LeaveFunction((
+    let leave_function = cfg.add_node(CfgNode::LeaveStaticMethod((
         class.clone(),
         method.clone(),
         assigns_to,
@@ -361,6 +363,35 @@ fn fun_to_cfg<'a>(
 
     return Ok((enter_function, leave_function, cfg));
 }
+
+/// Replaces 'return expr' by 'retval := expr' and edge between assignment and scope_end is added,
+fn replace_return(
+    expr: &Expression,
+    cfg: &mut CFG,
+    start_nodes: Vec<NodeIndex>,
+    scope_end: Option<NodeIndex>,
+) -> Result<(), Error> {
+    let retval_assign = cfg.add_node(CfgNode::Statement(Statement::Assignment((
+        Lhs::Identifier("retval".to_string()),
+        Rhs::Expression(expr.clone()),
+    ))));
+    for node in start_nodes {
+        cfg.add_edge(node, retval_assign, ());
+    }
+    match scope_end {
+        Some(scope_end) => {
+            cfg.add_edge(retval_assign, scope_end, ());
+            return Ok(());
+        }
+        None => {
+            return Err(Error::Semantics(format!(
+                " 'return {:?}' has no scope to return to.",
+                &expr
+            )))
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -412,7 +443,6 @@ mod tests {
         cfg.add_edge(s, b, ());
         cfg.add_edge(b, d, ());
         cfg.add_edge(d, e, ());
-
 
         build_test("if (true) {int x;} else {int y; } int z;", cfg);
     }

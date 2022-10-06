@@ -14,9 +14,8 @@ use z3::{Config, Context};
 use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::fs;
-use std::rc::Rc;
 
-const PROG_CORRECT: &str = "Program is correct";
+const PROG_CORRECT: &'static str = "Program is correct";
 
 /// 0 = validated program, 1 = validation error, 2 = all other errors
 pub type ExitCode = i32;
@@ -63,6 +62,9 @@ pub fn print_verification(program: &str, d: Depth) -> (ExitCode, String) {
 }
 
 fn verify(prog_string: &str, d: Depth) -> Result<(), Error> {
+    // init retval such that it outlives env
+    let retval_id = &"retval".to_string();
+    
     let prog = parse_program(prog_string)?;
     let (start_node, cfg) = generate_cfg(prog.clone())?;
 
@@ -72,6 +74,7 @@ fn verify(prog_string: &str, d: Depth) -> Result<(), Error> {
     //init our bfs through the cfg
     let mut q: VecDeque<(Environment, Vec<PathConstraint>, Depth, NodeIndex)> = VecDeque::new();
     q.push_back((vec![HashMap::new()], vec![], d, start_node));
+
 
     // Assert -> build & verify z3 formula, return error if disproven
     // Assume -> build & verify z3 formula, stop evaluating pad if disproven
@@ -167,7 +170,7 @@ fn verify(prog_string: &str, d: Depth) -> Result<(), Error> {
                             _ => (),
                         }
                     }
-                    CfgNode::EnterFunction((class, method, args)) => {
+                    CfgNode::EnterStaticMethod((class, method, args)) => {
                         // TODO: this should be different for static and non-static methods
                         let (ty, _, params, _) = get_methodcontent(&prog, class, method)?;
                         let variables =
@@ -177,8 +180,8 @@ fn verify(prog_string: &str, d: Depth) -> Result<(), Error> {
 
                         // declare retval with correct type in new scope
                         match ty {
-                            Type::Int => insert_into_env(&mut env, &"retval".to_string(), fresh_int(&ctx, "retval".to_string())),
-                            Type::Bool => insert_into_env(&mut env, &"retval".to_string(), fresh_bool(&ctx, "retval".to_string())),
+                            Type::Int => insert_into_env(&mut env, retval_id, fresh_int(&ctx, "retval".to_string())),
+                            Type::Bool => insert_into_env(&mut env, retval_id, fresh_bool(&ctx, "retval".to_string())),
                             _ => (),
                         }
 
@@ -186,15 +189,15 @@ fn verify(prog_string: &str, d: Depth) -> Result<(), Error> {
                             insert_into_env(&mut env, id, var);
                         }
                     }
-                    CfgNode::LeaveFunction((class, method, return_to)) => {
+                    CfgNode::LeaveStaticMethod((class, method, return_to)) => {
                         let retval = get_from_env(&env, &"retval".to_string());
                         env.pop();
                         match (return_to, retval) {
-                            (Some(Lhs::Identifier(id)), Some(retval)) => (),
+                            (Some(Lhs::Identifier(id)), Some(retval)) => insert_into_env(&mut env, id, retval),
                             (Some(Lhs::Accessfield(..)), Some(retval)) => todo!("assigning objects not implemented"),
                             (None, None) => (),
-                            (None, Some(_)) => return  Err(Error::Semantics(format!(" Can't assign return value of method {}.{} is invalid", class, method))),
-                            (Some(lhs), None) => return  Err(Error::Semantics(format!(" Can't assign void method {}.{} to {:?}", class, method, lhs))),
+                            (None, Some(_)) => return  Err(Error::Semantics(format!("Can't assign return value of method {}.{}", class, method))),
+                            (Some(lhs), None) => return  Err(Error::Semantics(format!("Can't assign void method {}.{} to {:?}", class, method, lhs))),
                         }
                     }
                     _ => (),
