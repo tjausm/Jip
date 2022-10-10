@@ -12,7 +12,7 @@ use std::fmt;
 use std::rc::Rc;
 
 use crate::ast::*;
-use crate::shared::{Error, get_from_env, insert_into_env};
+use crate::shared::{Error};
 pub type Identifier = String;
 
 
@@ -23,7 +23,16 @@ pub enum Variable<'a> {
     Object(HashMap<&'a Identifier, Variable<'a>>) // mapping field -> variable
 }
 
-pub type Environment<'a> = Vec<HashMap<&'a Identifier, Variable<'a>>>;
+#[derive(Clone)]
+pub struct AnScope<'a> {
+    pub class: Identifier,
+    pub method: Identifier,
+    pub scope: HashMap<&'a Identifier, Variable<'a>>
+} 
+
+/// Environment where each scope is annotated with method it belongs to
+
+pub type AnEnvironment<'a> = Vec<AnScope<'a>>;
 
 #[derive(Clone)]
 pub enum PathConstraint<'a> {
@@ -40,6 +49,27 @@ impl fmt::Debug for PathConstraint<'_> {
     }
 }
 
+pub fn insert_into_anEnv<'a>(env: &mut AnEnvironment<'a>, id: &'a Identifier, var: Variable<'a>) -> () {
+    match env.last_mut() {
+        Some(s) => {
+            s.scope.insert(id, var);
+        }
+        None => (),
+    };
+}
+
+pub fn get_from_anEnv<'a>(
+    env: &AnEnvironment<'a>,
+    id: &'a Identifier,
+) -> Option<Variable<'a>> {
+    for s in env.iter().rev() {
+        match s.scope.get(&id) {
+            Some(var) => return Some(var.clone()),
+            None => (),
+        }
+    }
+    return None;
+}
 
 pub fn fresh_int<'ctx>(ctx: &'ctx Context, id: String) -> Variable<'ctx> {
     return Variable::Int(Int::new_const(&ctx, id));
@@ -100,24 +130,24 @@ pub fn solve_constraints<'ctx>(
 
 pub fn expression_to_int<'ctx>(
     ctx: &'ctx Context,
-    env: &Environment<'ctx>,
-    expr: &Expression,
+    env: &AnEnvironment<'ctx>,
+    expr: &'ctx Expression,
 ) -> Result<Int<'ctx>, Error> {
     return expression_to_dynamic(&ctx, Rc::new(env), expr).and_then(as_int_or_error);
 }
 
 pub fn expression_to_bool<'ctx>(
     ctx: &'ctx Context,
-    env: &Environment<'ctx>,
-    expr: &Expression,
+    env: &AnEnvironment<'ctx>,
+    expr: &'ctx Expression,
 ) -> Result<Bool<'ctx>, Error> {
     return expression_to_dynamic(&ctx, Rc::new(env), expr).and_then(as_bool_or_error);
 }
 
-fn expression_to_dynamic<'ctx>(
+fn expression_to_dynamic<'ctx, 'b>(
     ctx: &'ctx Context,
-    env: Rc<&Environment<'ctx>>,
-    expr: &Expression,
+    env: Rc<&AnEnvironment<'ctx>>,
+    expr: &'ctx Expression,
 ) -> Result<Dynamic<'ctx>, Error> {
     match expr {
         Expression::And(l_expr, r_expr) => {
@@ -209,7 +239,7 @@ fn expression_to_dynamic<'ctx>(
             return Ok(Dynamic::from(expr.not()));
         }
 
-        Expression::Identifier(id) => match get_from_env(&env, id) {
+        Expression::Identifier(id) => match get_from_anEnv(&env, id) {
             Some(var) => match var {
                 Variable::Int(i) => {
                     //klopt dit, moet ik niet de reference naar de variable in de env passen?

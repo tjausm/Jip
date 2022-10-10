@@ -3,7 +3,7 @@
 
 use crate::ast::*;
 use crate::cfg::{generate_cfg, generate_dot_cfg, Node};
-use crate::shared::{get_from_env, get_methodcontent, insert_into_env, Error};
+use crate::shared::{ get_methodcontent, Error};
 use crate::z3::*;
 
 lalrpop_mod!(pub parser); // synthesized by LALRPOP
@@ -72,8 +72,9 @@ fn verify(prog_string: &str, d: Depth) -> Result<(), Error> {
     let ctx = Context::new(&z3_cfg);
 
     //init our bfs through the cfg
-    let mut q: VecDeque<(Environment, Vec<PathConstraint>, Depth, NodeIndex)> = VecDeque::new();
-    q.push_back((vec![HashMap::new()], vec![], d, start_node));
+    let mut q: VecDeque<(AnEnvironment, Vec<PathConstraint>, Depth, NodeIndex)> = VecDeque::new();
+    let main = AnScope {class: "main".to_string(), method: "main".to_string(), scope: HashMap::new()};
+    q.push_back((vec![main], vec![], d, start_node));
 
 
     // Assert -> build & verify z3 formula, return error if disproven
@@ -90,10 +91,10 @@ fn verify(prog_string: &str, d: Depth) -> Result<(), Error> {
                         for p in parameters {
                             match p {
                                 (Type::Int, id) => {
-                                    insert_into_env(&mut env, &id, fresh_int(&ctx, id.clone()))
+                                    insert_into_anEnv(&mut env, &id, fresh_int(&ctx, id.clone()))
                                 }
                                 (Type::Bool, id) => {
-                                    insert_into_env(&mut env, &id, fresh_bool(&ctx, id.clone()))
+                                    insert_into_anEnv(&mut env, &id, fresh_bool(&ctx, id.clone()))
                                 }
                                 (ty, id) => {
                                     return Err(Error::Semantics(format!(
@@ -109,10 +110,10 @@ fn verify(prog_string: &str, d: Depth) -> Result<(), Error> {
                         match stmt {
                             Statement::Declaration((ty, id)) => match ty {
                                 Type::Int => {
-                                    insert_into_env(&mut env, &id, fresh_int(&ctx, id.clone()));
+                                    insert_into_anEnv(&mut env, &id, fresh_int(&ctx, id.clone()));
                                 }
                                 Type::Bool => {
-                                    insert_into_env(&mut env, &id, fresh_bool(&ctx, id.clone()));
+                                    insert_into_anEnv(&mut env, &id, fresh_bool(&ctx, id.clone()));
                                 }
                                 weird_type => {
                                     return Err(Error::Semantics(format!(
@@ -140,7 +141,7 @@ fn verify(prog_string: &str, d: Depth) -> Result<(), Error> {
                             }
                             Statement::Assignment((Lhs::Identifier(id), Rhs::Expression(expr))) => {
                                 
-                                match get_from_env(&env, id) {
+                                match get_from_anEnv(&env, id) {
                                     None => {
                                         println!("{:?}", d);   
                                         println!("{:?}", pc);   
@@ -154,13 +155,13 @@ fn verify(prog_string: &str, d: Depth) -> Result<(), Error> {
                                             Ok(ast) => ast,
                                             Err(why) => return Err(why),
                                         };
-                                        insert_into_env(&mut env, &id, Variable::Int(ast));
+                                        insert_into_anEnv(&mut env, &id, Variable::Int(ast));
                                     }
 
                                     Some(Variable::Bool(_)) => {
                                         match expression_to_bool(&ctx, &env, &expr) {
                                             Ok(ast) => {
-                                                insert_into_env(&mut env, &id, Variable::Bool(ast))
+                                                insert_into_anEnv(&mut env, &id, Variable::Bool(ast))
                                             }
                                             Err(why) => return Err(why),
                                         };
@@ -179,28 +180,34 @@ fn verify(prog_string: &str, d: Depth) -> Result<(), Error> {
                         let variables =
                             params_to_vars(&ctx, &mut env, &params, &args, class, method)?;
 
-                        env.push(HashMap::new());
+                        env.push(AnScope {class: class.clone(), method: method.clone(), scope: HashMap::new()});
 
                         // declare retval with correct type in new scope
                         match ty {
-                            Type::Int => insert_into_env(&mut env, retval_id, fresh_int(&ctx, "retval".to_string())),
-                            Type::Bool => insert_into_env(&mut env, retval_id, fresh_bool(&ctx, "retval".to_string())),
+                            Type::Int => insert_into_anEnv(&mut env, retval_id, fresh_int(&ctx, "retval".to_string())),
+                            Type::Bool => insert_into_anEnv(&mut env, retval_id, fresh_bool(&ctx, "retval".to_string())),
                             _ => (),
                         }
 
                         for (id, var) in variables {
-                            insert_into_env(&mut env, id, var);
+                            insert_into_anEnv(&mut env, id, var);
                         }
                     }
                     // if 
                     Node::LeaveStaticMethod((class, method, return_to)) => {
+                        // get retval from scope before we leave it
+                        let retval = get_from_anEnv(&env, retval_id);
 
+                        // check whether current scope corresponds with scope we leave
+                        // if not, we dismiss this path
+                        match env.last_mut() {
+                            Some(s) if &s.class == class && &s.method == method => env.pop(),
+                            _ => continue
+                        };
 
-
-                        let retval = get_from_env(&env, &"retval".to_string());
-                        env.pop();
+                        // assign retval from previous scope if necessary
                         match (return_to, retval) {
-                            (Some(Lhs::Identifier(id)), Some(retval)) => insert_into_env(&mut env, id, retval),
+                            (Some(Lhs::Identifier(id)), Some(retval)) => insert_into_anEnv(&mut env, id, retval),
                             (Some(Lhs::Accessfield(..)), Some(retval)) => todo!("assigning objects not implemented"),
                             (None, None) => (),
                             (None, Some(_)) => return  Err(Error::Semantics(format!("Can't assign return value of method {}.{}", class, method))),
@@ -223,7 +230,7 @@ fn verify(prog_string: &str, d: Depth) -> Result<(), Error> {
 /// evaluates the parameters & arguments to a mapping id -> variable that can be added to a function scope
 fn params_to_vars<'ctx>(
     ctx: &'ctx Context,
-    env: &mut Environment<'ctx>,
+    env: &mut AnEnvironment<'ctx>,
     params: &'ctx Parameters,
     args: &'ctx Arguments,
     class: &String,
