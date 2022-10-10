@@ -25,7 +25,10 @@ pub fn insert_into_env<K: Eq + Hash, V>(env: &mut Vec<HashMap<K, V>>, key: K, va
     };
 }
 
-pub fn get_from_env<K: Eq + Hash + Display, V: Clone>(env_stack: &Vec<HashMap<K, V>>, id: K) -> Option<V>{
+pub fn get_from_env<K: Eq + Hash + Display, V: Clone>(
+    env_stack: &Vec<HashMap<K, V>>,
+    id: K,
+) -> Option<V> {
     for env in env_stack.iter().rev() {
         match env.get(&id) {
             Some(class) => return Some(class.clone()),
@@ -44,7 +47,11 @@ pub fn get_class<'a>(prog: &'a Program, class_name: &str) -> Result<&'a Class, E
         )))
 }
 
-pub fn get_method<'a>(prog: &'a Program, class_name: &str, method_name: &str) -> Result<&'a Method, Error> {
+pub fn get_method<'a>(
+    prog: &'a Program,
+    class_name: &str,
+    method_name: &str,
+) -> Result<&'a Method, Error> {
     let class = get_class(prog, class_name)?;
     for member in class.1.iter() {
         match member {
@@ -80,5 +87,17 @@ pub fn get_methodcontent<'a>(
         Method::Nonstatic(mc) => return Ok(&mc),
         Method::Static(mc) => return Ok(&mc),
     }
+}
 
+pub fn get_params<'a>(
+    prog: &'a Program,
+    class_name: &str,
+    method_name: &str,
+) -> Result<Vec<Identifier>, Error> {
+    let params : Vec<Identifier> = get_methodcontent(prog, &class_name, &method_name)?
+        .2
+        .iter()
+        .map(|e| e.1.clone())
+        .collect();
+    return Ok(params);
 }

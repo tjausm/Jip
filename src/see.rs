@@ -2,7 +2,7 @@
 //!
 
 use crate::ast::*;
-use crate::cfg::{generate_cfg, generate_dot_cfg, CfgNode};
+use crate::cfg::{generate_cfg, generate_dot_cfg, Node};
 use crate::shared::{get_from_env, get_methodcontent, insert_into_env, Error};
 use crate::z3::*;
 
@@ -86,7 +86,7 @@ fn verify(prog_string: &str, d: Depth) -> Result<(), Error> {
             (mut env, mut pc, d, node_index) => {
                 match &cfg[node_index] {
                     // add all parameters of main as free variables to env
-                    CfgNode::EnteringMain(parameters) => {
+                    Node::EnteringMain(parameters) => {
                         for p in parameters {
                             match p {
                                 (Type::Int, id) => {
@@ -105,7 +105,7 @@ fn verify(prog_string: &str, d: Depth) -> Result<(), Error> {
                         }
                     }
 
-                    CfgNode::Statement(stmt) => {
+                    Node::Statement(stmt) => {
                         match stmt {
                             Statement::Declaration((ty, id)) => match ty {
                                 Type::Int => {
@@ -139,8 +139,11 @@ fn verify(prog_string: &str, d: Depth) -> Result<(), Error> {
                                 }
                             }
                             Statement::Assignment((Lhs::Identifier(id), Rhs::Expression(expr))) => {
+                                
                                 match get_from_env(&env, id) {
                                     None => {
+                                        println!("{:?}", d);   
+                                        println!("{:?}", pc);   
                                         return Err(Error::Semantics(format!(
                                             "Variable {} is undeclared",
                                             id
@@ -170,7 +173,7 @@ fn verify(prog_string: &str, d: Depth) -> Result<(), Error> {
                             _ => (),
                         }
                     }
-                    CfgNode::EnterStaticMethod((class, method, args)) => {
+                    Node::EnterStaticMethod((class, method, args)) => {
                         // TODO: this should be different for static and non-static methods
                         let (ty, _, params, _) = get_methodcontent(&prog, class, method)?;
                         let variables =
@@ -189,7 +192,11 @@ fn verify(prog_string: &str, d: Depth) -> Result<(), Error> {
                             insert_into_env(&mut env, id, var);
                         }
                     }
-                    CfgNode::LeaveStaticMethod((class, method, return_to)) => {
+                    // if 
+                    Node::LeaveStaticMethod((class, method, return_to)) => {
+
+
+
                         let retval = get_from_env(&env, &"retval".to_string());
                         env.pop();
                         match (return_to, retval) {

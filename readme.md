@@ -21,7 +21,8 @@ All tests are executed with `cargo test`, we have 2 types of tests:
 - how can i test that arguments are currently working e.g. 
 
 ## Todo's
-- [ ] inschrijving voor thesis
+- [ ] refactor double code in edge creation for invocations and calls
+- [ ] think about scope leaving loop like fibonaci
 - [ ] objects representeren in de cfg
     - if we enter constructor we initialize fields, assign referenc of oject to 'this' and we assign 'this' to 'retval'
     - if we enter a method we assign reference of object to 'this'

@@ -108,7 +108,7 @@ Invocation : Invocation = {
 
 Arguments : Arguments = <Comma<Expression>>;
 
-Skip : Skip = ";" => (());
+Skip : Skip = ";" => (Skip);
 
 Ite : Ite = {
     "if" "(" <e:Expression> ")" <s1:Statement> "else" <s2:Statement> => (e, Box::new(s1), Box::new(s2))
