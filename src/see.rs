@@ -78,7 +78,7 @@ fn verify(prog_string: &str, d: Depth) -> Result<(), Error> {
         method: "main".to_string(),
         env: HashMap::new(),
     };
-    q.push_back((vec![main], vec![], d, start_node));
+    q.push_back((vec![main.clone()], vec![], d, start_node));
 
     // Assert -> build & verify z3 formula, return error if disproven
     // Assume -> build & verify z3 formula, stop evaluating pad if disproven
@@ -146,6 +146,10 @@ fn verify(prog_string: &str, d: Depth) -> Result<(), Error> {
                                 assign_var(&ctx, &mut env, id, expr)?;
                             }
                             Statement::Return(expr) =>{
+                                match env.last() {
+                                    Some(anScope) if anScope.class == main.class && anScope.method == main.method => continue,
+                                    _ => ()
+                                }
                                 assign_var(&ctx, &mut env, retval_id, expr)?;
                             },
                             _ => (),
