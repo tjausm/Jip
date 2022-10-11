@@ -100,6 +100,7 @@ pub fn solve_constraints<'ctx>(
         }
     }
 
+    //println!("{:?}", env);
     //println!("{}", constraints.not());
 
     let solver = Solver::new(&ctx);

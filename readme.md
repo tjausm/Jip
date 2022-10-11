@@ -23,6 +23,7 @@ All tests are executed with `cargo test`, we have 2 types of tests:
 ## Todo's
 - [ ] refactor double code in edge creation for invocations and calls
 - [ ] generalise over get_from_env and get_from_anEnv
+- [ ] vastleggen van vaste namen in de ast e.g. main class (veroorzaakt wel verschil tussen syntax stefan en ast datatype)
 - [ ] think about scope leaving loop like fibonaci
 - [ ] objects representeren in de cfg
     - if we enter constructor we initialize fields, assign referenc of oject to 'this' and we assign 'this' to 'retval'

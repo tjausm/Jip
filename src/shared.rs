@@ -88,16 +88,3 @@ pub fn get_methodcontent<'a>(
         Method::Static(mc) => return Ok(&mc),
     }
 }
-
-pub fn get_params<'a>(
-    prog: &'a Program,
-    class_name: &str,
-    method_name: &str,
-) -> Result<Vec<Identifier>, Error> {
-    let params : Vec<Identifier> = get_methodcontent(prog, &class_name, &method_name)?
-        .2
-        .iter()
-        .map(|e| e.1.clone())
-        .collect();
-    return Ok(params);
-}

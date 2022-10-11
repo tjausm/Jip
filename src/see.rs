@@ -2,12 +2,14 @@
 //!
 
 use crate::ast::*;
-use crate::cfg::{generate_cfg, generate_dot_cfg, Node};
+use crate::cfg::{generate_cfg, generate_dot_cfg, Node, Edge};
 use crate::shared::{get_methodcontent, Error};
 use crate::z3::{get_from_anEnv, AnEnvironment, expression_to_int, insert_into_anEnv, expression_to_bool, AnScope, fresh_int, fresh_bool, PathConstraint, solve_constraints, Variable};
 
-lalrpop_mod!(pub parser); // synthesized by LALRPOP
-use petgraph::graph::NodeIndex;
+lalrpop_mod!(pub parser); 
+// synthesized by LALRPOP
+use petgraph::graph::{NodeIndex, EdgeReference};
+use petgraph::stable_graph::DefaultIx;
 use petgraph::visit::EdgeRef;
 use z3::{Config, Context};
 
@@ -71,14 +73,18 @@ fn verify(prog_string: &str, d: Depth) -> Result<(), Error> {
     let z3_cfg = Config::new();
     let ctx = Context::new(&z3_cfg);
 
-    //init our bfs through the cfg
-    let mut q: VecDeque<(AnEnvironment, Vec<PathConstraint>, Depth, NodeIndex)> = VecDeque::new();
+    //init our bfs through the cfg, starting from first stmt in main
+    let mut q: VecDeque<(AnEnvironment, Vec<PathConstraint>, Depth, NodeIndex, &Edge)> = VecDeque::new();
     let main = AnScope {
         class: "main".to_string(),
         method: "main".to_string(),
         env: HashMap::new(),
     };
-    q.push_back((vec![main.clone()], vec![], d, start_node));
+    for edge in cfg.edges(start_node) {
+        let next = edge.target();
+        q.push_back((vec![main.clone()], vec![], d, next, edge.weight()));
+    }
+    
 
     // Assert -> build & verify z3 formula, return error if disproven
     // Assume -> build & verify z3 formula, stop evaluating pad if disproven
@@ -86,11 +92,11 @@ fn verify(prog_string: &str, d: Depth) -> Result<(), Error> {
     // then we enque all connected nodes, till d=0 or we reach end of cfg
     while let Some(triple) = q.pop_front() {
         match triple {
-            (_, _, 0, _) => continue,
-            (mut env, mut pc, d, node_index) => {
-                match &cfg[node_index] {
+            (_, _, 0, _, _) => continue,
+            (mut env, mut pc, d, curr_node, last_edge) => {
+                match (&cfg[curr_node], last_edge) {
                     // add all parameters of main as free variables to env
-                    Node::EnteringMain(parameters) => {
+                    (Node::EnteringMain(parameters), _) => {
                         for p in parameters {
                             match p {
                                 (Type::Int, id) => {
@@ -109,7 +115,7 @@ fn verify(prog_string: &str, d: Depth) -> Result<(), Error> {
                         }
                     }
 
-                    Node::Statement(stmt) => {
+                    (Node::Statement(stmt), _) => {
                         match stmt {
                             Statement::Declaration((ty, id)) => match ty {
                                 Type::Int => {
@@ -155,7 +161,7 @@ fn verify(prog_string: &str, d: Depth) -> Result<(), Error> {
                             _ => (),
                         }
                     }
-                    Node::EnterStaticMethod((class, method, args)) => {
+                    (Node::EnterStaticMethod((class, method)), Edge::Call(_, params, args)) => {
                         // TODO: this should be different for static and non-static methods
                         let (ty, _, params, _) = get_methodcontent(&prog, class, method)?;
                         let variables =
@@ -187,7 +193,7 @@ fn verify(prog_string: &str, d: Depth) -> Result<(), Error> {
                         }
                     }
                     // if
-                    Node::LeaveStaticMethod((class, method, return_to)) => {
+                    (Node::LeaveStaticMethod((class, method)), _) => {
                         // get retval from scope before we leave it
                         let retval = get_from_anEnv(&env, retval_id);
 
@@ -224,9 +230,9 @@ fn verify(prog_string: &str, d: Depth) -> Result<(), Error> {
                     _ => (),
                 }
                 //enqueue all connected nodes with the updated env and constraints
-                for edge in cfg.edges(node_index) {
+                for edge in cfg.edges(curr_node) {
                     let next = edge.target();
-                    q.push_back((env.clone(), pc.clone(), d - 1, next));
+                    q.push_back((env.clone(), pc.clone(), d - 1, next, edge.weight()));
                 }
             }
         }
@@ -262,6 +268,9 @@ fn assign_var<'ctx>(
             todo!("Assigning objects not yet implemented")
         }
     };
+
+    println!("{} := {:?}", id, expr);
+    println!("{:?}", env);
     return Ok(())
 }
 

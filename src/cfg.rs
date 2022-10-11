@@ -5,7 +5,7 @@ lalrpop_mod!(pub parser); // synthesized by LALRPOP
 
 use crate::ast::*;
 use crate::shared::{
-    get_class, get_from_env, get_method, get_methodcontent, insert_into_env, Error,
+    get_class, get_from_env, get_method, get_methodcontent, insert_into_env, Error
 };
 use petgraph::dot::Dot;
 use petgraph::graph::{Graph, NodeIndex};
@@ -16,19 +16,19 @@ pub enum Node {
     EnteringMain(Parameters),
     Statement(Statement),
     /// objectname, methodname and list of expressions we assign to parameters
-    EnterMethod((Identifier, Identifier, Arguments)),
+    EnterMethod((Identifier, Identifier)),
     /// objectname, methodname and variable name we assign retval to
-    LeaveMethod((Identifier, Identifier, Option<Lhs>)),
+    LeaveMethod((Identifier, Identifier)),
     /// classname, methodname and list of expressions we assign to parameters
-    EnterStaticMethod((Identifier, Identifier, Arguments)),
+    EnterStaticMethod((Identifier, Identifier)),
     /// classname, methodname and variable name we assign retval to
-    LeaveStaticMethod((Identifier, Identifier, Option<Lhs>)),
+    LeaveStaticMethod((Identifier, Identifier)),
     End,
 }
 
 pub enum Edge {
     /// methodname, list op parameters & arguments that function receives
-    Call(Identifier, Vec<(Identifier, Expression)>),
+    Call(Identifier, Vec<Identifier>, Vec<Expression>),
     Other,
 }
 
@@ -37,23 +37,23 @@ impl fmt::Debug for Node {
         match self {
             Node::EnteringMain(_) => write!(f, "Entering Main.main"),
             Node::Statement(stmt) => write!(f, "{:?}", stmt),
-            Node::EnterMethod((object, method, _)) => {
+            Node::EnterMethod((object, method)) => {
                 write!(f, "Entering {}.{}", object, method)
             }
-            Node::LeaveMethod((object, method, None)) => {
+            Node::LeaveMethod((object, method)) => {
                 write!(f, "Leaving {}.{}", object, method)
             }
-            Node::LeaveMethod((object, method, Some(lhs))) => {
-                write!(f, "Leaving {}.{}\n{:?} := retval", object, method, lhs)
+            Node::LeaveMethod((object, method)) => {
+                write!(f, "Leaving {}.{}", object, method)
             }
-            Node::EnterStaticMethod((class, method, _)) => {
+            Node::EnterStaticMethod((class, method)) => {
                 write!(f, "Entering {}.{}", class, method)
             }
-            Node::LeaveStaticMethod((class, method, None)) => {
+            Node::LeaveStaticMethod((class, method)) => {
                 write!(f, "Leaving {}.{}", class, method)
             }
-            Node::LeaveStaticMethod((class, method, Some(lhs))) => {
-                write!(f, "Leaving {}.{}\n{:?} := retval", class, method, lhs)
+            Node::LeaveStaticMethod((class, method)) => {
+                write!(f, "Leaving {}.{}", class, method)
             }
             Node::End => {
                 write!(f, "End")
@@ -65,9 +65,10 @@ impl fmt::Debug for Node {
 impl fmt::Debug for Edge {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Edge::Call(method, params_and_args) => {
-                let ap_str  = params_and_args
+            Edge::Call(method, params, args )=> {
+                let ap_str  = params
                     .iter()
+                    .zip(args.iter())
                     .map(|(arg, param)| format!("{} = {:?}", arg, param))
                     .collect::<Vec<String>>()
                     .join(", ");
@@ -269,52 +270,37 @@ fn stmts_to_cfg<'a>(
                     .unwrap_or(class_or_object);
 
                 // collect information for CFG edge
-                let params  = get_methodcontent(prog, &class, &method)?
-                    .2
-                    .iter()
-                    .map(|e| e.1.clone());
-                let copied_args = args
-                    .iter()
-                    .map(|a| a.clone());
-                let params_and_args : Vec<(Identifier, Expression)> = params.zip(copied_args).collect();
+                let params  = get_params(prog, &class, &method)?;
 
                 // create subgraph for function if it does not exist yet
                 let (f_start_node, f_end_node, mut cfg) =
                     match f_env.get(&(class.clone(), method.clone())) {
                         Some((start_node, end_node)) => (*start_node, *end_node, cfg),
-                        None => fun_to_cfg(&(class, method.clone(), args), None, ty_env, f_env, prog, cfg)?,
+                        None => fun_to_cfg(&(class, method.clone(), args.clone()),  ty_env, f_env, prog, cfg)?,
                     };
 
                 for node in start_nodes {
-                    cfg.add_edge(node, f_start_node, Edge::Call(method.clone(), params_and_args.clone()));
+                    cfg.add_edge(node, f_start_node, Edge::Call(method.clone(), params.clone(), args.clone()));
                 }
 
                 return stmts_to_cfg(ty_env, f_env, prog, stmts, cfg, vec![f_end_node], scope_end);
             }
 
             // prepend function body and
-            Statement::Assignment((lhs, Rhs::Invocation((class, method, args)))) => {
-                // collect information for CFG edge
-                let params  = get_methodcontent(prog, &class, &method)?
-                    .2
-                    .iter()
-                    .map(|e| e.1.clone());
-                let copied_args = args
-                    .iter()
-                    .map(|a| a.clone());
-                let params_and_args : Vec<(Identifier, Expression)> = params.zip(copied_args).collect();
-                
-                
+            Statement::Assignment((lhs, Rhs::Invocation((class_or_object, method, args)))) => {
+                let class = get_class_name(ty_env, class_or_object);
+                let params  = get_params(prog, &class, &method)?;
+     
                 let (f_start_node, f_end_node, mut cfg) =
                     match f_env.get(&(class.clone(), method.clone())) {
                         Some((start_node, end_node)) => (*start_node, *end_node, cfg),
                         None => {
-                            fun_to_cfg(&(class, method.clone(), args), Some(lhs), ty_env, f_env, prog, cfg)?
+                            fun_to_cfg(&(class, method.clone(), args),  ty_env, f_env, prog, cfg)?
                         }
                     };
 
                 for node in start_nodes {
-                    cfg.add_edge(node, f_start_node, Edge::Call(method.clone(), params_and_args.clone()));
+                    cfg.add_edge(node, f_start_node, Edge::Call(method.clone(), params.clone(), args.clone()));
                 }
 
                 return stmts_to_cfg(ty_env, f_env, prog, stmts, cfg, vec![f_end_node], scope_end);
@@ -368,7 +354,6 @@ fn stmts_to_cfg<'a>(
 // insert
 fn fun_to_cfg<'a>(
     call: &Invocation,
-    assigns_to: Option<Lhs>,
     ty_env: &mut TypeEnv,
     f_env: &mut FunEnv,
     prog: &Program,
@@ -381,14 +366,12 @@ fn fun_to_cfg<'a>(
 
     let enter_function = cfg.add_node(Node::EnterStaticMethod((
         class.clone(),
-        method.clone(),
-        args.clone(),
+        method.clone()
     )));
 
     let leave_function = cfg.add_node(Node::LeaveStaticMethod((
         class.clone(),
-        method.clone(),
-        assigns_to,
+        method.clone()
     )));
 
     //update environments
@@ -441,6 +424,30 @@ fn add_return(
             )))
         }
     }
+}
+
+fn get_params<'a>(
+    prog: &'a Program,
+    class_name: &str,
+    method_name: &str,
+) -> Result<Vec<Identifier>, Error> {
+    let params : Vec<Identifier> = get_methodcontent(prog, &class_name, &method_name)?
+        .2
+        .iter()
+        .map(|e| e.1.clone())
+        .collect();
+    return Ok(params);
+}
+
+/// given a object- or classname returns the class_name
+/// e.g. if we call o.f(), where the object o is of class O, calling get_class() will give us the objects class
+fn get_class_name(
+    ty_env: &TypeEnv,
+    class_or_object: String
+)-> String{
+    get_from_env(ty_env, class_or_object)
+                    .map(|t| t.0)
+                    .unwrap_or(class_or_object)
 }
 
 #[cfg(test)]

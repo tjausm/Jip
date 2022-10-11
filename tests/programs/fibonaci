@@ -1,6 +1,8 @@
 class Main {
     static void main(int o){
+        assume o == 2;
         int x := Main.f(o);
+        assert x == 0;
     }
     static int f(int m){
         if (m == 1)
