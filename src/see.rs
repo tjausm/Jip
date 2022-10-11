@@ -3,8 +3,8 @@
 
 use crate::ast::*;
 use crate::cfg::{generate_cfg, generate_dot_cfg, Node};
-use crate::shared::{ get_methodcontent, Error};
-use crate::z3::*;
+use crate::shared::{get_methodcontent, Error};
+use crate::z3::{get_from_anEnv, AnEnvironment, expression_to_int, insert_into_anEnv, expression_to_bool, AnScope, fresh_int, fresh_bool, PathConstraint, solve_constraints, Variable};
 
 lalrpop_mod!(pub parser); // synthesized by LALRPOP
 use petgraph::graph::NodeIndex;
@@ -64,7 +64,7 @@ pub fn print_verification(program: &str, d: Depth) -> (ExitCode, String) {
 fn verify(prog_string: &str, d: Depth) -> Result<(), Error> {
     // init retval such that it outlives env
     let retval_id = &"retval".to_string();
-    
+
     let prog = parse_program(prog_string)?;
     let (start_node, cfg) = generate_cfg(prog.clone())?;
 
@@ -73,9 +73,12 @@ fn verify(prog_string: &str, d: Depth) -> Result<(), Error> {
 
     //init our bfs through the cfg
     let mut q: VecDeque<(AnEnvironment, Vec<PathConstraint>, Depth, NodeIndex)> = VecDeque::new();
-    let main = AnScope {class: "main".to_string(), method: "main".to_string(), scope: HashMap::new()};
+    let main = AnScope {
+        class: "main".to_string(),
+        method: "main".to_string(),
+        env: HashMap::new(),
+    };
     q.push_back((vec![main], vec![], d, start_node));
-
 
     // Assert -> build & verify z3 formula, return error if disproven
     // Assume -> build & verify z3 formula, stop evaluating pad if disproven
@@ -140,37 +143,11 @@ fn verify(prog_string: &str, d: Depth) -> Result<(), Error> {
                                 }
                             }
                             Statement::Assignment((Lhs::Identifier(id), Rhs::Expression(expr))) => {
-                                
-                                match get_from_anEnv(&env, id) {
-                                    None => {
-                                        println!("{:?}", d);   
-                                        println!("{:?}", pc);   
-                                        return Err(Error::Semantics(format!(
-                                            "Variable {} is undeclared",
-                                            id
-                                        )))
-                                    }
-                                    Some(Variable::Int(_)) => {
-                                        let ast = match expression_to_int(&ctx, &env, &expr) {
-                                            Ok(ast) => ast,
-                                            Err(why) => return Err(why),
-                                        };
-                                        insert_into_anEnv(&mut env, &id, Variable::Int(ast));
-                                    }
-
-                                    Some(Variable::Bool(_)) => {
-                                        match expression_to_bool(&ctx, &env, &expr) {
-                                            Ok(ast) => {
-                                                insert_into_anEnv(&mut env, &id, Variable::Bool(ast))
-                                            }
-                                            Err(why) => return Err(why),
-                                        };
-                                    }
-
-                                    Some(Variable::Object(..)) => todo!("Assigning objects not yet implemented"),
-                                        
-                                }
+                                assign_var(&ctx, &mut env, id, expr)?;
                             }
+                            Statement::Return(expr) =>{
+                                assign_var(&ctx, &mut env, retval_id, expr)?;
+                            },
                             _ => (),
                         }
                     }
@@ -180,12 +157,24 @@ fn verify(prog_string: &str, d: Depth) -> Result<(), Error> {
                         let variables =
                             params_to_vars(&ctx, &mut env, &params, &args, class, method)?;
 
-                        env.push(AnScope {class: class.clone(), method: method.clone(), scope: HashMap::new()});
+                        env.push(AnScope {
+                            class: class.clone(),
+                            method: method.clone(),
+                            env: HashMap::new(),
+                        });
 
                         // declare retval with correct type in new scope
                         match ty {
-                            Type::Int => insert_into_anEnv(&mut env, retval_id, fresh_int(&ctx, "retval".to_string())),
-                            Type::Bool => insert_into_anEnv(&mut env, retval_id, fresh_bool(&ctx, "retval".to_string())),
+                            Type::Int => insert_into_anEnv(
+                                &mut env,
+                                retval_id,
+                                fresh_int(&ctx, "retval".to_string()),
+                            ),
+                            Type::Bool => insert_into_anEnv(
+                                &mut env,
+                                retval_id,
+                                fresh_bool(&ctx, "retval".to_string()),
+                            ),
                             _ => (),
                         }
 
@@ -193,7 +182,7 @@ fn verify(prog_string: &str, d: Depth) -> Result<(), Error> {
                             insert_into_anEnv(&mut env, id, var);
                         }
                     }
-                    // if 
+                    // if
                     Node::LeaveStaticMethod((class, method, return_to)) => {
                         // get retval from scope before we leave it
                         let retval = get_from_anEnv(&env, retval_id);
@@ -202,16 +191,30 @@ fn verify(prog_string: &str, d: Depth) -> Result<(), Error> {
                         // if not, we dismiss this path
                         match env.last_mut() {
                             Some(s) if &s.class == class && &s.method == method => env.pop(),
-                            _ => continue
+                            _ => continue,
                         };
 
                         // assign retval from previous scope if necessary
                         match (return_to, retval) {
-                            (Some(Lhs::Identifier(id)), Some(retval)) => insert_into_anEnv(&mut env, id, retval),
-                            (Some(Lhs::Accessfield(..)), Some(retval)) => todo!("assigning objects not implemented"),
+                            (Some(Lhs::Identifier(id)), Some(retval)) => {
+                                insert_into_anEnv(&mut env, id, retval)
+                            }
+                            (Some(Lhs::Accessfield(..)), Some(retval)) => {
+                                todo!("assigning objects not implemented")
+                            }
                             (None, None) => (),
-                            (None, Some(_)) => return  Err(Error::Semantics(format!("Can't assign return value of method {}.{}", class, method))),
-                            (Some(lhs), None) => return  Err(Error::Semantics(format!("Can't assign void method {}.{} to {:?}", class, method, lhs))),
+                            (None, Some(_)) => {
+                                return Err(Error::Semantics(format!(
+                                    "Can't assign return value of method {}.{}",
+                                    class, method
+                                )))
+                            }
+                            (Some(lhs), None) => {
+                                return Err(Error::Semantics(format!(
+                                    "Can't assign void method {}.{} to {:?}",
+                                    class, method, lhs
+                                )))
+                            }
                         }
                     }
                     _ => (),
@@ -225,6 +228,37 @@ fn verify(prog_string: &str, d: Depth) -> Result<(), Error> {
         }
     }
     return Ok(());
+}
+
+/// Assigns an expression to an identifier in the passed environment
+fn assign_var<'ctx>(
+    ctx: &'ctx Context,
+    env: &mut AnEnvironment<'ctx>,
+    id: &'ctx Identifier,
+    expr: &'ctx Expression
+) -> Result<(), Error>{
+    match get_from_anEnv(&env, id) {
+        None => {
+            return Err(Error::Semantics(format!(
+                "Variable {} is undeclared",
+                id
+            )))
+        }
+        Some(Variable::Int(_)) => {
+            let ast = expression_to_int(&ctx, &env, &expr)?;
+            insert_into_anEnv(env, &id, Variable::Int(ast));
+        }
+
+        Some(Variable::Bool(_)) => {
+            let ast = expression_to_bool(&ctx, &env, &expr)?;
+            insert_into_anEnv(env, &id, Variable::Bool(ast));
+        }
+
+        Some(Variable::Object(..)) => {
+            todo!("Assigning objects not yet implemented")
+        }
+    };
+    return Ok(())
 }
 
 /// evaluates the parameters & arguments to a mapping id -> variable that can be added to a function scope

@@ -6,7 +6,6 @@ extern crate z3;
 use z3::ast::{Ast, Bool, Dynamic, Int};
 use z3::{ast, Context, SatResult, Solver};
 
-use std::cmp::max;
 use std::collections::HashMap;
 use std::fmt;
 use std::rc::Rc;
@@ -23,11 +22,11 @@ pub enum Variable<'a> {
     Object(HashMap<&'a Identifier, Variable<'a>>) // mapping field -> variable
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct AnScope<'a> {
     pub class: Identifier,
     pub method: Identifier,
-    pub scope: HashMap<&'a Identifier, Variable<'a>>
+    pub env: HashMap<&'a Identifier, Variable<'a>>
 } 
 
 /// Environment where each scope is annotated with method it belongs to
@@ -52,7 +51,7 @@ impl fmt::Debug for PathConstraint<'_> {
 pub fn insert_into_anEnv<'a>(env: &mut AnEnvironment<'a>, id: &'a Identifier, var: Variable<'a>) -> () {
     match env.last_mut() {
         Some(s) => {
-            s.scope.insert(id, var);
+            s.env.insert(id, var);
         }
         None => (),
     };
@@ -63,7 +62,7 @@ pub fn get_from_anEnv<'a>(
     id: &'a Identifier,
 ) -> Option<Variable<'a>> {
     for s in env.iter().rev() {
-        match s.scope.get(&id) {
+        match s.env.get(&id) {
             Some(var) => return Some(var.clone()),
             None => (),
         }

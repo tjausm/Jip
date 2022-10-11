@@ -173,7 +173,7 @@ fn stmt_to_cfg(
             )
         }
         Statement::Return(expr) => {
-            replace_return(&expr, &mut cfg, vec![start_node], scope_end)?;
+            add_return(Statement::Return(expr), &mut cfg, vec![start_node], scope_end)?;
             return Ok((vec![], cfg));
         }
         other => {
@@ -330,7 +330,7 @@ fn stmts_to_cfg<'a>(
 
             // for 'return x' we assign 'retval := x' and stop recursing
             Statement::Return(expr) => {
-                replace_return(&expr, &mut cfg, start_nodes, scope_end)?;
+                add_return(Statement::Return(expr), &mut cfg, start_nodes, scope_end)?;
                 return Ok((vec![], cfg));
             }
             // split declareassign by prepending a declaration and assignment
@@ -418,17 +418,14 @@ fn fun_to_cfg<'a>(
     return Ok((enter_function, leave_function, cfg));
 }
 
-/// Replaces 'return expr' by 'retval := expr' and edge between assignment and scope_end is added,
-fn replace_return(
-    expr: &Expression,
+
+fn add_return(
+    ret: Statement,
     cfg: &mut CFG,
     start_nodes: Vec<NodeIndex>,
     scope_end: Option<NodeIndex>,
 ) -> Result<(), Error> {
-    let retval_assign = cfg.add_node(Node::Statement(Statement::Assignment((
-        Lhs::Identifier("retval".to_string()),
-        Rhs::Expression(expr.clone()),
-    ))));
+    let retval_assign = cfg.add_node(Node::Statement(ret.clone()));
     for node in start_nodes {
         cfg.add_edge(node, retval_assign, Edge::Other);
     }
@@ -439,8 +436,8 @@ fn replace_return(
         }
         None => {
             return Err(Error::Semantics(format!(
-                " 'return {:?}' has no scope to return to.",
-                &expr
+                " '{:?}' has no scope to return to.",
+                &ret
             )))
         }
     }
