@@ -16,6 +16,12 @@ pub enum Error {
     Other(String),
 }
 
+#[derive(Debug, Clone)]
+pub struct Scope {
+    pub class_or_obj: Identifier,
+    pub method: Identifier
+}
+
 pub fn insert_into_env<K: Eq + Hash, V>(env: &mut Vec<HashMap<K, V>>, key: K, value: V) -> () {
     match env.last_mut() {
         Some(env) => {
@@ -27,10 +33,10 @@ pub fn insert_into_env<K: Eq + Hash, V>(env: &mut Vec<HashMap<K, V>>, key: K, va
 
 pub fn get_from_env<K: Eq + Hash + Display, V: Clone>(
     env_stack: &Vec<HashMap<K, V>>,
-    id: K,
+    id: &K,
 ) -> Option<V> {
     for env in env_stack.iter().rev() {
-        match env.get(&id) {
+        match env.get(id) {
             Some(class) => return Some(class.clone()),
             None => (),
         }

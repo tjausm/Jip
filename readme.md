@@ -21,7 +21,8 @@ All tests are executed with `cargo test`, we have 2 types of tests:
 - how can i test that arguments are currently working e.g. 
 
 ## Todo's
-- [ ] refactor double code in edge creation for invocations and calls
+- [ ] move scope entering and leaving to the edges, e.g. if we leave the wrong scope we just dismiss path in SEE0 
+- [ ] verwijderen cfg uit return type van recursive cfg builder
 - [ ] generalise over get_from_env and get_from_anEnv
 - [ ] vastleggen van vaste namen in de ast e.g. main class (veroorzaakt wel verschil tussen syntax stefan en ast datatype)
 - [ ] think about scope leaving loop like fibonaci

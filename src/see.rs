@@ -2,13 +2,16 @@
 //!
 
 use crate::ast::*;
-use crate::cfg::{generate_cfg, generate_dot_cfg, Node, Edge};
-use crate::shared::{get_methodcontent, Error};
-use crate::z3::{get_from_anEnv, AnEnvironment, expression_to_int, insert_into_anEnv, expression_to_bool, AnScope, fresh_int, fresh_bool, PathConstraint, solve_constraints, Variable};
+use crate::cfg::{generate_cfg, generate_dot_cfg, Action, Node};
+use crate::shared::{get_methodcontent, Error, Scope};
+use crate::z3::{
+    expression_to_bool, expression_to_int, fresh_bool, fresh_int, get_from_anEnv,
+    insert_into_anEnv, solve_constraints, AnEnvironments, AnEnvironment, PathConstraint, Variable,
+};
 
-lalrpop_mod!(pub parser); 
+lalrpop_mod!(pub parser);
 // synthesized by LALRPOP
-use petgraph::graph::{NodeIndex, EdgeReference};
+use petgraph::graph::{EdgeReference, NodeIndex};
 use petgraph::stable_graph::DefaultIx;
 use petgraph::visit::EdgeRef;
 use z3::{Config, Context};
@@ -73,187 +76,166 @@ fn verify(prog_string: &str, d: Depth) -> Result<(), Error> {
     let z3_cfg = Config::new();
     let ctx = Context::new(&z3_cfg);
 
-    //init our bfs through the cfg, starting from first stmt in main
-    let mut q: VecDeque<(AnEnvironment, Vec<PathConstraint>, Depth, NodeIndex, &Edge)> = VecDeque::new();
-    let main = AnScope {
+    //init our bfs through the cfg
+    let mut q: VecDeque<(
+        AnEnvironments,
+        Vec<PathConstraint>,
+        Depth,
+        NodeIndex,
+        Option<&Action>,
+    )> = VecDeque::new();
+    let main = AnEnvironment {
         class: "main".to_string(),
         method: "main".to_string(),
         env: HashMap::new(),
     };
-    for edge in cfg.edges(start_node) {
-        let next = edge.target();
-        q.push_back((vec![main.clone()], vec![], d, next, edge.weight()));
-    }
-    
+    q.push_back((vec![main.clone()], vec![], d, start_node, None));
 
     // Assert -> build & verify z3 formula, return error if disproven
     // Assume -> build & verify z3 formula, stop evaluating pad if disproven
     // assignment -> evaluate rhs and update env
     // then we enque all connected nodes, till d=0 or we reach end of cfg
-    while let Some(triple) = q.pop_front() {
-        match triple {
-            (_, _, 0, _, _) => continue,
-            (mut env, mut pc, d, curr_node, last_edge) => {
-                match (&cfg[curr_node], last_edge) {
-                    // add all parameters of main as free variables to env
-                    (Node::EnteringMain(parameters), _) => {
-                        for p in parameters {
-                            match p {
-                                (Type::Int, id) => {
-                                    insert_into_anEnv(&mut env, &id, fresh_int(&ctx, id.clone()))
-                                }
-                                (Type::Bool, id) => {
-                                    insert_into_anEnv(&mut env, &id, fresh_bool(&ctx, id.clone()))
-                                }
-                                (ty, id) => {
-                                    return Err(Error::Semantics(format!(
-                                        "Can't call main with parameter {} of type {:?}",
-                                        id, ty
-                                    )))
-                                }
-                            }
+    while let Some((mut env, mut pc, d, curr_node)) = q.pop_front() {
+        if d == 0 {
+            continue;
+        }
+
+        match &cfg[curr_node] {
+            // add all parameters of main as free variables to env
+             Node::EnteringMain(parameters) => {
+                for p in parameters {
+                    match p {
+                        (Type::Int, id) => {
+                            insert_into_anEnv(&mut env, &id, fresh_int(&ctx, id.clone()))
+                        }
+                        (Type::Bool, id) => {
+                            insert_into_anEnv(&mut env, &id, fresh_bool(&ctx, id.clone()))
+                        }
+                        (ty, id) => {
+                            return Err(Error::Semantics(format!(
+                                "Can't call main with parameter {} of type {:?}",
+                                id, ty
+                            )))
                         }
                     }
+                }
+            }
 
-                    (Node::Statement(stmt), _) => {
-                        match stmt {
-                            Statement::Declaration((ty, id)) => match ty {
-                                Type::Int => {
-                                    insert_into_anEnv(&mut env, &id, fresh_int(&ctx, id.clone()));
-                                }
-                                Type::Bool => {
-                                    insert_into_anEnv(&mut env, &id, fresh_bool(&ctx, id.clone()));
-                                }
-                                weird_type => {
-                                    return Err(Error::Semantics(format!(
-                                        "Declaring a var of type {:?} isn't possible",
-                                        weird_type
-                                    )))
-                                }
-                            },
-                            //add assumes to path (TODO: when can we stop exploring a path?)
-                            //or print path in path printing mode
-                            Statement::Assume(expr) => {
-                                match expression_to_bool(&ctx, &env, &expr) {
-                                    Err(why) => return Err(why),
-                                    Ok(ast) => pc.push(PathConstraint::Assume(ast)),
-                                }
+            Node::Statement(stmt) => {
+                match stmt {
+                    Statement::Declaration((ty, id)) => match ty {
+                        Type::Int => {
+                            insert_into_anEnv(&mut env, &id, fresh_int(&ctx, id.clone()));
+                        }
+                        Type::Bool => {
+                            insert_into_anEnv(&mut env, &id, fresh_bool(&ctx, id.clone()));
+                        }
+                        weird_type => {
+                            return Err(Error::Semantics(format!(
+                                "Declaring a var of type {:?} isn't possible",
+                                weird_type
+                            )))
+                        }
+                    },
+                    //add assumes to path (TODO: when can we stop exploring a path?)
+                    //or print path in path printing mode
+                    Statement::Assume(expr) => match expression_to_bool(&ctx, &env, &expr) {
+                        Err(why) => return Err(why),
+                        Ok(ast) => pc.push(PathConstraint::Assume(ast)),
+                    },
+                    Statement::Assert(expr) => match expression_to_bool(&ctx, &env, &expr) {
+                        Err(why) => return Err(why),
+                        Ok(ast) => match solve_constraints(&ctx, &pc, &ast) {
+                            Err(why) => return Err(why),
+                            Ok(_) => pc.push(PathConstraint::Assert(ast)),
+                        },
+                    },
+                    Statement::Assignment((Lhs::Identifier(id), Rhs::Expression(expr))) => {
+                        assign_expr(&ctx, &mut env, &id, &expr)?;
+                    }
+                    Statement::Return(expr) => {
+                        match env.last() {
+                            Some(anScope)
+                                if anScope.class == main.class && anScope.method == main.method =>
+                            {
+                                continue
                             }
-                            Statement::Assert(expr) => {
-                                match expression_to_bool(&ctx, &env, &expr) {
-                                    Err(why) => return Err(why),
-                                    Ok(ast) => match solve_constraints(&ctx, &pc, &ast) {
-                                        Err(why) => return Err(why),
-                                        Ok(_) => pc.push(PathConstraint::Assert(ast)),
-                                    },
-                                }
-                            }
-                            Statement::Assignment((Lhs::Identifier(id), Rhs::Expression(expr))) => {
-                                assign_var(&ctx, &mut env, id, expr)?;
-                            }
-                            Statement::Return(expr) =>{
-                                match env.last() {
-                                    Some(anScope) if anScope.class == main.class && anScope.method == main.method => continue,
-                                    _ => ()
-                                }
-                                assign_var(&ctx, &mut env, retval_id, expr)?;
-                            },
                             _ => (),
                         }
-                    }
-                    (Node::EnterStaticMethod((class, method)), Edge::Call(_, params, args)) => {
-                        // TODO: this should be different for static and non-static methods
-                        let (ty, _, params, _) = get_methodcontent(&prog, class, method)?;
-                        let variables =
-                            params_to_vars(&ctx, &mut env, &params, &args, class, method)?;
-
-                        env.push(AnScope {
-                            class: class.clone(),
-                            method: method.clone(),
-                            env: HashMap::new(),
-                        });
-
-                        // declare retval with correct type in new scope
-                        match ty {
-                            Type::Int => insert_into_anEnv(
-                                &mut env,
-                                retval_id,
-                                fresh_int(&ctx, "retval".to_string()),
-                            ),
-                            Type::Bool => insert_into_anEnv(
-                                &mut env,
-                                retval_id,
-                                fresh_bool(&ctx, "retval".to_string()),
-                            ),
-                            _ => (),
-                        }
-
-                        for (id, var) in variables {
-                            insert_into_anEnv(&mut env, id, var);
-                        }
-                    }
-                    // if
-                    (Node::LeaveStaticMethod((class, method)), _) => {
-                        // get retval from scope before we leave it
-                        let retval = get_from_anEnv(&env, retval_id);
-
-                        // check whether current scope corresponds with scope we leave
-                        // if not, we dismiss this path
-                        match env.last_mut() {
-                            Some(s) if &s.class == class && &s.method == method => env.pop(),
-                            _ => continue,
-                        };
-
-                        // assign retval from previous scope if necessary
-                        match (return_to, retval) {
-                            (Some(Lhs::Identifier(id)), Some(retval)) => {
-                                insert_into_anEnv(&mut env, id, retval)
-                            }
-                            (Some(Lhs::Accessfield(..)), Some(retval)) => {
-                                todo!("assigning objects not implemented")
-                            }
-                            (None, None) => (),
-                            (None, Some(_)) => {
-                                return Err(Error::Semantics(format!(
-                                    "Can't assign return value of method {}.{}",
-                                    class, method
-                                )))
-                            }
-                            (Some(lhs), None) => {
-                                return Err(Error::Semantics(format!(
-                                    "Can't assign void method {}.{} to {:?}",
-                                    class, method, lhs
-                                )))
-                            }
-                        }
+                        assign_expr(&ctx, &mut env, retval_id, &expr)?;
                     }
                     _ => (),
                 }
-                //enqueue all connected nodes with the updated env and constraints
-                for edge in cfg.edges(curr_node) {
-                    let next = edge.target();
-                    q.push_back((env.clone(), pc.clone(), d - 1, next, edge.weight()));
+            }
+
+            Node::EnterStaticMethod((class, method)) => {
+                // TODO: this should be different for static and non-static methods
+                let (ty, _, params, _) = get_methodcontent(&prog, class, method)?;
+                let variables = params_to_vars(&ctx, &mut env, &params, &args, class, method)?;
+
+                env.push(AnEnvironment {
+                    class: class.clone(),
+                    method: method.clone(),
+                    env: HashMap::new(),
+                });
+
+                // declare retval with correct type in new scope
+                match ty {
+                    Type::Int => insert_into_anEnv(
+                        &mut env,
+                        retval_id,
+                        fresh_int(&ctx, "retval".to_string()),
+                    ),
+                    Type::Bool => insert_into_anEnv(
+                        &mut env,
+                        retval_id,
+                        fresh_bool(&ctx, "retval".to_string()),
+                    ),
+                    _ => (),
+                }
+
+                for (id, var) in variables {
+                    insert_into_anEnv(&mut env, id, var);
                 }
             }
+
+            Node::LeaveStaticMethod((class, method)) => {
+                // get retval from scope before we leave it
+                let retval = get_from_anEnv(&env, retval_id);
+
+                // check whether current scope corresponds with scope we leave
+                // if not, we dismiss this path
+                match env.last_mut() {
+                    Some(s) if &s.class == class && &s.method == method => env.pop(),
+                    _ => continue,
+                };
+
+                // assign retval from previous scope if necessary
+                match retval {
+                    Some(retval) => insert_into_anEnv(&mut env, retval_id, retval),
+                    None => (),
+                };
+            }
+            _ => (),
+        }
+        //enqueue all connected nodes with the updated env and constraints
+        for edge in cfg.edges(curr_node) {
+            let next = edge.target();
+            q.push_back((env.clone(), pc.clone(), d - 1, next, Some(edge.weight())));
         }
     }
     return Ok(());
 }
 
 /// Assigns an expression to an identifier in the passed environment
-fn assign_var<'ctx>(
+fn assign_expr<'ctx>(
     ctx: &'ctx Context,
-    env: &mut AnEnvironment<'ctx>,
+    env: &mut AnEnvironments<'ctx>,
     id: &'ctx Identifier,
-    expr: &'ctx Expression
-) -> Result<(), Error>{
+    expr: &'ctx Expression,
+) -> Result<(), Error> {
     match get_from_anEnv(&env, id) {
-        None => {
-            return Err(Error::Semantics(format!(
-                "Variable {} is undeclared",
-                id
-            )))
-        }
+        None => return Err(Error::Semantics(format!("Variable {} is undeclared", id))),
         Some(Variable::Int(_)) => {
             let ast = expression_to_int(&ctx, &env, &expr)?;
             insert_into_anEnv(env, &id, Variable::Int(ast));
@@ -268,16 +250,42 @@ fn assign_var<'ctx>(
             todo!("Assigning objects not yet implemented")
         }
     };
+    return Ok(());
+}
+/// Assigns value of a identifier value in the env to the value of another
+fn assign_id<'ctx>(
+    env: &mut AnEnvironments<'ctx>,
+    from_id: &'ctx Identifier,
+    to_id: &'ctx Identifier,
+) -> Result<(), Error> {
+    let err = |id: &String| Err(Error::Semantics(format!("Variable {} is undeclared", id)));
 
-    println!("{} := {:?}", id, expr);
-    println!("{:?}", env);
-    return Ok(())
+    match (get_from_anEnv(&env, from_id), get_from_anEnv(&env, to_id)) {
+        (Some(Variable::Int(from_val)), Some(Variable::Int(_))) => {
+            insert_into_anEnv(env, &to_id, Variable::Int(from_val));
+        }
+        (Some(Variable::Bool(from_val)), Some(Variable::Bool(_))) => {
+            insert_into_anEnv(env, &to_id, Variable::Bool(from_val));
+        }
+        (Some(Variable::Object(from_val)), Some(Variable::Object(_))) => {
+            todo!("Assigning objects not yet implemented")
+        }
+        (None, _) => return err(from_id),
+        (_, None) => return err(to_id),
+        _ => {
+            return Err(Error::Semantics(format!(
+                "Variable {} and {} have mismatching types",
+                from_id, to_id
+            )))
+        }
+    };
+    return Ok(());
 }
 
 /// evaluates the parameters & arguments to a mapping id -> variable that can be added to a function scope
 fn params_to_vars<'ctx>(
     ctx: &'ctx Context,
-    env: &mut AnEnvironment<'ctx>,
+    env: &mut AnEnvironments<'ctx>,
     params: &'ctx Parameters,
     args: &'ctx Arguments,
     class: &String,

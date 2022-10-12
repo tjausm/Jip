@@ -11,7 +11,7 @@ use std::fmt;
 use std::rc::Rc;
 
 use crate::ast::*;
-use crate::shared::{Error};
+use crate::shared::{Error, Scope};
 pub type Identifier = String;
 
 
@@ -22,16 +22,15 @@ pub enum Variable<'a> {
     Object(HashMap<&'a Identifier, Variable<'a>>) // mapping field -> variable
 }
 
+/// Environment where each environment is annotated with the scope it belongs to
 #[derive(Debug, Clone)]
-pub struct AnScope<'a> {
-    pub class: Identifier,
-    pub method: Identifier,
+pub struct AnEnvironment<'a> {
+    pub scope: Scope,
     pub env: HashMap<&'a Identifier, Variable<'a>>
 } 
 
-/// Environment where each scope is annotated with method it belongs to
 
-pub type AnEnvironment<'a> = Vec<AnScope<'a>>;
+pub type AnEnvironments<'a> = Vec<AnEnvironment<'a>>;
 
 #[derive(Clone)]
 pub enum PathConstraint<'a> {
@@ -48,7 +47,7 @@ impl fmt::Debug for PathConstraint<'_> {
     }
 }
 
-pub fn insert_into_anEnv<'a>(env: &mut AnEnvironment<'a>, id: &'a Identifier, var: Variable<'a>) -> () {
+pub fn insert_into_anEnv<'a>(env: &mut AnEnvironments<'a>, id: &'a Identifier, var: Variable<'a>) -> () {
     match env.last_mut() {
         Some(s) => {
             s.env.insert(id, var);
@@ -58,7 +57,7 @@ pub fn insert_into_anEnv<'a>(env: &mut AnEnvironment<'a>, id: &'a Identifier, va
 }
 
 pub fn get_from_anEnv<'a>(
-    env: &AnEnvironment<'a>,
+    env: &AnEnvironments<'a>,
     id: &'a Identifier,
 ) -> Option<Variable<'a>> {
     for s in env.iter().rev() {
@@ -130,7 +129,7 @@ pub fn solve_constraints<'ctx>(
 
 pub fn expression_to_int<'ctx>(
     ctx: &'ctx Context,
-    env: &AnEnvironment<'ctx>,
+    env: &AnEnvironments<'ctx>,
     expr: &'ctx Expression,
 ) -> Result<Int<'ctx>, Error> {
     return expression_to_dynamic(&ctx, Rc::new(env), expr).and_then(as_int_or_error);
@@ -138,7 +137,7 @@ pub fn expression_to_int<'ctx>(
 
 pub fn expression_to_bool<'ctx>(
     ctx: &'ctx Context,
-    env: &AnEnvironment<'ctx>,
+    env: &AnEnvironments<'ctx>,
     expr: &'ctx Expression,
 ) -> Result<Bool<'ctx>, Error> {
     return expression_to_dynamic(&ctx, Rc::new(env), expr).and_then(as_bool_or_error);
@@ -146,7 +145,7 @@ pub fn expression_to_bool<'ctx>(
 
 fn expression_to_dynamic<'ctx, 'b>(
     ctx: &'ctx Context,
-    env: Rc<&AnEnvironment<'ctx>>,
+    env: Rc<&AnEnvironments<'ctx>>,
     expr: &'ctx Expression,
 ) -> Result<Dynamic<'ctx>, Error> {
     match expr {
