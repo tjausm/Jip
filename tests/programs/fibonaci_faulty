@@ -1,0 +1,15 @@
+class Main {
+    static void main(int o){
+        assume o == 2;
+        int x := Main.f(o);
+        assert x == 0;
+    }
+    static int f(int m){
+        if (m == 1)
+            return 0;
+        else {
+            int l := Main.f(m-1);
+        }
+            return 1 + l;
+    }
+}

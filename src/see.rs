@@ -80,7 +80,7 @@ fn verify(prog_string: &str, d: Depth) -> Result<(), Error> {
     let mut q: VecDeque<(AnEnvironments, Vec<PathConstraint>, Depth, NodeIndex)> = VecDeque::new();
     let main = AnEnvironment {
         scope: Scope {
-            class: "main".to_string(),
+            class: "Main".to_string(),
             method: "main".to_string(),
         },
         env: HashMap::new(),
@@ -91,7 +91,7 @@ fn verify(prog_string: &str, d: Depth) -> Result<(), Error> {
     // Assume -> build & verify z3 formula, stop evaluating pad if disproven
     // assignment -> evaluate rhs and update env
     // then we enque all connected nodes, till d=0 or we reach end of cfg
-    while let Some((mut env, mut pc, d, curr_node)) = q.pop_front() {
+    while let Some((mut envs, mut pc, d, curr_node)) = q.pop_front() {
         if d == 0 {
             continue;
         }
@@ -102,10 +102,10 @@ fn verify(prog_string: &str, d: Depth) -> Result<(), Error> {
                 for p in parameters {
                     match p {
                         (Type::Int, id) => {
-                            insert_into_anEnv(&mut env, &id, fresh_int(&ctx, id.clone()))
+                            insert_into_anEnv(&mut envs, &id, fresh_int(&ctx, id.clone()))
                         }
                         (Type::Bool, id) => {
-                            insert_into_anEnv(&mut env, &id, fresh_bool(&ctx, id.clone()))
+                            insert_into_anEnv(&mut envs, &id, fresh_bool(&ctx, id.clone()))
                         }
                         (ty, id) => {
                             return Err(Error::Semantics(format!(
@@ -121,10 +121,10 @@ fn verify(prog_string: &str, d: Depth) -> Result<(), Error> {
                 match stmt {
                     Statement::Declaration((ty, id)) => match ty {
                         Type::Int => {
-                            insert_into_anEnv(&mut env, &id, fresh_int(&ctx, id.clone()));
+                            insert_into_anEnv(&mut envs, &id, fresh_int(&ctx, id.clone()));
                         }
                         Type::Bool => {
-                            insert_into_anEnv(&mut env, &id, fresh_bool(&ctx, id.clone()));
+                            insert_into_anEnv(&mut envs, &id, fresh_bool(&ctx, id.clone()));
                         }
                         weird_type => {
                             return Err(Error::Semantics(format!(
@@ -135,11 +135,11 @@ fn verify(prog_string: &str, d: Depth) -> Result<(), Error> {
                     },
                     //add assumes to path (TODO: when can we stop exploring a path?)
                     //or print path in path printing mode
-                    Statement::Assume(expr) => match expression_to_bool(&ctx, &env, &expr) {
+                    Statement::Assume(expr) => match expression_to_bool(&ctx, &envs, &expr) {
                         Err(why) => return Err(why),
                         Ok(ast) => pc.push(PathConstraint::Assume(ast)),
                     },
-                    Statement::Assert(expr) => match expression_to_bool(&ctx, &env, &expr) {
+                    Statement::Assert(expr) => match expression_to_bool(&ctx, &envs, &expr) {
                         Err(why) => return Err(why),
                         Ok(ast) => match solve_constraints(&ctx, &pc, &ast) {
                             Err(why) => return Err(why),
@@ -147,10 +147,10 @@ fn verify(prog_string: &str, d: Depth) -> Result<(), Error> {
                         },
                     },
                     Statement::Assignment((Lhs::Identifier(id), Rhs::Expression(expr))) => {
-                        assign_expr(&ctx, &mut env, &id, &expr)?;
+                        assign_expr(&ctx, &mut envs, &id, &expr)?;
                     }
                     Statement::Return(expr) => {
-                        match env.last() {
+                        match envs.last() {
                             Some(anScope)
                                 if anScope.scope.class == main.scope.class
                                     && anScope.scope.method == main.scope.method =>
@@ -159,7 +159,7 @@ fn verify(prog_string: &str, d: Depth) -> Result<(), Error> {
                             }
                             _ => (),
                         }
-                        assign_expr(&ctx, &mut env, retval_id, &expr)?;
+                        assign_expr(&ctx, &mut envs, retval_id, &expr)?;
                     }
                     _ => (),
                 }
@@ -167,12 +167,10 @@ fn verify(prog_string: &str, d: Depth) -> Result<(), Error> {
             _ => (),
         }
 
-        
-        for edge in cfg.edges(curr_node) {
-            
+        'q_nodes: for edge in cfg.edges(curr_node) {
             // clone new env to perform actions on
-            let mut updated_env = env.clone();
-            
+            let mut envs = envs.clone();
+
             // perform all actions in an edge and enque the result
             for action in edge.weight() {
                 match action {
@@ -181,24 +179,31 @@ fn verify(prog_string: &str, d: Depth) -> Result<(), Error> {
                         params,
                         args,
                     } => {
-                        let (ty, _, params, _) = get_methodcontent(&prog, &scope.class, &scope.method)?;
-                        let variables =
-                            params_to_vars(&ctx, &mut env, &params, &args, &scope.class, &scope.method)?;
+                        let (ty, _, params, _) =
+                            get_methodcontent(&prog, &scope.class, &scope.method)?;
+                        let variables = params_to_vars(
+                            &ctx,
+                            &mut envs,
+                            &params,
+                            &args,
+                            &scope.class,
+                            &scope.method,
+                        )?;
 
-                        env.push(AnEnvironment {
-                            scope: *scope,
+                        envs.push(AnEnvironment {
+                            scope: scope.clone(),
                             env: HashMap::new(),
                         });
 
                         // declare retval with correct type in new scope
                         match ty {
                             Type::Int => insert_into_anEnv(
-                                &mut env,
+                                &mut envs,
                                 retval_id,
                                 fresh_int(&ctx, "retval".to_string()),
                             ),
                             Type::Bool => insert_into_anEnv(
-                                &mut env,
+                                &mut envs,
                                 retval_id,
                                 fresh_bool(&ctx, "retval".to_string()),
                             ),
@@ -206,29 +211,30 @@ fn verify(prog_string: &str, d: Depth) -> Result<(), Error> {
                         }
 
                         for (id, var) in variables {
-                            insert_into_anEnv(&mut env, id, var);
+                            insert_into_anEnv(&mut envs, id, var);
                         }
                     }
                     Action::LeaveScope { to_scope } => {
                         // get retval from scope before we leave it
-                        let retval = get_from_anEnv(&env, retval_id);
+                        let retval = get_from_anEnv(&envs, retval_id);
 
-                        //  dismiss path if to_scope doesn't match current scope
-                        match env.last_mut() {
-                            Some(env) if env.scope == *to_scope => updated_env.pop(),
-                            _ => continue,
+                        // remove current scope and dismiss path if new scope doesn't match to_scope
+                        envs.pop();
+                        match envs.last() {
+                            Some(env) if env.scope == *to_scope => (),
+                            _ => continue 'q_nodes,
                         };
 
                         // assign retval from previous scope if necessary
                         match retval {
-                            Some(retval) => insert_into_anEnv(&mut env, retval_id, retval),
+                            Some(retval) => insert_into_anEnv(&mut envs, retval_id, retval),
                             None => (),
                         };
                     }
                 }
             }
             let next = edge.target();
-            q.push_back((updated_env, pc.clone(), d - 1, next));
+            q.push_back((envs, pc.clone(), d - 1, next));
         }
     }
     return Ok(());
@@ -242,7 +248,9 @@ fn assign_expr<'ctx>(
     expr: &'ctx Expression,
 ) -> Result<(), Error> {
     match get_from_anEnv(&env, id) {
-        None => return Err(Error::Semantics(format!("Variable {} is undeclared", id))),
+        None => {
+            return Err(Error::Semantics(format!("Variable {} is undeclared", id)));
+        }
         Some(Variable::Int(_)) => {
             let ast = expression_to_int(&ctx, &env, &expr)?;
             insert_into_anEnv(env, &id, Variable::Int(ast));
@@ -255,35 +263,6 @@ fn assign_expr<'ctx>(
 
         Some(Variable::Object(..)) => {
             todo!("Assigning objects not yet implemented")
-        }
-    };
-    return Ok(());
-}
-/// Assigns value of a identifier value in the env to the value of another
-fn assign_id<'ctx>(
-    env: &mut AnEnvironments<'ctx>,
-    from_id: &'ctx Identifier,
-    to_id: &'ctx Identifier,
-) -> Result<(), Error> {
-    let err = |id: &String| Err(Error::Semantics(format!("Variable {} is undeclared", id)));
-
-    match (get_from_anEnv(&env, from_id), get_from_anEnv(&env, to_id)) {
-        (Some(Variable::Int(from_val)), Some(Variable::Int(_))) => {
-            insert_into_anEnv(env, &to_id, Variable::Int(from_val));
-        }
-        (Some(Variable::Bool(from_val)), Some(Variable::Bool(_))) => {
-            insert_into_anEnv(env, &to_id, Variable::Bool(from_val));
-        }
-        (Some(Variable::Object(from_val)), Some(Variable::Object(_))) => {
-            todo!("Assigning objects not yet implemented")
-        }
-        (None, _) => return err(from_id),
-        (_, None) => return err(to_id),
-        _ => {
-            return Err(Error::Semantics(format!(
-                "Variable {} and {} have mismatching types",
-                from_id, to_id
-            )))
         }
     };
     return Ok(());

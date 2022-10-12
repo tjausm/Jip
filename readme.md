@@ -21,12 +21,13 @@ All tests are executed with `cargo test`, we have 2 types of tests:
 - how can i test that arguments are currently working e.g. 
 
 ## Todo's
-- [ ] move scope entering and leaving to the edges, e.g. if we leave the wrong scope we just dismiss path in SEE0 
+- [ ] fix bug where we never hit the assert statement 
 - [ ] verwijderen cfg uit return type van recursive cfg builder
-- [ ] moeten we onderscheidt maken tussen classes en objects tijdens scope boekhouding
+- [ ] moeten we onderscheidt maken tussen classes en objects tijdens scope boekhouding? waarschijnlijk niet?
+- [ ] fix debug formatting of Edge type
 - [ ] generalise over get_from_env and get_from_anEnv
 - [ ] vastleggen van vaste namen in de ast e.g. main class (veroorzaakt wel verschil tussen syntax stefan en ast datatype)
-- [ ] think about scope leaving loop like fibonaci
+
 - [ ] objects representeren in de cfg
     - if we enter constructor we initialize fields, assign referenc of oject to 'this' and we assign 'this' to 'retval'
     - if we enter a method we assign reference of object to 'this'

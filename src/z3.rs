@@ -99,7 +99,6 @@ pub fn solve_constraints<'ctx>(
         }
     }
 
-    //println!("{:?}", env);
     //println!("{}", constraints.not());
 
     let solver = Solver::new(&ctx);
@@ -112,8 +111,6 @@ pub fn solve_constraints<'ctx>(
     match (result, model) {
         (SatResult::Unsat, _) => return Ok(()),
         (SatResult::Sat, Some(model)) => {
-            let x = format!("{:?}", model);
-            println!("{}",x);
             return Err(Error::Verification(format!(
                 "Following configuration violates program:\n{:?}",
                 model
