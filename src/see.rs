@@ -6,7 +6,7 @@ use crate::cfg::{generate_cfg, generate_dot_cfg, Action, Node};
 use crate::shared::{get_methodcontent, Error, Scope};
 use crate::z3::{
     expression_to_bool, expression_to_int, fresh_bool, fresh_int, get_from_anEnv,
-    insert_into_anEnv, solve_constraints, AnEnvironments, AnEnvironment, PathConstraint, Variable,
+    insert_into_anEnv, solve_constraints, AnEnvironment, AnEnvironments, PathConstraint, Variable,
 };
 
 lalrpop_mod!(pub parser);
@@ -77,19 +77,15 @@ fn verify(prog_string: &str, d: Depth) -> Result<(), Error> {
     let ctx = Context::new(&z3_cfg);
 
     //init our bfs through the cfg
-    let mut q: VecDeque<(
-        AnEnvironments,
-        Vec<PathConstraint>,
-        Depth,
-        NodeIndex,
-        Option<&Action>,
-    )> = VecDeque::new();
+    let mut q: VecDeque<(AnEnvironments, Vec<PathConstraint>, Depth, NodeIndex)> = VecDeque::new();
     let main = AnEnvironment {
-        class: "main".to_string(),
-        method: "main".to_string(),
+        scope: Scope {
+            class: "main".to_string(),
+            method: "main".to_string(),
+        },
         env: HashMap::new(),
     };
-    q.push_back((vec![main.clone()], vec![], d, start_node, None));
+    q.push_back((vec![main.clone()], vec![], d, start_node));
 
     // Assert -> build & verify z3 formula, return error if disproven
     // Assume -> build & verify z3 formula, stop evaluating pad if disproven
@@ -102,7 +98,7 @@ fn verify(prog_string: &str, d: Depth) -> Result<(), Error> {
 
         match &cfg[curr_node] {
             // add all parameters of main as free variables to env
-             Node::EnteringMain(parameters) => {
+            Node::EnteringMain(parameters) => {
                 for p in parameters {
                     match p {
                         (Type::Int, id) => {
@@ -156,7 +152,8 @@ fn verify(prog_string: &str, d: Depth) -> Result<(), Error> {
                     Statement::Return(expr) => {
                         match env.last() {
                             Some(anScope)
-                                if anScope.class == main.class && anScope.method == main.method =>
+                                if anScope.scope.class == main.scope.class
+                                    && anScope.scope.method == main.scope.method =>
                             {
                                 continue
                             }
@@ -167,61 +164,71 @@ fn verify(prog_string: &str, d: Depth) -> Result<(), Error> {
                     _ => (),
                 }
             }
-
-            Node::EnterStaticMethod((class, method)) => {
-                // TODO: this should be different for static and non-static methods
-                let (ty, _, params, _) = get_methodcontent(&prog, class, method)?;
-                let variables = params_to_vars(&ctx, &mut env, &params, &args, class, method)?;
-
-                env.push(AnEnvironment {
-                    class: class.clone(),
-                    method: method.clone(),
-                    env: HashMap::new(),
-                });
-
-                // declare retval with correct type in new scope
-                match ty {
-                    Type::Int => insert_into_anEnv(
-                        &mut env,
-                        retval_id,
-                        fresh_int(&ctx, "retval".to_string()),
-                    ),
-                    Type::Bool => insert_into_anEnv(
-                        &mut env,
-                        retval_id,
-                        fresh_bool(&ctx, "retval".to_string()),
-                    ),
-                    _ => (),
-                }
-
-                for (id, var) in variables {
-                    insert_into_anEnv(&mut env, id, var);
-                }
-            }
-
-            Node::LeaveStaticMethod((class, method)) => {
-                // get retval from scope before we leave it
-                let retval = get_from_anEnv(&env, retval_id);
-
-                // check whether current scope corresponds with scope we leave
-                // if not, we dismiss this path
-                match env.last_mut() {
-                    Some(s) if &s.class == class && &s.method == method => env.pop(),
-                    _ => continue,
-                };
-
-                // assign retval from previous scope if necessary
-                match retval {
-                    Some(retval) => insert_into_anEnv(&mut env, retval_id, retval),
-                    None => (),
-                };
-            }
             _ => (),
         }
-        //enqueue all connected nodes with the updated env and constraints
+
+        
         for edge in cfg.edges(curr_node) {
+            
+            // clone new env to perform actions on
+            let mut updated_env = env.clone();
+            
+            // perform all actions in an edge and enque the result
+            for action in edge.weight() {
+                match action {
+                    Action::EnterScope {
+                        scope,
+                        params,
+                        args,
+                    } => {
+                        let (ty, _, params, _) = get_methodcontent(&prog, &scope.class, &scope.method)?;
+                        let variables =
+                            params_to_vars(&ctx, &mut env, &params, &args, &scope.class, &scope.method)?;
+
+                        env.push(AnEnvironment {
+                            scope: *scope,
+                            env: HashMap::new(),
+                        });
+
+                        // declare retval with correct type in new scope
+                        match ty {
+                            Type::Int => insert_into_anEnv(
+                                &mut env,
+                                retval_id,
+                                fresh_int(&ctx, "retval".to_string()),
+                            ),
+                            Type::Bool => insert_into_anEnv(
+                                &mut env,
+                                retval_id,
+                                fresh_bool(&ctx, "retval".to_string()),
+                            ),
+                            _ => (),
+                        }
+
+                        for (id, var) in variables {
+                            insert_into_anEnv(&mut env, id, var);
+                        }
+                    }
+                    Action::LeaveScope { to_scope } => {
+                        // get retval from scope before we leave it
+                        let retval = get_from_anEnv(&env, retval_id);
+
+                        //  dismiss path if to_scope doesn't match current scope
+                        match env.last_mut() {
+                            Some(env) if env.scope == *to_scope => updated_env.pop(),
+                            _ => continue,
+                        };
+
+                        // assign retval from previous scope if necessary
+                        match retval {
+                            Some(retval) => insert_into_anEnv(&mut env, retval_id, retval),
+                            None => (),
+                        };
+                    }
+                }
+            }
             let next = edge.target();
-            q.push_back((env.clone(), pc.clone(), d - 1, next, Some(edge.weight())));
+            q.push_back((updated_env, pc.clone(), d - 1, next));
         }
     }
     return Ok(());

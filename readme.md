@@ -23,6 +23,7 @@ All tests are executed with `cargo test`, we have 2 types of tests:
 ## Todo's
 - [ ] move scope entering and leaving to the edges, e.g. if we leave the wrong scope we just dismiss path in SEE0 
 - [ ] verwijderen cfg uit return type van recursive cfg builder
+- [ ] moeten we onderscheidt maken tussen classes en objects tijdens scope boekhouding
 - [ ] generalise over get_from_env and get_from_anEnv
 - [ ] vastleggen van vaste namen in de ast e.g. main class (veroorzaakt wel verschil tussen syntax stefan en ast datatype)
 - [ ] think about scope leaving loop like fibonaci

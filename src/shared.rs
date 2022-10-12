@@ -16,9 +16,9 @@ pub enum Error {
     Other(String),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Scope {
-    pub class_or_obj: Identifier,
+    pub class: Identifier,
     pub method: Identifier
 }
 

@@ -36,7 +36,7 @@ pub enum Action {
         args: Vec<Expression>,
     },
     /// classname & methodname of the scope we are leaving to
-    LeaveScope { from_scope: Scope, to_scope: Scope },
+    LeaveScope { to_scope: Scope },
 }
 
 type Edge = Vec<Action>;
@@ -49,6 +49,7 @@ type TypeEnv = Vec<HashMap<Identifier, Class>>;
 /// Map tuple (class, method) to a tuple of start- and end-node for the subgraph of the method
 type FunEnv = HashMap<(Identifier, Identifier), (NodeIndex, NodeIndex)>;
 
+#[derive(Clone)]
 struct Start {
     node: NodeIndex,
     edge: Edge,
@@ -87,16 +88,19 @@ pub fn generate_cfg(prog: Program) -> Result<(NodeIndex, CFG), Error> {
             let mut ty_env: TypeEnv = vec![HashMap::new()];
             let mut f_env: FunEnv = HashMap::new();
 
+            //generate the cfg
             let (program_endings, mut cfg) = stmts_to_cfg(
                 &mut ty_env,
                 &mut f_env,
                 &prog,
                 VecDeque::from(body.clone()),
                 cfg,
-                vec![start],
+                vec![start.clone()],
+                Scope { class: "Main".to_string(), method: "main".to_string()},
                 None,
             )?;
 
+            //connect ending(s) of generated cfg to the 'end' node
             for p_end in program_endings {
                 cfg.add_edge(p_end, end, vec![]);
             }
@@ -134,6 +138,7 @@ fn stmt_to_cfg(
     stmt: Statement,
     mut cfg: CFG,
     start_from: Start,
+    curr_scope: Scope,
     scope_end: Option<NodeIndex>,
 ) -> Result<(Vec<NodeIndex>, CFG), Error> {
     match stmt {
@@ -145,6 +150,7 @@ fn stmt_to_cfg(
                 VecDeque::from(*stmts),
                 cfg,
                 vec![start_from],
+                curr_scope,
                 scope_end,
             )
         }
@@ -175,6 +181,7 @@ fn stmts_to_cfg<'a>(
     mut stmts: VecDeque<Statement>,
     mut cfg: CFG,
     starts: Vec<Start>,
+    curr_scope: &Scope,
     scope_end: Option<NodeIndex>,
 ) -> Result<(Vec<NodeIndex>, CFG), Error> {
     match stmts.pop_front() {
@@ -188,16 +195,16 @@ fn stmts_to_cfg<'a>(
                 let assume_not_start = to_start(cfg.add_node(assume_not));
                 //iterate over all starting nodes to lay edges
                 for start in starts {
-                    cfg.add_edge(start.node, assume_start.node, start.edge);
+                    cfg.add_edge(start.node, assume_start.node, start.edge.clone());
                     cfg.add_edge(start.node, assume_not_start.node, start.edge);
                 }
 
                 // add the if and else branch to the cfg
                 let (if_ending, cfg) =
-                    stmt_to_cfg(ty_env, f_env, prog, *s1, cfg, assume_start, scope_end)?;
+                    stmt_to_cfg(ty_env, f_env, prog, *s1, cfg, assume_start, curr_scope.clone(), scope_end)?;
 
                 let (else_ending, cfg) =
-                    stmt_to_cfg(ty_env, f_env, prog, *s2, cfg, assume_not_start, scope_end)?;
+                    stmt_to_cfg(ty_env, f_env, prog, *s2, cfg, assume_not_start, curr_scope.clone(), scope_end)?;
 
                 let all_endings: Vec<Start> = [if_ending, else_ending]
                     .concat()
@@ -205,7 +212,7 @@ fn stmts_to_cfg<'a>(
                     .map(|n| to_start(*n))
                     .collect();
 
-                return stmts_to_cfg(ty_env, f_env, prog, stmts, cfg, all_endings, scope_end);
+                return stmts_to_cfg(ty_env, f_env, prog, stmts, cfg, all_endings, curr_scope, scope_end);
             }
             Statement::While((cond, body)) => {
                 // add condition as assume and assume_not to the cfg
@@ -216,7 +223,7 @@ fn stmts_to_cfg<'a>(
 
                 // add edges from start node to assume and assume_not
                 for start in starts {
-                    cfg.add_edge(start.node, assume_node, start.edge);
+                    cfg.add_edge(start.node, assume_node, start.edge.clone());
                     cfg.add_edge(start.node, assume_not_node, start.edge);
                 }
                 // calculate cfg for body of while and cfg for the remainder of the stmts
@@ -227,6 +234,7 @@ fn stmts_to_cfg<'a>(
                     *body,
                     cfg,
                     to_start(assume_node),
+                    curr_scope.clone(),
                     scope_end,
                 )?;
                 let (end_remainder, mut cfg) = stmts_to_cfg(
@@ -236,6 +244,7 @@ fn stmts_to_cfg<'a>(
                     stmts,
                     cfg,
                     vec![to_start(assume_not_node)],
+                    curr_scope,
                     scope_end,
                 )?;
                 // add edges from end of while body to begin and edge from while body to rest of stmts
@@ -252,13 +261,13 @@ fn stmts_to_cfg<'a>(
                 // find classname if method is called on object
                 let class = get_from_env(ty_env, &class_or_object)
                     .map(|t| t.0)
-                    .unwrap_or(class_or_object);
+                    .unwrap_or(class_or_object.clone());
 
                 // collect information for the actions on the cfg edge
                 let params = get_params(prog, &class, &method)?;
                 let enter_scope = Action::EnterScope {
                     scope: Scope {
-                        class_or_obj: class_or_object,
+                        class: class_or_object,
                         method: method.clone(),
                     },
                     params: params.clone(),
@@ -266,27 +275,28 @@ fn stmts_to_cfg<'a>(
                 };
 
                 // create subgraph for function if it does not exist yet
+                let fun_scope = Scope {class: class.clone(), method: method.clone()};
                 let (f_start_node, f_end_node, mut cfg) =
                     match f_env.get(&(class.clone(), method.clone())) {
                         Some((start_node, end_node)) => (*start_node, *end_node, cfg),
-                        None => fun_to_cfg(&class, &method, ty_env, f_env, prog, cfg)?,
+                        None => fun_to_cfg(&class, &method, ty_env, f_env, prog, cfg, fun_scope)?,
                     };
 
                 for start in starts {
                     cfg.add_edge(
                         start.node,
                         f_start_node,
-                        [vec![enter_scope], start.edge].concat(),
+                        [vec![enter_scope.clone()], start.edge].concat(),
                     );
                 }
 
-                // annotate function ending with the scope we are leaving to
+                // annotate function ending with the leave to curr_scop action
                 let an_f_end = Start {
                     node: f_end_node,
-                    edge: vec![todo!("leave scope to current scope")],
+                    edge: vec![Action::LeaveScope { to_scope: curr_scope }],
                 };
 
-                return stmts_to_cfg(ty_env, f_env, prog, stmts, cfg, vec![an_f_end], scope_end);
+                return stmts_to_cfg(ty_env, f_env, prog, stmts, cfg, vec![an_f_end], curr_scope.clone(), scope_end);
             }
 
             // prepend function body and
@@ -294,17 +304,19 @@ fn stmts_to_cfg<'a>(
                 let class = get_class_name(ty_env, class_or_obj.clone());
 
                 // create subgraph for function if it does not exist yet
+        
+                let fun_scope = Scope {class: class, method: method};
                 let (f_start_node, f_end_node, mut cfg) =
                     match f_env.get(&(class.clone(), method.clone())) {
                         Some((start_node, end_node)) => (*start_node, *end_node, cfg),
-                        None => fun_to_cfg(&class, &method, ty_env, f_env, prog, cfg)?,
+                        None => fun_to_cfg(&class, &method, ty_env, f_env, prog, cfg, fun_scope)?,
                     };
 
                 // collect information for the actions on the cfg edge
                 let params = get_params(prog, &class, &method)?;
                 let enter_scope = Action::EnterScope {
                     scope: Scope {
-                        class_or_obj: class_or_obj,
+                        class: class_or_obj,
                         method: method.clone(),
                     },
                     params: params.clone(),
@@ -326,7 +338,7 @@ fn stmts_to_cfg<'a>(
                 cfg.add_edge(
                     f_end_node,
                     assign_retval,
-                    todo!("leave scope to current scope"),
+                    vec![Action::LeaveScope { to_scope: curr_scope }],
                 );
 
                 return stmts_to_cfg(
@@ -336,6 +348,7 @@ fn stmts_to_cfg<'a>(
                     stmts,
                     cfg,
                     vec![to_start(assign_retval)],
+                    curr_scope,
                     scope_end,
                 );
             }
@@ -345,7 +358,7 @@ fn stmts_to_cfg<'a>(
                 let constructor = get_constructor(prog, &class)?;
                 // stmts.push_front(Statement::Call((class, consName, )));
 
-                return stmts_to_cfg(ty_env, f_env, prog, stmts, cfg, starts, scope_end);
+                return stmts_to_cfg(ty_env, f_env, prog, stmts, cfg, starts, curr_scope, scope_end);
             }
 
             // for 'return x' we assign 'retval := x' and stop recursing
@@ -358,7 +371,7 @@ fn stmts_to_cfg<'a>(
                 stmts.push_front(Statement::Assignment((Lhs::Identifier(id.clone()), rhs)));
                 stmts.push_front(Statement::Declaration((t, (&id).to_string())));
 
-                return stmts_to_cfg(ty_env, f_env, prog, stmts, cfg, starts, scope_end);
+                return stmts_to_cfg(ty_env, f_env, prog, stmts, cfg, starts, curr_scope, scope_end);
             }
 
             // if no special case applies, add statement to cfg, let all start_nodes point to stmt, and make stmt start_node in next recursion step
@@ -383,6 +396,7 @@ fn stmts_to_cfg<'a>(
                     stmts,
                     cfg,
                     vec![to_start(stmt_node)],
+                    curr_scope,
                     scope_end,
                 );
             }
@@ -404,6 +418,7 @@ fn fun_to_cfg<'a>(
     f_env: &mut FunEnv,
     prog: &Program,
     mut cfg: CFG,
+    curr_scope: Scope
 ) -> Result<(NodeIndex, NodeIndex, CFG), Error> {
     // Check whether method exists and get body
     let (_, _, _, body) = get_methodcontent(prog, &class, &method)?;
@@ -427,6 +442,7 @@ fn fun_to_cfg<'a>(
         VecDeque::from(body.clone()),
         cfg,
         vec![to_start(enter_function)],
+        curr_scope,
         Some(leave_function),
     )?;
     //leave ty_env scope after method body cfg is created
@@ -524,10 +540,10 @@ impl fmt::Debug for Action {
                     .map(|(arg, param)| format!("{} = {:?}", arg, param))
                     .collect::<Vec<String>>()
                     .join(", ");
-                write!(f, "{}.{}({})", scope.class_or_obj, scope.method, ap_str)
+                write!(f, "{}.{}({})", scope.class, scope.method, ap_str)
             }
-            Action::LeaveScope{ to_scope, from_scope } => {
-                write!(f, "Going from {}.{} to {}.{}", to_scope.class_or_obj, to_scope.method, from_scope.class_or_obj, from_scope.method)
+            Action::LeaveScope{ to_scope } => {
+                write!(f, "To {}.{}", to_scope.class, to_scope.method)
             }
             _ => write!(f, ""),
         }
