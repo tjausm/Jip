@@ -204,7 +204,12 @@ Integer: i64 = {
     r"[0-9]+" => i64::from_str(<>).unwrap()
 };
 
-
 Identifier: String = {
-    r#"[a-zA-Z]+"# => String::from_str(<>).unwrap()
+    r"[a-zA-Z]+[a-zA-Z0-9]*" => String::from_str(<>).unwrap()
+}
+
+match {
+    r"\s*" => { }, // The default whitespace skipping is disabled an `ignore pattern` is specified
+    r"//[^\n\r]*[\n\r]*" => { },
+    _ // Skip `// comments`
 }
