@@ -130,47 +130,6 @@ fn get_constructor<'a>(prog: &'a Program, class_name: &str) -> Result<&'a Constr
     )));
 }
 
-/// Recursively unpacks Statement and returns start and end of cfg and cfg itself
-fn stmt_to_cfg(
-    ty_env: &mut TypeEnv,
-    f_env: &mut FunEnv,
-    prog: &Program,
-    stmt: Statement,
-    mut cfg: CFG,
-    start_from: Start,
-    curr_scope: &Scope,
-    scope_end: Option<NodeIndex>,
-) -> Result<(Vec<NodeIndex>, CFG), Error> {
-    match stmt {
-        Statement::Block(stmts) => {
-            return stmts_to_cfg(
-                ty_env,
-                f_env,
-                prog,
-                VecDeque::from(*stmts),
-                cfg,
-                vec![start_from],
-                curr_scope,
-                scope_end,
-            )
-        }
-        Statement::Return(expr) => {
-            add_return(
-                Statement::Return(expr),
-                &mut cfg,
-                vec![start_from],
-                scope_end,
-            )?;
-            return Ok((vec![], cfg));
-        }
-        other => {
-            let stmt_node = cfg.add_node(Node::Statement(other));
-            cfg.add_edge(start_from.node, stmt_node, start_from.edge);
-            return Ok((vec![stmt_node], cfg));
-        }
-    }
-}
-
 /// adds edges from all passed start nodes to first node it generates from stmts and adds edges from the last nodes it generates to the ending node if one is specified.
 /// - **ty_env ->** map identifiers to classes, to know where to find invoked functions e.g. given object c, we can only perform c.increment() if we know the class of c
 /// - **f_env ->**  map methods to the start and end of a functions subgraph
@@ -186,6 +145,18 @@ fn stmts_to_cfg<'a>(
 ) -> Result<(Vec<NodeIndex>, CFG), Error> {
     match stmts.pop_front() {
         Some(stmt) => match stmt {
+            Statement::Block(stmts) => {
+                return stmts_to_cfg(
+                    ty_env,
+                    f_env,
+                    prog,
+                    VecDeque::from(*stmts),
+                    cfg,
+                    starts,
+                    curr_scope,
+                    scope_end,
+                )
+            }
             Statement::Ite((cond, s1, s2)) => {
                 // add condition as assume and assume_not to the cfg
                 let assume = Node::Statement(Statement::Assume(cond.clone()));
@@ -201,10 +172,10 @@ fn stmts_to_cfg<'a>(
 
                 // add the if and else branch to the cfg
                 let (if_ending, cfg) =
-                    stmt_to_cfg(ty_env, f_env, prog, *s1, cfg, assume_start, curr_scope, scope_end)?;
+                    stmts_to_cfg(ty_env, f_env, prog, VecDeque::from(vec![*s1]), cfg, vec![assume_start], curr_scope, scope_end)?;
 
                 let (else_ending, cfg) =
-                    stmt_to_cfg(ty_env, f_env, prog, *s2, cfg, assume_not_start, curr_scope, scope_end)?;
+                    stmts_to_cfg(ty_env, f_env, prog, VecDeque::from(vec![*s2]), cfg, vec![assume_not_start], curr_scope, scope_end)?;
 
                 let all_endings: Vec<Start> = [if_ending, else_ending]
                     .concat()
@@ -227,13 +198,13 @@ fn stmts_to_cfg<'a>(
                     cfg.add_edge(start.node, assume_not_node, start.edge);
                 }
                 // calculate cfg for body of while and cfg for the remainder of the stmts
-                let (body_ending, cfg) = stmt_to_cfg(
+                let (body_ending, cfg) = stmts_to_cfg(
                     ty_env,
                     f_env,
                     prog,
-                    *body,
+                    VecDeque::from(vec![*body]),
                     cfg,
-                    to_start(assume_node),
+                    vec![to_start(assume_node)],
                     curr_scope,
                     scope_end,
                 )?;
@@ -361,9 +332,23 @@ fn stmts_to_cfg<'a>(
                 return stmts_to_cfg(ty_env, f_env, prog, stmts, cfg, starts, curr_scope, scope_end);
             }
 
-            // for 'return x' we assign 'retval := x' and stop recursing
+            // for 'return x' we assign 'retval := x', add edge to scope_end and stop recursing
             Statement::Return(expr) => {
-                add_return(Statement::Return(expr), &mut cfg, starts, scope_end)?;
+                let retval_assign = cfg.add_node(Node::Statement(Statement::Return(expr.clone())));
+                for start in starts {
+                    cfg.add_edge(start.node, retval_assign, start.edge);
+                }
+                match scope_end {
+                    Some(scope_end) => {
+                        cfg.add_edge(retval_assign, scope_end, vec![]);
+                    }
+                    None => {
+                        return Err(Error::Semantics(format!(
+                            " '{:?}' has no scope to return to.",
+                            &Statement::Return(expr)
+                        )))
+                    }
+                }
                 return Ok((vec![], cfg));
             }
             // split declareassign by prepending a declaration and assignment
@@ -453,30 +438,6 @@ fn fun_to_cfg<'a>(
     }
 
     return Ok((enter_function, leave_function, cfg));
-}
-
-fn add_return(
-    ret: Statement,
-    cfg: &mut CFG,
-    start_from: Vec<Start>,
-    scope_end: Option<NodeIndex>,
-) -> Result<(), Error> {
-    let retval_assign = cfg.add_node(Node::Statement(ret.clone()));
-    for start in start_from {
-        cfg.add_edge(start.node, retval_assign, start.edge);
-    }
-    match scope_end {
-        Some(scope_end) => {
-            cfg.add_edge(retval_assign, scope_end, vec![]);
-            return Ok(());
-        }
-        None => {
-            return Err(Error::Semantics(format!(
-                " '{:?}' has no scope to return to.",
-                &ret
-            )))
-        }
-    }
 }
 
 fn get_params<'a>(

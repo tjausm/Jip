@@ -19,7 +19,7 @@
                     "kind": "bin"
                 }
             },
-            "args": ["file", "tests/programs/fibonaci", "verify-program"],
+            "args": ["file", "tests/programs/rec_fib", "verify-program", "14"],
             "cwd": "${workspaceFolder}"
         },
         {
