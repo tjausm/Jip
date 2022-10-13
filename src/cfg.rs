@@ -89,12 +89,12 @@ pub fn generate_cfg(prog: Program) -> Result<(NodeIndex, CFG), Error> {
             let mut f_env: FunEnv = HashMap::new();
 
             //generate the cfg
-            let (program_endings, mut cfg) = stmts_to_cfg(
+            let program_endings = stmts_to_cfg(
                 &mut ty_env,
                 &mut f_env,
                 &prog,
                 VecDeque::from(body.clone()),
-                cfg,
+                &mut cfg,
                 vec![start.clone()],
                 &(Scope { class: "Main".to_string(), method: "main".to_string()}),
                 None,
@@ -138,11 +138,11 @@ fn stmts_to_cfg<'a>(
     f_env: &mut FunEnv,
     prog: &Program,
     mut stmts: VecDeque<Statement>,
-    mut cfg: CFG,
+    cfg: &mut CFG,
     starts: Vec<Start>,
     curr_scope: &Scope,
     scope_end: Option<NodeIndex>,
-) -> Result<(Vec<NodeIndex>, CFG), Error> {
+) -> Result<Vec<NodeIndex>, Error> {
     match stmts.pop_front() {
         Some(stmt) => match stmt {
             Statement::Block(stmts) => {
@@ -171,10 +171,10 @@ fn stmts_to_cfg<'a>(
                 }
 
                 // add the if and else branch to the cfg
-                let (if_ending, cfg) =
+                let if_ending =
                     stmts_to_cfg(ty_env, f_env, prog, VecDeque::from(vec![*s1]), cfg, vec![assume_start], curr_scope, scope_end)?;
 
-                let (else_ending, cfg) =
+                let else_ending =
                     stmts_to_cfg(ty_env, f_env, prog, VecDeque::from(vec![*s2]), cfg, vec![assume_not_start], curr_scope, scope_end)?;
 
                 let all_endings: Vec<Start> = [if_ending, else_ending]
@@ -198,7 +198,7 @@ fn stmts_to_cfg<'a>(
                     cfg.add_edge(start.node, assume_not_node, start.edge);
                 }
                 // calculate cfg for body of while and cfg for the remainder of the stmts
-                let (body_ending, cfg) = stmts_to_cfg(
+                let body_ending = stmts_to_cfg(
                     ty_env,
                     f_env,
                     prog,
@@ -208,7 +208,7 @@ fn stmts_to_cfg<'a>(
                     curr_scope,
                     scope_end,
                 )?;
-                let (end_remainder, mut cfg) = stmts_to_cfg(
+                let end_remainder = stmts_to_cfg(
                     ty_env,
                     f_env,
                     prog,
@@ -224,7 +224,7 @@ fn stmts_to_cfg<'a>(
                     cfg.add_edge(node, assume_not_node, vec![]);
                 }
 
-                return Ok((end_remainder, cfg));
+                return Ok(end_remainder);
             }
 
             // generate
@@ -247,9 +247,9 @@ fn stmts_to_cfg<'a>(
 
                 // create subgraph for function if it does not exist yet
                 let fun_scope = Scope {class: class.clone(), method: method.clone()};
-                let (f_start_node, f_end_node, mut cfg) =
+                let (f_start_node, f_end_node) =
                     match f_env.get(&(class.clone(), method.clone())) {
-                        Some((start_node, end_node)) => (*start_node, *end_node, cfg),
+                        Some((start_node, end_node)) => (*start_node, *end_node),
                         None => fun_to_cfg(&class, &method, ty_env, f_env, prog, cfg, &fun_scope)?,
                     };
 
@@ -277,9 +277,9 @@ fn stmts_to_cfg<'a>(
                 // create subgraph for function if it does not exist yet
         
                 let fun_scope = Scope {class: class.clone(), method: method.clone()};
-                let (f_start_node, f_end_node, mut cfg) =
+                let (f_start_node, f_end_node) =
                     match f_env.get(&(class.clone(), method.clone())) {
-                        Some((start_node, end_node)) => (*start_node, *end_node, cfg),
+                        Some((start_node, end_node)) => (*start_node, *end_node),
                         None => fun_to_cfg(&class, &method, ty_env, f_env, prog, cfg, &fun_scope)?,
                     };
 
@@ -349,7 +349,7 @@ fn stmts_to_cfg<'a>(
                         )))
                     }
                 }
-                return Ok((vec![], cfg));
+                return Ok((vec![]));
             }
             // split declareassign by prepending a declaration and assignment
             Statement::DeclareAssign((t, id, rhs)) => {
@@ -389,7 +389,7 @@ fn stmts_to_cfg<'a>(
         //if stmt stack is empty we return ending node(s)
         None => {
             let start_nodes: Vec<NodeIndex> = starts.iter().map(|n| n.node).collect();
-            return Ok((start_nodes, cfg));
+            return Ok(start_nodes);
         }
     }
 }
@@ -402,9 +402,9 @@ fn fun_to_cfg<'a>(
     ty_env: &mut TypeEnv,
     f_env: &mut FunEnv,
     prog: &Program,
-    mut cfg: CFG,
+    cfg: &mut  CFG,
     curr_scope: &Scope
-) -> Result<(NodeIndex, NodeIndex, CFG), Error> {
+) -> Result<(NodeIndex, NodeIndex), Error> {
     // Check whether method exists and get body
     let (_, _, _, body) = get_methodcontent(prog, &class, &method)?;
 
@@ -420,7 +420,7 @@ fn fun_to_cfg<'a>(
     );
 
     //generate subgraph from function body starting from enter_function and ending at leave_function node
-    let (fun_endings, mut cfg) = stmts_to_cfg(
+    let fun_endings = stmts_to_cfg(
         ty_env,
         f_env,
         prog,
@@ -437,7 +437,7 @@ fn fun_to_cfg<'a>(
         cfg.add_edge(node, leave_function, vec![]);
     }
 
-    return Ok((enter_function, leave_function, cfg));
+    return Ok((enter_function, leave_function));
 }
 
 fn get_params<'a>(
