@@ -249,7 +249,7 @@ fn assign_expr<'ctx>(
 ) -> Result<(), Error> {
     match get_from_anEnv(&env, id) {
         None => {
-            return Err(Error::Semantics(format!("Variable {} is undeclared", id)));
+            return Err(Error::Semantics(format!("Assignment {} := {:?} failed because variable {} is undeclared", id, expr, id)));
         }
         Some(Variable::Int(_)) => {
             let ast = expression_to_int(&ctx, &env, &expr)?;
