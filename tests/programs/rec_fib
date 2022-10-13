@@ -1,0 +1,22 @@
+class Main
+{
+    static void main(int n)
+    {
+        assume n >= 0;
+        int fa := Main.fib(n);
+    }
+
+    static int fib(int n)
+    {
+        assume n >= 0;
+        if (n == 0) return 0;
+        else {if (n == 1) return 1;
+        else
+        {
+            int a := Main.fib(n - 1);
+            int b := Main.fib(n - 2);
+            return a + b;
+        }}
+    }
+
+}
