@@ -20,13 +20,12 @@ All tests are executed with `cargo test`, we have 2 types of tests:
 - Does require translate to assume and ensure to assert?
 
 ## Todo's
-
-- [ ] moeten we onderscheidt maken tussen classes en objects tijdens scope boekhouding
-- [ ] generalise over get_from_env and get_from_anEnv
 - [ ] objects representeren in de cfg
     - if we enter constructor we initialize fields, assign referenc of oject to 'this' and we assign 'this' to 'retval'
     - if we enter a method we assign reference of object to 'this'
-- [ ] change retval_id to a static string in shared?
 - [ ] object accesing vanaf de heap e.g.
+- [ ] generalise over get_from_env and get_from_anEnv
+- [ ] fix vector formatting of edges
+- [ ] change retval_id to a static string in shared?
 - [ ] put all error msgs in one or more enums to 'streamline' them
 - [ ] best practices opzoeken voor variable shadowing
