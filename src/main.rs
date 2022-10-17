@@ -13,6 +13,7 @@ mod cfg;
 mod see;
 mod z3;
 mod shared;
+mod bench;
 
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]
@@ -34,13 +35,25 @@ struct Cli {
 #[derive(Subcommand)]
 enum Mode {
     /// Verify program and print result
-    VerifyProgram {
-        // Up to which depth program is evaluated
+    Verify {
+        /// Up to which depth program is evaluated
         #[clap(default_value_t = 40)]
         depth: see::Depth,
     },
     /// Print cfg in Dot format
-    PrintCFG
+    PrintCFG,
+    Benchmark {
+        /// Lowest depth
+        #[clap(default_value_t = 40)]
+        start: see::Depth,
+        /// Highest depth
+        #[clap(default_value_t = 40)]
+        end: see::Depth,
+        /// Interval between depths
+        #[clap(default_value_t = 10)]
+        interval: see::Depth,
+        
+    }
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ArgEnum)]
@@ -68,6 +81,7 @@ fn main() {
     // if program loaded execute function corresponding to cmd and exit with the result
     match cli.mode {
         Mode::PrintCFG => exit(see::print_cfg(&program)),
-        Mode::VerifyProgram {depth} => exit(see::print_verification(&program, depth)),
+        Mode::Verify {depth} => exit(see::print_verification(&program, depth)),
+        Mode::Benchmark {start, end, interval} => exit(bench::bench(&program, start, end, interval)),
     };
 }

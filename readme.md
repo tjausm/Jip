@@ -4,6 +4,9 @@
 3. Install llvm
 4. run `cargo build -vv` in the root folder (it can take 20 - 30 min to build due to z3 the package, add the `-vv` flag to make sure the build process is still in progress)
 
+### Profiler (windows)
+1. install [wsl](https://learn.microsoft.com/en-us/windows/wsl/install)
+
 ## Testing
 All tests are executed with `cargo test`, we have 2 types of tests:
 
@@ -20,9 +23,11 @@ All tests are executed with `cargo test`, we have 2 types of tests:
 - Does require translate to assume and ensure to assert?
 
 ## Todo's
+- [ ] generate benchmark set
 - [ ] objects representeren in de cfg
     - if we enter constructor we initialize fields, assign referenc of oject to 'this' and we assign 'this' to 'retval'
     - if we enter a method we assign reference of object to 'this'
+- [ ] add require and ensure
 - [ ] object accesing vanaf de heap e.g.
 - [ ] generalise over get_from_env and get_from_anEnv
 - [ ] fix vector formatting of edges

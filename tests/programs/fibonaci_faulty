@@ -1,0 +1,46 @@
+//
+// Fibonacci functions. Be mindful that the recursive fib will genarate
+// exponentially many paths.
+//
+class Main
+{
+    static void main(int n)
+        //requires(n>=0)
+    {
+        // prove that the two versions of Fibonacci return the same values:
+        int f1 := Main.fib(n);
+        int f2 := Main.impFib(n) ;
+        assert f1 != f2 ;
+    }
+
+    static int fib(int n)
+        //requires(n >= 0)
+    {
+        if (n == 0) return 0;
+        else if (n == 1) return 1;
+        else
+        {
+            int a := Main.fib(n - 1);
+            int b := Main.fib(n - 2);
+            return a + b;
+        }
+    }
+
+    // imperative version
+    static int impFib(int n) {
+       if (n == 0) return 0;
+       else if (n == 1) return 1;
+       else {
+          int total := 1 ;
+          int mature := 0 ;
+          int t := 1 ;
+          while (t<n) {
+             int newborn := mature ;
+             mature := total ;
+             total := total + newborn ;
+          }
+          return total ;
+       }
+    }
+
+}
