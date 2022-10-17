@@ -18,9 +18,17 @@ pub enum Error {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Scope {
+    pub id: ScopeId,
     pub class: Identifier,
     pub method: Identifier
 }
+
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub enum ScopeId {
+    Main,
+    Id(i32)
+}
+
 
 pub fn insert_into_env<K: Eq + Hash, V>(env: &mut Vec<HashMap<K, V>>, key: K, value: V) -> () {
     match env.last_mut() {

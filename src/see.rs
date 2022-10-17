@@ -3,7 +3,7 @@
 
 use crate::ast::*;
 use crate::cfg::{generate_cfg, generate_dot_cfg, Action, Node};
-use crate::shared::{get_methodcontent, Error, Scope};
+use crate::shared::{get_methodcontent, Error, Scope, ScopeId};
 use crate::z3::{
     expression_to_bool, expression_to_int, fresh_bool, fresh_int, get_from_anEnv,
     insert_into_anEnv, solve_constraints, AnEnvironment, AnEnvironments, PathConstraint, Variable,
@@ -80,6 +80,7 @@ fn verify(prog_string: &str, d: Depth) -> Result<(), Error> {
     let mut q: VecDeque<(AnEnvironments, Vec<PathConstraint>, Depth, NodeIndex)> = VecDeque::new();
     let main = AnEnvironment {
         scope: Scope {
+            id: ScopeId::Main,
             class: "Main".to_string(),
             method: "main".to_string(),
         },
@@ -175,7 +176,7 @@ fn verify(prog_string: &str, d: Depth) -> Result<(), Error> {
             for action in edge.weight() {
                 match action {
                     Action::EnterScope {
-                        scope,
+                        to: scope,
                         params,
                         args,
                     } => {
@@ -214,16 +215,16 @@ fn verify(prog_string: &str, d: Depth) -> Result<(), Error> {
                             insert_into_anEnv(&mut envs, id, var);
                         }
                     }
-                    Action::LeaveScope { to_scope } => {
+                    Action::LeaveScope { from: to_scope } => {
                         // get retval from scope before we leave it
                         let retval = get_from_anEnv(&envs, retval_id);
 
-                        // remove current scope and dismiss path if new scope doesn't match to_scope
-                        envs.pop();
+                        // if we can leave over this edge pop scope otherwise dismiss path pe
                         match envs.last() {
-                            Some(env) if env.scope == *to_scope => (),
+                            Some(env) if env.scope == *to_scope => envs.pop(),
                             _ => continue 'q_nodes,
                         };
+                        
 
                         // assign retval from previous scope if necessary
                         match retval {
