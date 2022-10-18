@@ -546,7 +546,7 @@ impl fmt::Debug for Node {
                 write!(f, "Leaving {}.{}", object, method)
             }
             Node::EnterStaticMethod((class, method)) => {
-                write!(f, "Entering {}.{}", class, method)
+                write!(f, "Entering static {}.{}", class, method)
             }
             Node::LeaveStaticMethod((class, method)) => {
                 write!(f, "Leaving {}.{}", class, method)
@@ -575,10 +575,10 @@ impl fmt::Debug for Action {
                     .map(|(arg, param)| format!("{} = {:?}", arg, param))
                     .collect::<Vec<String>>()
                     .join(", ");
-                write!(f, "{}({})\n{:?}", scope.method, ap_str, scope.id,)
+                write!(f, "Entering {}({}) {:?}\n", scope.method, ap_str, scope.id)
             }
             Action::LeaveScope { from } => {
-                write!(f, "Leaving {}\n{:?}", from.method, from.id)
+                write!(f, "Leaving {}{:?}\n", from.method, from.id)
             }
             _ => write!(f, ""),
         }
