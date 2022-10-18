@@ -139,7 +139,7 @@ fn get_constructor<'a>(prog: &'a Program, class_name: &str) -> Result<&'a Constr
 fn increment<'a>(seed: ScopeId) -> ScopeId {
     match seed {
         ScopeId::Main => return ScopeId::Id(0),
-        ScopeId::Id(n) => return ScopeId::Id(n + 1)
+        ScopeId::Id(n) => return ScopeId::Id(n + 1),
     };
 }
 
@@ -273,41 +273,9 @@ fn stmts_to_cfg<'a>(
             }
 
             // generate
-            Statement::Call((class_or_object, method, args)) => {
-                // find classname if method is called on object
-                let class = get_from_env(ty_env, &class_or_object)
-                    .map(|t| t.0)
-                    .unwrap_or(class_or_object.clone());
-
-
-
-                // collect information for the actions on the cfg edge
-                let params = get_params(prog, &class, &method)?;
-                fresh_scopeId = increment(fresh_scopeId);
-                let fun_scope = Scope {
-                    id: fresh_scopeId,
-                    class: class.clone(),
-                    method: method.clone(),
-                };
-                let enter_scope = Action::EnterScope {
-                    to: fun_scope.clone(),
-                    params: params.clone(),
-                    args: args.clone(),
-                };
-
-                // create subgraph for function if it does not exist yet
-                let (f_start_node, f_end_node) = match f_env.get(&(class.clone(), method.clone())) {
-                    Some((start_node, end_node)) => (*start_node, *end_node),
-                    None => fun_to_cfg(&class, &method, ty_env, f_env, prog, cfg, &fun_scope, fresh_scopeId)?,
-                };
-
-                for start in starts {
-                    cfg.add_edge(
-                        start.node,
-                        f_start_node,
-                        [vec![enter_scope.clone()], start.edge].concat(),
-                    );
-                }
+            Statement::Call(inv) => {
+                
+                let (f_end_node, fun_scope) = invocation_to_cfg(inv, ty_env, f_env, prog, cfg, starts, curr_scope, fresh_scopeId)?;
 
                 // annotate function ending with the leave to curr_scop action
                 let an_f_end = Start {
@@ -330,42 +298,14 @@ fn stmts_to_cfg<'a>(
                 );
             }
 
-            // prepend function body and
-            Statement::Assignment((lhs, Rhs::Invocation((class_or_obj, method, args)))) => {
-                let class = get_class_name(ty_env, class_or_obj.clone());
-
-                // create subgraph for function if it does not exist yet
-                fresh_scopeId = increment(fresh_scopeId);
-                let fun_scope = Scope {
-                    id: fresh_scopeId,
-                    class: class.clone(),
-                    method: method.clone(),
-                };
-                let (f_start_node, f_end_node) = match f_env.get(&(class.clone(), method.clone())) {
-                    Some((start_node, end_node)) => (*start_node, *end_node),
-                    None => fun_to_cfg(&class, &method, ty_env, f_env, prog, cfg, &fun_scope, fresh_scopeId)?,
-                };
-
-                // collect information for the actions on the cfg edge
-                let params = get_params(prog, &class, &method)?;
-                let enter_scope = Action::EnterScope {
-                    to: fun_scope.clone(),
-                    params: params.clone(),
-                    args: args.clone(),
-                };
-
-                for start in starts {
-                    cfg.add_edge(
-                        start.node,
-                        f_start_node,
-                        [vec![enter_scope.clone()], start.edge].concat(),
-                    );
-                }
+            Statement::Assignment((lhs, Rhs::Invocation(inv))) => {
+                let (f_end_node, fun_scope) = invocation_to_cfg(inv, ty_env, f_env, prog, cfg, starts, curr_scope, fresh_scopeId)?;
 
                 let assign_retval = cfg.add_node(Node::Statement(Statement::Assignment((
                     lhs,
                     Rhs::Expression(Expression::Identifier("retval".to_string())),
                 ))));
+
                 cfg.add_edge(
                     f_end_node,
                     assign_retval,
@@ -393,7 +333,15 @@ fn stmts_to_cfg<'a>(
                 // stmts.push_front(Statement::Call((class, consName, )));
 
                 return stmts_to_cfg(
-                    ty_env, f_env, prog, stmts, cfg, starts, curr_scope, fresh_scopeId, scope_end,
+                    ty_env,
+                    f_env,
+                    prog,
+                    stmts,
+                    cfg,
+                    starts,
+                    curr_scope,
+                    fresh_scopeId,
+                    scope_end,
                 );
             }
 
@@ -422,7 +370,15 @@ fn stmts_to_cfg<'a>(
                 stmts.push_front(Statement::Declaration((t, (&id).to_string())));
 
                 return stmts_to_cfg(
-                    ty_env, f_env, prog, stmts, cfg, starts, curr_scope, fresh_scopeId, scope_end,
+                    ty_env,
+                    f_env,
+                    prog,
+                    stmts,
+                    cfg,
+                    starts,
+                    curr_scope,
+                    fresh_scopeId,
+                    scope_end,
                 );
             }
 
@@ -462,8 +418,60 @@ fn stmts_to_cfg<'a>(
     }
 }
 
-// add subgraph of given function to cfg
-// insert
+/// because both assigning invocation and just calling are almost the same we generalize using invocation_to_cfg()
+/// remember to 
+fn invocation_to_cfg<'a>(
+    (class_or_obj, method, args): Invocation,
+    ty_env: &mut TypeEnv,
+    f_env: &mut FunEnv,
+    prog: &Program,
+    cfg: &mut CFG,
+    starts: Vec<Start>,
+    curr_scope: &Scope,
+    mut fresh_scopeId: ScopeId,
+) -> Result<(NodeIndex, Scope), Error> {
+
+    let class = get_class_name(ty_env, class_or_obj.clone());
+
+    // collect information for the actions on the cfg edge
+    let params = get_params(prog, &class, &method)?;
+    fresh_scopeId = increment(fresh_scopeId);
+    let fun_scope = Scope {
+        id: fresh_scopeId,
+        class: class.clone(),
+        method: method.clone(),
+    };
+    let enter_scope = Action::EnterScope {
+        to: fun_scope.clone(),
+        params: params.clone(),
+        args: args.clone(),
+    };
+
+    // create subgraph for function if it does not exist yet
+    let (f_start_node, f_end_node) = fun_to_cfg(
+        &class,
+        &method,
+        ty_env,
+        f_env,
+        prog,
+        cfg,
+        &fun_scope,
+        fresh_scopeId,
+    )?;
+
+    for start in starts {
+        cfg.add_edge(
+            start.node,
+            f_start_node,
+            [vec![enter_scope.clone()], start.edge].concat(),
+        );
+    }
+
+    return Ok((f_end_node, fun_scope))
+
+}
+
+// if subgraph of function exists return, otherwise create & return
 fn fun_to_cfg<'a>(
     class: &String,
     method: &String,
@@ -472,8 +480,15 @@ fn fun_to_cfg<'a>(
     prog: &Program,
     cfg: &mut CFG,
     curr_scope: &Scope,
-    scopeId_seed: ScopeId
+    fresh_scopeId: ScopeId,
 ) -> Result<(NodeIndex, NodeIndex), Error> {
+    
+    // return function if it cfg is already generated
+    match f_env.get(&(class.clone(), method.clone())) {
+        Some(fun) => return Ok(*fun),
+        _ => (),
+    }
+
     // Check whether method exists and get body
     let (_, _, _, body) = get_methodcontent(prog, &class, &method)?;
 
@@ -497,7 +512,7 @@ fn fun_to_cfg<'a>(
         cfg,
         vec![to_start(enter_function)],
         curr_scope,
-        scopeId_seed,
+        fresh_scopeId,
         Some(leave_function),
     )?;
     //leave ty_env scope after method body cfg is created

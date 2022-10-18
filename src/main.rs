@@ -33,6 +33,7 @@ struct Cli {
 
 }
 
+/// BEWARE: flags are hardcoded in the test builder
 #[derive(Subcommand)]
 enum Mode {
     /// Verify program and print result
