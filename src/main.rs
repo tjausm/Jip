@@ -5,6 +5,7 @@
 extern crate lalrpop_util;
 
 use clap::{ArgEnum, Parser, Subcommand};
+use see::ExitCode;
 use std::process::exit;
 
 // module declarations
@@ -64,9 +65,9 @@ enum LoadMode {
 
 fn main() {
     let cli = Cli::parse();
-    let exit = |(exit_code, result): (i32, String)| {
+    let exit = |(exit_code, result): (ExitCode, String)| {
         println!("{}", result);
-        exit(exit_code);
+        exit(exit_code as i32);
     };
 
     // attempt to load program, and exit with exitcode and error if fails

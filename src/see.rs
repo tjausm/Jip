@@ -22,19 +22,23 @@ use std::fs;
 
 const PROG_CORRECT: &'static str = "Program is correct";
 
-/// 0 = validated program, 1 = validation error, 2 = all other errors
-pub type ExitCode = i32;
+/// Indicates if program is valid, counterexample was found or other error occured
+pub enum ExitCode {
+    Valid = 0,
+    CounterExample = 1,
+    Error = 2
+}
 
 /// Defines search depth for SEE
 pub type Depth = i32;
 
 fn print_result(r: Result<(), Error>) -> (ExitCode, String) {
     match r {
-        Err(Error::Syntax(why)) => (2, format!("Syntax error: {}", why)),
-        Err(Error::Semantics(why)) => (2, format!("Semantics error: {}", why)),
-        Err(Error::Other(why)) => (2, format!("{}", why)),
-        Err(Error::Verification(why)) => (1, format!("{}", why)),
-        Ok(_) => (0, PROG_CORRECT.to_string()),
+        Err(Error::Syntax(why)) => (ExitCode::Error, format!("Syntax error: {}", why)),
+        Err(Error::Semantics(why)) => (ExitCode::Error, format!("Semantics error: {}", why)),
+        Err(Error::Other(why)) => (ExitCode::Error, format!("{}", why)),
+        Err(Error::Verification(why)) => (ExitCode::CounterExample, format!("{}", why)),
+        Ok(_) => (ExitCode::Valid, PROG_CORRECT.to_string()),
     }
 }
 
@@ -56,7 +60,7 @@ pub fn print_cfg(program: &str) -> (ExitCode, String) {
     match parse_program(program) {
         Err(parse_err) => print_result(Err(parse_err)),
         Ok(stmts) => match generate_dot_cfg(stmts) {
-            Ok(cfg) => (0, cfg),
+            Ok(cfg) => (ExitCode::Valid, cfg),
             Err(sem_err) => print_result(Err(sem_err)),
         },
     }

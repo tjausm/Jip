@@ -112,7 +112,7 @@ pub fn solve_constraints<'ctx>(
         (SatResult::Unsat, _) => return Ok(()),
         (SatResult::Sat, Some(model)) => {
             return Err(Error::Verification(format!(
-                "Following configuration violates program:\n{:?}",
+                "Following counter-example was found:\n{:?}",
                 model
             )));
         }
