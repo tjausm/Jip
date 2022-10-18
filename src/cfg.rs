@@ -5,12 +5,13 @@ lalrpop_mod!(pub parser); // synthesized by LALRPOP
 
 use crate::ast::*;
 use crate::shared::{
-    get_class, get_from_env, get_method, get_methodcontent, insert_into_env, Error, Scope, ScopeId,
+    get_class, get_from_env, get_method, get_methodcontent, insert_into_env, Error, Scope, 
 };
 use petgraph::dot::Dot;
 use petgraph::graph::{Graph, NodeIndex};
 use std::collections::{HashMap, VecDeque};
 use std::fmt;
+use uuid::Uuid; 
 
 pub enum Node {
     EnteringMain(Parameters),
@@ -97,11 +98,10 @@ pub fn generate_cfg(prog: Program) -> Result<(NodeIndex, CFG), Error> {
                 &mut cfg,
                 vec![start.clone()],
                 &(Scope {
-                    id: ScopeId::Main,
+                    id: None,
                     class: "Main".to_string(),
                     method: "main".to_string(),
                 }),
-                ScopeId::Main,
                 None,
             )?;
 
@@ -135,14 +135,6 @@ fn get_constructor<'a>(prog: &'a Program, class_name: &str) -> Result<&'a Constr
     )));
 }
 
-/// Increments prev_id and return a fresh id
-fn increment<'a>(seed: ScopeId) -> ScopeId {
-    match seed {
-        ScopeId::Main => return ScopeId::Id(0),
-        ScopeId::Id(n) => return ScopeId::Id(n + 1),
-    };
-}
-
 /// adds edges from all passed start nodes to first node it generates from stmts and adds edges from the last nodes it generates to the ending node if one is specified.
 /// - **ty_env ->** map identifiers to classes, to know where to find invoked functions e.g. given object c, we can only perform c.increment() if we know the class of c
 /// - **f_env ->**  map methods to the start and end of a functions subgraph
@@ -154,7 +146,6 @@ fn stmts_to_cfg<'a>(
     cfg: &mut CFG,
     starts: Vec<Start>,
     curr_scope: &Scope,
-    mut fresh_scopeId: ScopeId,
     scope_end: Option<NodeIndex>,
 ) -> Result<Vec<NodeIndex>, Error> {
     match stmts.pop_front() {
@@ -168,7 +159,7 @@ fn stmts_to_cfg<'a>(
                     cfg,
                     starts,
                     curr_scope,
-                    fresh_scopeId,
+                    
                     scope_end,
                 )
             }
@@ -194,7 +185,7 @@ fn stmts_to_cfg<'a>(
                     cfg,
                     vec![assume_start],
                     curr_scope,
-                    fresh_scopeId,
+                    
                     scope_end,
                 )?;
 
@@ -206,7 +197,7 @@ fn stmts_to_cfg<'a>(
                     cfg,
                     vec![assume_not_start],
                     curr_scope,
-                    fresh_scopeId,
+                    
                     scope_end,
                 )?;
 
@@ -224,7 +215,7 @@ fn stmts_to_cfg<'a>(
                     cfg,
                     all_endings,
                     curr_scope,
-                    fresh_scopeId,
+                    
                     scope_end,
                 );
             }
@@ -249,7 +240,7 @@ fn stmts_to_cfg<'a>(
                     cfg,
                     vec![to_start(assume_node)],
                     curr_scope,
-                    fresh_scopeId,
+                    
                     scope_end,
                 )?;
                 let end_remainder = stmts_to_cfg(
@@ -260,7 +251,7 @@ fn stmts_to_cfg<'a>(
                     cfg,
                     vec![to_start(assume_not_node)],
                     curr_scope,
-                    fresh_scopeId,
+                    
                     scope_end,
                 )?;
                 // add edges from end of while body to begin and edge from while body to rest of stmts
@@ -275,7 +266,7 @@ fn stmts_to_cfg<'a>(
             // generate
             Statement::Call(inv) => {
                 
-                let (f_end_node, fun_scope) = invocation_to_cfg(inv, ty_env, f_env, prog, cfg, starts, curr_scope, fresh_scopeId)?;
+                let (f_end_node, fun_scope) = invocation_to_cfg(inv, ty_env, f_env, prog, cfg, starts)?;
 
                 // annotate function ending with the leave to curr_scop action
                 let an_f_end = Start {
@@ -293,13 +284,13 @@ fn stmts_to_cfg<'a>(
                     cfg,
                     vec![an_f_end],
                     curr_scope,
-                    fresh_scopeId,
+                    
                     scope_end,
                 );
             }
 
             Statement::Assignment((lhs, Rhs::Invocation(inv))) => {
-                let (f_end_node, fun_scope) = invocation_to_cfg(inv, ty_env, f_env, prog, cfg, starts, curr_scope, fresh_scopeId)?;
+                let (f_end_node, fun_scope) = invocation_to_cfg(inv, ty_env, f_env, prog, cfg, starts)?;
 
                 let assign_retval = cfg.add_node(Node::Statement(Statement::Assignment((
                     lhs,
@@ -322,7 +313,7 @@ fn stmts_to_cfg<'a>(
                     cfg,
                     vec![to_start(assign_retval)],
                     curr_scope,
-                    fresh_scopeId,
+                    
                     scope_end,
                 );
             }
@@ -340,7 +331,7 @@ fn stmts_to_cfg<'a>(
                     cfg,
                     starts,
                     curr_scope,
-                    fresh_scopeId,
+                    
                     scope_end,
                 );
             }
@@ -377,7 +368,7 @@ fn stmts_to_cfg<'a>(
                     cfg,
                     starts,
                     curr_scope,
-                    fresh_scopeId,
+                    
                     scope_end,
                 );
             }
@@ -405,7 +396,7 @@ fn stmts_to_cfg<'a>(
                     cfg,
                     vec![to_start(stmt_node)],
                     curr_scope,
-                    fresh_scopeId,
+                    
                     scope_end,
                 );
             }
@@ -426,18 +417,15 @@ fn invocation_to_cfg<'a>(
     f_env: &mut FunEnv,
     prog: &Program,
     cfg: &mut CFG,
-    starts: Vec<Start>,
-    curr_scope: &Scope,
-    mut fresh_scopeId: ScopeId,
+    starts: Vec<Start>
 ) -> Result<(NodeIndex, Scope), Error> {
 
     let class = get_class_name(ty_env, class_or_obj.clone());
 
     // collect information for the actions on the cfg edge
     let params = get_params(prog, &class, &method)?;
-    fresh_scopeId = increment(fresh_scopeId);
     let fun_scope = Scope {
-        id: fresh_scopeId,
+        id: Some(Uuid::new_v4()),
         class: class.clone(),
         method: method.clone(),
     };
@@ -456,7 +444,6 @@ fn invocation_to_cfg<'a>(
         prog,
         cfg,
         &fun_scope,
-        fresh_scopeId,
     )?;
 
     for start in starts {
@@ -480,7 +467,6 @@ fn fun_to_cfg<'a>(
     prog: &Program,
     cfg: &mut CFG,
     curr_scope: &Scope,
-    fresh_scopeId: ScopeId,
 ) -> Result<(NodeIndex, NodeIndex), Error> {
     
     // return function if it cfg is already generated
@@ -512,7 +498,6 @@ fn fun_to_cfg<'a>(
         cfg,
         vec![to_start(enter_function)],
         curr_scope,
-        fresh_scopeId,
         Some(leave_function),
     )?;
     //leave ty_env scope after method body cfg is created

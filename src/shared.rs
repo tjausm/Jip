@@ -7,6 +7,7 @@ use crate::ast::*;
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::hash::Hash;
+use uuid::Uuid;
 
 #[derive(Debug)]
 pub enum Error {
@@ -16,18 +17,14 @@ pub enum Error {
     Other(String),
 }
 
+/// since main is unique we only have a scope.id outside of main
 #[derive(Debug, Clone, PartialEq)]
 pub struct Scope {
-    pub id: ScopeId,
+    pub id: Option<Uuid>,
     pub class: Identifier,
     pub method: Identifier
 }
 
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub enum ScopeId {
-    Main,
-    Id(i32)
-}
 
 
 pub fn insert_into_env<K: Eq + Hash, V>(env: &mut Vec<HashMap<K, V>>, key: K, value: V) -> () {

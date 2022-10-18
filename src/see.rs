@@ -3,7 +3,7 @@
 
 use crate::ast::*;
 use crate::cfg::{generate_cfg, generate_dot_cfg, Action, Node};
-use crate::shared::{get_methodcontent, Error, Scope, ScopeId};
+use crate::shared::{get_methodcontent, Error, Scope};
 use crate::z3::{
     expression_to_bool, expression_to_int, fresh_bool, fresh_int, get_from_anEnv,
     insert_into_anEnv, solve_constraints, AnEnvironment, AnEnvironments, PathConstraint, Variable,
@@ -14,6 +14,7 @@ lalrpop_mod!(pub parser);
 use petgraph::graph::{EdgeReference, NodeIndex};
 use petgraph::stable_graph::DefaultIx;
 use petgraph::visit::EdgeRef;
+use uuid::Uuid;
 use z3::{Config, Context};
 
 use std::collections::HashMap;
@@ -84,7 +85,7 @@ fn verify(prog_string: &str, d: Depth) -> Result<(), Error> {
     let mut q: VecDeque<(AnEnvironments, Vec<PathConstraint>, Depth, NodeIndex)> = VecDeque::new();
     let main = AnEnvironment {
         scope: Scope {
-            id: ScopeId::Main,
+            id: Some(Uuid::new_v4()),
             class: "Main".to_string(),
             method: "main".to_string(),
         },
