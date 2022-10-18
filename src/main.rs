@@ -43,15 +43,13 @@ enum Mode {
     },
     /// Print cfg in Dot format
     PrintCFG,
-    Benchmark {
+    /// Measure time to verify a program for a given range of depths
+    Bench {
         /// Lowest depth
-        #[clap(default_value_t = 40)]
         start: see::Depth,
         /// Highest depth
-        #[clap(default_value_t = 40)]
         end: see::Depth,
         /// Interval between depths
-        #[clap(default_value_t = 10)]
         interval: see::Depth,
         
     }
@@ -83,6 +81,6 @@ fn main() {
     match cli.mode {
         Mode::PrintCFG => exit(see::print_cfg(&program)),
         Mode::Verify {depth} => exit(see::print_verification(&program, depth)),
-        Mode::Benchmark {start, end, interval} => exit(bench::bench(&program, start, end, interval)),
+        Mode::Bench {start, end, interval} => exit(bench::bench(&program, start, end, interval)),
     };
 }
