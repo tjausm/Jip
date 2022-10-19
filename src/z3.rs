@@ -5,8 +5,7 @@ extern crate z3;
 
 use z3::ast::{Ast, Bool, Dynamic, Int};
 use z3::{ast, Context, SatResult, Solver};
-
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 use std::fmt;
 use std::rc::Rc;
 
@@ -18,15 +17,14 @@ pub type Identifier = String;
 #[derive(Debug, Clone)]
 pub enum Variable<'a> {
     Int(Int<'a>),
-    Bool(Bool<'a>),
-    Object(HashMap<&'a Identifier, Variable<'a>>) // mapping field -> variable
+    Bool(Bool<'a>)
 }
 
 /// Environment where each environment is annotated with the scope it belongs to
 #[derive(Debug, Clone)]
 pub struct Frame<'a> {
     pub scope: Scope,
-    pub env: HashMap<&'a Identifier, Variable<'a>>
+    pub env: FxHashMap<&'a Identifier, Variable<'a>>
 } 
 
 
@@ -75,11 +73,6 @@ pub fn fresh_int<'ctx>(ctx: &'ctx Context, id: String) -> Variable<'ctx> {
 
 pub fn fresh_bool<'ctx>(ctx: &'ctx Context, id: String) -> Variable<'ctx> {
     return Variable::Bool(Bool::new_const(&ctx, id));
-}
-
-pub fn fresh_object<'ctx>(ctx: &'ctx Context, class: Class, id: String) -> Variable<'ctx> {
-    // TODO: initiate fields hier?
-    return Variable::Object(HashMap::new());
 }
 
 /// Combine the constraints in reversed order and check correctness

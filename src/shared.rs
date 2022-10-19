@@ -4,7 +4,7 @@
 
 use crate::ast::*;
 
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 use std::fmt::Display;
 use std::hash::Hash;
 use uuid::Uuid;
@@ -27,8 +27,8 @@ pub struct Scope {
 
 
 
-pub fn insert_into_env<K: Eq + Hash, V>(env: &mut Vec<HashMap<K, V>>, key: K, value: V) -> () {
-    match env.last_mut() {
+pub fn insert_into_env<K: Eq + Hash, V>(env: &Vec<FxHashMap<K, V>>, key: K, value: V) -> () {
+    match env.last() {
         Some(env) => {
             env.insert(key, value);
         }
@@ -37,7 +37,7 @@ pub fn insert_into_env<K: Eq + Hash, V>(env: &mut Vec<HashMap<K, V>>, key: K, va
 }
 
 pub fn get_from_env<K: Eq + Hash + Display, V: Clone>(
-    env_stack: &Vec<HashMap<K, V>>,
+    env_stack: &Vec<FxHashMap<K, V>>,
     id: &K,
 ) -> Option<V> {
     for env in env_stack.iter().rev() {
