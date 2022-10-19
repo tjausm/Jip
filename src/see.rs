@@ -5,8 +5,8 @@ use crate::ast::*;
 use crate::cfg::{generate_cfg, generate_dot_cfg, Action, Node};
 use crate::shared::{get_methodcontent, Error, Scope};
 use crate::z3::{
-    expression_to_bool, expression_to_int, fresh_bool, fresh_int, get_from_anEnv,
-    insert_into_anEnv, solve_constraints, AnEnvironment, AnEnvironments, PathConstraint, Variable,
+    expression_to_bool, expression_to_int, fresh_bool, fresh_int, get_from_stack,
+    insert_into_stack, solve_constraints, Frame, Stack, PathConstraint, Variable,
 };
 
 lalrpop_mod!(pub parser);
@@ -82,8 +82,8 @@ fn verify(prog_string: &str, d: Depth) -> Result<(), Error> {
     let ctx = Context::new(&z3_cfg);
 
     //init our bfs through the cfg
-    let mut q: VecDeque<(AnEnvironments, Vec<PathConstraint>, Depth, NodeIndex)> = VecDeque::new();
-    let main = AnEnvironment {
+    let mut q: VecDeque<(Stack, Vec<PathConstraint>, Depth, NodeIndex)> = VecDeque::new();
+    let main = Frame {
         scope: Scope {
             id: Some(Uuid::new_v4()),
             class: "Main".to_string(),
@@ -108,10 +108,10 @@ fn verify(prog_string: &str, d: Depth) -> Result<(), Error> {
                 for p in parameters {
                     match p {
                         (Type::Int, id) => {
-                            insert_into_anEnv(&mut envs, &id, fresh_int(&ctx, id.clone()))
+                            insert_into_stack(&mut envs, &id, fresh_int(&ctx, id.clone()))
                         }
                         (Type::Bool, id) => {
-                            insert_into_anEnv(&mut envs, &id, fresh_bool(&ctx, id.clone()))
+                            insert_into_stack(&mut envs, &id, fresh_bool(&ctx, id.clone()))
                         }
                         (ty, id) => {
                             return Err(Error::Semantics(format!(
@@ -127,10 +127,10 @@ fn verify(prog_string: &str, d: Depth) -> Result<(), Error> {
                 match stmt {
                     Statement::Declaration((ty, id)) => match ty {
                         Type::Int => {
-                            insert_into_anEnv(&mut envs, &id, fresh_int(&ctx, id.clone()));
+                            insert_into_stack(&mut envs, &id, fresh_int(&ctx, id.clone()));
                         }
                         Type::Bool => {
-                            insert_into_anEnv(&mut envs, &id, fresh_bool(&ctx, id.clone()));
+                            insert_into_stack(&mut envs, &id, fresh_bool(&ctx, id.clone()));
                         }
                         weird_type => {
                             return Err(Error::Semantics(format!(
@@ -196,19 +196,19 @@ fn verify(prog_string: &str, d: Depth) -> Result<(), Error> {
                             &scope.method,
                         )?;
 
-                        envs.push(AnEnvironment {
+                        envs.push(Frame {
                             scope: scope.clone(),
                             env: HashMap::new(),
                         });
 
                         // declare retval with correct type in new scope
                         match ty {
-                            Type::Int => insert_into_anEnv(
+                            Type::Int => insert_into_stack(
                                 &mut envs,
                                 retval_id,
                                 fresh_int(&ctx, "retval".to_string()),
                             ),
-                            Type::Bool => insert_into_anEnv(
+                            Type::Bool => insert_into_stack(
                                 &mut envs,
                                 retval_id,
                                 fresh_bool(&ctx, "retval".to_string()),
@@ -217,12 +217,12 @@ fn verify(prog_string: &str, d: Depth) -> Result<(), Error> {
                         }
 
                         for (id, var) in variables {
-                            insert_into_anEnv(&mut envs, id, var);
+                            insert_into_stack(&mut envs, id, var);
                         }
                     }
                     Action::LeaveScope { from: to_scope } => {
                         // get retval from scope before we leave it
-                        let retval = get_from_anEnv(&envs, retval_id);
+                        let retval = get_from_stack(&envs, retval_id);
 
                         // if we can leave over this edge pop scope otherwise dismiss path pe
                         match envs.last() {
@@ -233,7 +233,7 @@ fn verify(prog_string: &str, d: Depth) -> Result<(), Error> {
 
                         // assign retval from previous scope if necessary
                         match retval {
-                            Some(retval) => insert_into_anEnv(&mut envs, retval_id, retval),
+                            Some(retval) => insert_into_stack(&mut envs, retval_id, retval),
                             None => (),
                         };
                     }
@@ -249,22 +249,22 @@ fn verify(prog_string: &str, d: Depth) -> Result<(), Error> {
 /// Assigns an expression to an identifier in the passed environment
 fn assign_expr<'ctx>(
     ctx: &'ctx Context,
-    env: &mut AnEnvironments<'ctx>,
+    env: &mut Stack<'ctx>,
     id: &'ctx Identifier,
     expr: &'ctx Expression,
 ) -> Result<(), Error> {
-    match get_from_anEnv(&env, id) {
+    match get_from_stack(&env, id) {
         None => {
             return Err(Error::Semantics(format!("Assignment {} := {:?} failed because variable {} is undeclared", id, expr, id)));
         }
         Some(Variable::Int(_)) => {
             let ast = expression_to_int(&ctx, &env, &expr)?;
-            insert_into_anEnv(env, &id, Variable::Int(ast));
+            insert_into_stack(env, &id, Variable::Int(ast));
         }
 
         Some(Variable::Bool(_)) => {
             let ast = expression_to_bool(&ctx, &env, &expr)?;
-            insert_into_anEnv(env, &id, Variable::Bool(ast));
+            insert_into_stack(env, &id, Variable::Bool(ast));
         }
 
         Some(Variable::Object(..)) => {
@@ -277,7 +277,7 @@ fn assign_expr<'ctx>(
 /// evaluates the parameters & arguments to a mapping id -> variable that can be added to a function scope
 fn params_to_vars<'ctx>(
     ctx: &'ctx Context,
-    env: &mut AnEnvironments<'ctx>,
+    env: &mut Stack<'ctx>,
     params: &'ctx Parameters,
     args: &'ctx Arguments,
     class: &String,

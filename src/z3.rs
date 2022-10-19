@@ -24,13 +24,13 @@ pub enum Variable<'a> {
 
 /// Environment where each environment is annotated with the scope it belongs to
 #[derive(Debug, Clone)]
-pub struct AnEnvironment<'a> {
+pub struct Frame<'a> {
     pub scope: Scope,
     pub env: HashMap<&'a Identifier, Variable<'a>>
 } 
 
 
-pub type AnEnvironments<'a> = Vec<AnEnvironment<'a>>;
+pub type Stack<'a> = Vec<Frame<'a>>;
 
 #[derive(Clone)]
 pub enum PathConstraint<'a> {
@@ -47,7 +47,7 @@ impl fmt::Debug for PathConstraint<'_> {
     }
 }
 
-pub fn insert_into_anEnv<'a>(env: &mut AnEnvironments<'a>, id: &'a Identifier, var: Variable<'a>) -> () {
+pub fn insert_into_stack<'a>(env: &mut Stack<'a>, id: &'a Identifier, var: Variable<'a>) -> () {
     match env.last_mut() {
         Some(s) => {
             s.env.insert(id, var);
@@ -56,8 +56,8 @@ pub fn insert_into_anEnv<'a>(env: &mut AnEnvironments<'a>, id: &'a Identifier, v
     };
 }
 
-pub fn get_from_anEnv<'a>(
-    env: &AnEnvironments<'a>,
+pub fn get_from_stack<'a>(
+    env: &Stack<'a>,
     id: &'a Identifier,
 ) -> Option<Variable<'a>> {
     for s in env.iter().rev() {
@@ -126,7 +126,7 @@ pub fn solve_constraints<'ctx>(
 
 pub fn expression_to_int<'ctx>(
     ctx: &'ctx Context,
-    env: &AnEnvironments<'ctx>,
+    env: &Stack<'ctx>,
     expr: &'ctx Expression,
 ) -> Result<Int<'ctx>, Error> {
     return expression_to_dynamic(&ctx, Rc::new(env), expr).and_then(as_int_or_error);
@@ -134,7 +134,7 @@ pub fn expression_to_int<'ctx>(
 
 pub fn expression_to_bool<'ctx>(
     ctx: &'ctx Context,
-    env: &AnEnvironments<'ctx>,
+    env: &Stack<'ctx>,
     expr: &'ctx Expression,
 ) -> Result<Bool<'ctx>, Error> {
     return expression_to_dynamic(&ctx, Rc::new(env), expr).and_then(as_bool_or_error);
@@ -142,7 +142,7 @@ pub fn expression_to_bool<'ctx>(
 
 fn expression_to_dynamic<'ctx, 'b>(
     ctx: &'ctx Context,
-    env: Rc<&AnEnvironments<'ctx>>,
+    env: Rc<&Stack<'ctx>>,
     expr: &'ctx Expression,
 ) -> Result<Dynamic<'ctx>, Error> {
     match expr {
@@ -235,7 +235,7 @@ fn expression_to_dynamic<'ctx, 'b>(
             return Ok(Dynamic::from(expr.not()));
         }
 
-        Expression::Identifier(id) => match get_from_anEnv(&env, id) {
+        Expression::Identifier(id) => match get_from_stack(&env, id) {
             Some(var) => match var {
                 Variable::Int(i) => {
                     //klopt dit, moet ik niet de reference naar de variable in de env passen?
