@@ -34,12 +34,6 @@ pub enum PathConstraint<'a> {
     Assert(Bool<'a>),
 }
 
-#[derive(Clone, Copy)]
-pub enum CheckFor {
-    Feasibility,
-    Validity
-}
-
 impl fmt::Debug for PathConstraint<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -95,18 +89,15 @@ pub fn fresh_bool<'ctx>(ctx: &'ctx Context, id: String) -> Variable<'ctx> {
 /// `solve_constraints(ctx, vec![assume x, assert y, assume z] = x -> (y && z)`
 pub fn check_path<'ctx>(
     ctx: &'ctx Context,
-    path_constraints: &Vec<PathConstraint<'ctx>>,
-    check_for: CheckFor
+    path_constraints: &Vec<PathConstraint<'ctx>>
 ) -> Result<(), Error> {
     let mut constraints = Bool::from_bool(ctx, true);
 
     //reverse loop and combine constraints
     for constraint in path_constraints.iter().rev() {
-        match (check_for, constraint) {
-            (CheckFor::Feasibility, PathConstraint::Assert(c)) => constraints = Bool::and(&ctx, &[&c, &constraints]),
-            (CheckFor::Feasibility, PathConstraint::Assume(c)) => constraints = Bool::and(&ctx, &[&c, &constraints]),
-            (CheckFor::Validity, PathConstraint::Assert(c)) => constraints = Bool::and(&ctx, &[&c, &constraints]),
-            (CheckFor::Validity, PathConstraint::Assume(c)) => constraints = Bool::implies(&c, &constraints),
+        match constraint {
+            PathConstraint::Assert(c) => constraints = Bool::and(&ctx, &[&c, &constraints]),
+            PathConstraint::Assume(c) => constraints = Bool::implies(&c, &constraints),
         }
     }
 

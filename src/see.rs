@@ -6,7 +6,7 @@ use crate::cfg::{generate_cfg, generate_dot_cfg, Action, Node};
 use crate::shared::{get_methodcontent, Error, Scope};
 use crate::z3::{
     check_path, expression_to_bool, expression_to_int, fresh_bool, fresh_int, get_from_stack,
-    insert_into_stack, CheckFor, Frame, PathConstraint, Stack, Variable,
+    insert_into_stack,  Frame, PathConstraint, Stack, Variable,
 };
 
 lalrpop_mod!(pub parser);
@@ -141,14 +141,8 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<(), Error> {
                     },
                     // dismiss path if it's infeasible else continue
                     Statement::Assume(expr) => {
-                        if (check_path(&ctx, &pc, CheckFor::Feasibility).is_err()) {
-                            continue;
-                        }
-
-                        match expression_to_bool(&ctx, &envs, &expr) {
-                            Err(why) => return Err(why),
-                            Ok(ast) => pc.push(PathConstraint::Assume(ast)),
-                        }
+                        let ast = expression_to_bool(&ctx, &envs, &expr) ?;
+                        pc.push(PathConstraint::Assume(ast));
                     }
 
                     // return err if is invalid else continue
@@ -156,7 +150,7 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<(), Error> {
                         Err(why) => return Err(why),
                         Ok(ast) => {
                             pc.push(PathConstraint::Assert(ast));
-                            match check_path(&ctx, &pc, CheckFor::Validity) {
+                            match check_path(&ctx, &pc) {
                                 Err(why) => return Err(why),
                                 Ok(_) => (),
                             }

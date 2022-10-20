@@ -42,6 +42,7 @@ All tests are executed with `cargo test`, we have 2 types of tests:
 
 ## Todo's
 - [ ] stop searching if assume can't be validated
+- [ ] report paths searched and z3 invocations
 - [ ] objects representeren in de cfg
     - if we enter constructor we initialize fields, assign referenc of oject to 'this' and we assign 'this' to 'retval'
     - if we enter a method we assign reference of object to 'this'
