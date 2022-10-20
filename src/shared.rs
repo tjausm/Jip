@@ -27,8 +27,8 @@ pub struct Scope {
 
 
 
-pub fn insert_into_env<K: Eq + Hash, V>(env: &Vec<FxHashMap<K, V>>, key: K, value: V) -> () {
-    match env.last() {
+pub fn insert_into_env<K: Eq + Hash, V>(env: &mut Vec<FxHashMap<K, V>>, key: K, value: V) -> () {
+    match env.last_mut() {
         Some(env) => {
             env.insert(key, value);
         }
