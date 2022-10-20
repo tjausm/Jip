@@ -5,8 +5,8 @@ use crate::ast::*;
 use crate::cfg::{generate_cfg, generate_dot_cfg, Action, Node};
 use crate::shared::{get_methodcontent, Error, Scope};
 use crate::z3::{
-    expression_to_bool, expression_to_int, fresh_bool, fresh_int, get_from_stack,
-    insert_into_stack, solve_constraints, Frame, Stack, PathConstraint, Variable,
+    check_path, expression_to_bool, expression_to_int, fresh_bool, fresh_int, get_from_stack,
+    insert_into_stack, CheckFor, Frame, PathConstraint, Stack, Variable,
 };
 
 lalrpop_mod!(pub parser);
@@ -27,7 +27,7 @@ const PROG_CORRECT: &'static str = "Program is correct";
 pub enum ExitCode {
     Valid = 0,
     CounterExample = 1,
-    Error = 2
+    Error = 2,
 }
 
 /// Defines search depth for SEE
@@ -68,10 +68,10 @@ pub fn print_cfg(program: &str) -> (ExitCode, String) {
 }
 
 pub fn print_verification(program: &str, d: Depth) -> (ExitCode, String) {
-    return print_result(verify(program, d));
+    return print_result(verify_program(program, d));
 }
 
-fn verify(prog_string: &str, d: Depth) -> Result<(), Error> {
+fn verify_program(prog_string: &str, d: Depth) -> Result<(), Error> {
     // init retval such that it outlives env
     let retval_id = &"retval".to_string();
 
@@ -139,18 +139,28 @@ fn verify(prog_string: &str, d: Depth) -> Result<(), Error> {
                             )))
                         }
                     },
-                    //add assumes to path (TODO: when can we stop exploring a path?)
-                    //or print path in path printing mode
-                    Statement::Assume(expr) => match expression_to_bool(&ctx, &envs, &expr) {
-                        Err(why) => return Err(why),
-                        Ok(ast) => pc.push(PathConstraint::Assume(ast)),
-                    },
+                    // dismiss path if it's infeasible else continue
+                    Statement::Assume(expr) => {
+                        if (check_path(&ctx, &pc, CheckFor::Feasibility).is_err()) {
+                            continue;
+                        }
+
+                        match expression_to_bool(&ctx, &envs, &expr) {
+                            Err(why) => return Err(why),
+                            Ok(ast) => pc.push(PathConstraint::Assume(ast)),
+                        }
+                    }
+
+                    // return err if is invalid else continue
                     Statement::Assert(expr) => match expression_to_bool(&ctx, &envs, &expr) {
                         Err(why) => return Err(why),
-                        Ok(ast) => match solve_constraints(&ctx, &pc, &ast) {
-                            Err(why) => return Err(why),
-                            Ok(_) => pc.push(PathConstraint::Assert(ast)),
-                        },
+                        Ok(ast) => {
+                            pc.push(PathConstraint::Assert(ast));
+                            match check_path(&ctx, &pc, CheckFor::Validity) {
+                                Err(why) => return Err(why),
+                                Ok(_) => (),
+                            }
+                        }
                     },
                     Statement::Assignment((Lhs::Identifier(id), Rhs::Expression(expr))) => {
                         assign_expr(&ctx, &mut envs, &id, &expr)?;
@@ -229,7 +239,6 @@ fn verify(prog_string: &str, d: Depth) -> Result<(), Error> {
                             Some(env) if env.scope == *to_scope => envs.pop(),
                             _ => continue 'q_nodes,
                         };
-                        
 
                         // assign retval from previous scope if necessary
                         match retval {
@@ -255,7 +264,10 @@ fn assign_expr<'ctx>(
 ) -> Result<(), Error> {
     match get_from_stack(&env, id) {
         None => {
-            return Err(Error::Semantics(format!("Assignment {} := {:?} failed because variable {} is undeclared", id, expr, id)));
+            return Err(Error::Semantics(format!(
+                "Assignment {} := {:?} failed because variable {} is undeclared",
+                id, expr, id
+            )));
         }
         Some(Variable::Int(_)) => {
             let ast = expression_to_int(&ctx, &env, &expr)?;
@@ -265,10 +277,6 @@ fn assign_expr<'ctx>(
         Some(Variable::Bool(_)) => {
             let ast = expression_to_bool(&ctx, &env, &expr)?;
             insert_into_stack(env, &id, Variable::Bool(ast));
-        }
-
-        Some(Variable::Object(..)) => {
-            todo!("Assigning objects not yet implemented")
         }
     };
     return Ok(());

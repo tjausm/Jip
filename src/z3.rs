@@ -1,5 +1,5 @@
 //! Transforms a program path to a logical formula and test satisfiability using theorem prover Z3
-//! 
+//!
 
 extern crate z3;
 
@@ -14,21 +14,18 @@ use crate::ast::*;
 use crate::shared::{Error, Scope};
 pub type Identifier = String;
 
-
 #[derive(Debug, Clone)]
 pub enum Variable<'a> {
     Int(Int<'a>),
     Bool(Bool<'a>),
-    Object(HashMap<&'a Identifier, Variable<'a>>) // mapping field -> variable
 }
 
 /// Environment where each environment is annotated with the scope it belongs to
 #[derive(Debug, Clone)]
 pub struct Frame<'a> {
     pub scope: Scope,
-    pub env: HashMap<&'a Identifier, Variable<'a>>
-} 
-
+    pub env: HashMap<&'a Identifier, Variable<'a>>,
+}
 
 pub type Stack<'a> = Vec<Frame<'a>>;
 
@@ -36,6 +33,12 @@ pub type Stack<'a> = Vec<Frame<'a>>;
 pub enum PathConstraint<'a> {
     Assume(Bool<'a>),
     Assert(Bool<'a>),
+}
+
+#[derive(Clone, Copy)]
+pub enum CheckFor {
+    Feasibility,
+    Validity
 }
 
 impl fmt::Debug for PathConstraint<'_> {
@@ -56,10 +59,7 @@ pub fn insert_into_stack<'a>(env: &mut Stack<'a>, id: &'a Identifier, var: Varia
     };
 }
 
-pub fn get_from_stack<'a>(
-    env: &Stack<'a>,
-    id: &'a Identifier,
-) -> Option<Variable<'a>> {
+pub fn get_from_stack<'a>(env: &Stack<'a>, id: &'a Identifier) -> Option<Variable<'a>> {
     for s in env.iter().rev() {
         match s.env.get(&id) {
             Some(var) => return Some(var.clone()),
@@ -67,6 +67,21 @@ pub fn get_from_stack<'a>(
         }
     }
     return None;
+}
+
+/// casts identifier directly to dynamic z3 ast value from stack
+pub fn get_dyn_from_stack<'a>(stack: &Stack<'a>, id: &'a Identifier) -> Result<Dynamic<'a>, Error> {
+    let err = Error::Semantics(format!("Variable {} is undeclared", id));
+    match get_from_stack(stack, id).ok_or(err)? {
+        Variable::Int(i) => {
+            //klopt dit, moet ik niet de reference naar de variable in de env passen?
+            return Ok(Dynamic::from(i.clone()));
+        }
+        Variable::Bool(b) => {
+            //klopt dit, moet ik niet de reference naar de variable in de env passen?
+            return Ok(Dynamic::from(b.clone()));
+        }
+    }
 }
 
 pub fn fresh_int<'ctx>(ctx: &'ctx Context, id: String) -> Variable<'ctx> {
@@ -77,25 +92,22 @@ pub fn fresh_bool<'ctx>(ctx: &'ctx Context, id: String) -> Variable<'ctx> {
     return Variable::Bool(Bool::new_const(&ctx, id));
 }
 
-pub fn fresh_object<'ctx>(ctx: &'ctx Context, class: Class, id: String) -> Variable<'ctx> {
-    // TODO: initiate fields hier?
-    return Variable::Object(HashMap::new());
-}
-
 /// Combine the constraints in reversed order and check correctness
 /// `solve_constraints(ctx, vec![assume x, assert y, assume z] = x -> (y && z)`
-pub fn solve_constraints<'ctx>(
+pub fn check_path<'ctx>(
     ctx: &'ctx Context,
     path_constraints: &Vec<PathConstraint<'ctx>>,
-    formula: &Bool<'ctx>,
+    check_for: CheckFor
 ) -> Result<(), Error> {
-    let mut constraints = formula.clone();
+    let mut constraints = Bool::from_bool(ctx, true);
 
     //reverse loop and combine constraints
     for constraint in path_constraints.iter().rev() {
-        match constraint {
-            PathConstraint::Assert(c) => constraints = Bool::and(&ctx, &[&c, &constraints]),
-            PathConstraint::Assume(c) => constraints = Bool::implies(&c, &constraints),
+        match (check_for, constraint) {
+            (CheckFor::Feasibility, PathConstraint::Assert(c)) => constraints = Bool::and(&ctx, &[&c, &constraints]),
+            (CheckFor::Feasibility, PathConstraint::Assume(c)) => constraints = Bool::and(&ctx, &[&c, &constraints]),
+            (CheckFor::Validity, PathConstraint::Assert(c)) => constraints = Bool::and(&ctx, &[&c, &constraints]),
+            (CheckFor::Validity, PathConstraint::Assume(c)) => constraints = Bool::implies(&c, &constraints),
         }
     }
 
@@ -142,124 +154,124 @@ pub fn expression_to_bool<'ctx>(
 
 fn expression_to_dynamic<'ctx, 'b>(
     ctx: &'ctx Context,
-    env: Rc<&Stack<'ctx>>,
+    stack: Rc<&Stack<'ctx>>,
     expr: &'ctx Expression,
 ) -> Result<Dynamic<'ctx>, Error> {
     match expr {
+        Expression::Exists(id, expr) => {
+            let l = get_dyn_from_stack(&Rc::clone(&stack), id)?;
+            let r = expression_to_dynamic(ctx, stack, expr).and_then(as_bool_or_error)?;
+
+            return Ok(Dynamic::from(ast::exists_const(&ctx, &[&l], &[], &r)));
+        }
         Expression::And(l_expr, r_expr) => {
-            let l = expression_to_dynamic(ctx, Rc::clone(&env), l_expr).and_then(as_bool_or_error)?;
-            let r = expression_to_dynamic(ctx, env, r_expr).and_then(as_bool_or_error)?;
+            let l =
+                expression_to_dynamic(ctx, Rc::clone(&stack), l_expr).and_then(as_bool_or_error)?;
+            let r = expression_to_dynamic(ctx, stack, r_expr).and_then(as_bool_or_error)?;
 
             return Ok(Dynamic::from(Bool::and(ctx, &[&l, &r])));
         }
         Expression::Or(l_expr, r_expr) => {
-            let l = expression_to_dynamic(ctx, Rc::clone(&env), l_expr).and_then(as_bool_or_error)?;
-            let r = expression_to_dynamic(ctx, env, r_expr).and_then(as_bool_or_error)?;
+            let l =
+                expression_to_dynamic(ctx, Rc::clone(&stack), l_expr).and_then(as_bool_or_error)?;
+            let r = expression_to_dynamic(ctx, stack, r_expr).and_then(as_bool_or_error)?;
 
             return Ok(Dynamic::from(Bool::or(ctx, &[&l, &r])));
         }
         Expression::EQ(l_expr, r_expr) => {
-            let l = expression_to_dynamic(ctx, Rc::clone(&env), l_expr)?;
-            let r = expression_to_dynamic(ctx, env, r_expr)?;
+            let l = expression_to_dynamic(ctx, Rc::clone(&stack), l_expr)?;
+            let r = expression_to_dynamic(ctx, stack, r_expr)?;
 
             return Ok(Dynamic::from(l._eq(&r)));
         }
         Expression::NE(l_expr, r_expr) => {
-            let l = expression_to_dynamic(ctx, Rc::clone(&env), l_expr)?;
-            let r = expression_to_dynamic(ctx, env, r_expr)?;
+            let l = expression_to_dynamic(ctx, Rc::clone(&stack), l_expr)?;
+            let r = expression_to_dynamic(ctx, stack, r_expr)?;
 
             return Ok(Dynamic::from(l._eq(&r).not()));
         }
         Expression::LT(l_expr, r_expr) => {
-            let l = expression_to_dynamic(ctx, Rc::clone(&env), l_expr).and_then(as_int_or_error)?;
-            let r = expression_to_dynamic(ctx, env, r_expr).and_then(as_int_or_error)?;
+            let l =
+                expression_to_dynamic(ctx, Rc::clone(&stack), l_expr).and_then(as_int_or_error)?;
+            let r = expression_to_dynamic(ctx, stack, r_expr).and_then(as_int_or_error)?;
 
             return Ok(Dynamic::from(l.lt(&r)));
         }
         Expression::GT(l_expr, r_expr) => {
-            let l = expression_to_dynamic(ctx, Rc::clone(&env), l_expr).and_then(as_int_or_error)?;
-            let r = expression_to_dynamic(ctx, env, r_expr).and_then(as_int_or_error)?;
+            let l =
+                expression_to_dynamic(ctx, Rc::clone(&stack), l_expr).and_then(as_int_or_error)?;
+            let r = expression_to_dynamic(ctx, stack, r_expr).and_then(as_int_or_error)?;
 
             return Ok(Dynamic::from(l.gt(&r)));
         }
         Expression::GEQ(l_expr, r_expr) => {
-            let l = expression_to_dynamic(ctx, Rc::clone(&env), l_expr).and_then(as_int_or_error)?;
-            let r = expression_to_dynamic(ctx, env, r_expr).and_then(as_int_or_error)?;
+            let l =
+                expression_to_dynamic(ctx, Rc::clone(&stack), l_expr).and_then(as_int_or_error)?;
+            let r = expression_to_dynamic(ctx, stack, r_expr).and_then(as_int_or_error)?;
 
             return Ok(Dynamic::from(l.ge(&r)));
         }
         Expression::LEQ(l_expr, r_expr) => {
-            let l = expression_to_dynamic(ctx, Rc::clone(&env), l_expr).and_then(as_int_or_error)?;
-            let r = expression_to_dynamic(ctx, env, r_expr).and_then(as_int_or_error)?;
+            let l =
+                expression_to_dynamic(ctx, Rc::clone(&stack), l_expr).and_then(as_int_or_error)?;
+            let r = expression_to_dynamic(ctx, stack, r_expr).and_then(as_int_or_error)?;
 
             return Ok(Dynamic::from(l.le(&r)));
         }
         Expression::Plus(l_expr, r_expr) => {
-            let l = expression_to_dynamic(ctx, Rc::clone(&env), l_expr).and_then(as_int_or_error)?;
-            let r = expression_to_dynamic(ctx, env, r_expr).and_then(as_int_or_error)?;
+            let l =
+                expression_to_dynamic(ctx, Rc::clone(&stack), l_expr).and_then(as_int_or_error)?;
+            let r = expression_to_dynamic(ctx, stack, r_expr).and_then(as_int_or_error)?;
 
             return Ok(Dynamic::from(ast::Int::add(&ctx, &[&l, &r])));
         }
         Expression::Minus(l_expr, r_expr) => {
-            let l = expression_to_dynamic(ctx, Rc::clone(&env), l_expr).and_then(as_int_or_error)?;
-            let r = expression_to_dynamic(ctx, env, r_expr).and_then(as_int_or_error)?;
+            let l =
+                expression_to_dynamic(ctx, Rc::clone(&stack), l_expr).and_then(as_int_or_error)?;
+            let r = expression_to_dynamic(ctx, stack, r_expr).and_then(as_int_or_error)?;
 
             return Ok(Dynamic::from(ast::Int::sub(&ctx, &[&l, &r])));
         }
         Expression::Multiply(l_expr, r_expr) => {
-            let l = expression_to_dynamic(ctx, Rc::clone(&env), l_expr).and_then(as_int_or_error)?;
-            let r = expression_to_dynamic(ctx, env, r_expr).and_then(as_int_or_error)?;
+            let l =
+                expression_to_dynamic(ctx, Rc::clone(&stack), l_expr).and_then(as_int_or_error)?;
+            let r = expression_to_dynamic(ctx, stack, r_expr).and_then(as_int_or_error)?;
 
             return Ok(Dynamic::from(ast::Int::mul(&ctx, &[&l, &r])));
         }
         Expression::Divide(l_expr, r_expr) => {
-            let l = expression_to_dynamic(ctx, Rc::clone(&env), l_expr).and_then(as_int_or_error)?;
-            let r = expression_to_dynamic(ctx, env, r_expr).and_then(as_int_or_error)?;
+            let l =
+                expression_to_dynamic(ctx, Rc::clone(&stack), l_expr).and_then(as_int_or_error)?;
+            let r = expression_to_dynamic(ctx, stack, r_expr).and_then(as_int_or_error)?;
 
             return Ok(Dynamic::from(l.div(&r)));
         }
         Expression::Mod(l_expr, r_expr) => {
-            let l = expression_to_dynamic(ctx, Rc::clone(&env), l_expr).and_then(as_int_or_error)?;
-            let r = expression_to_dynamic(ctx, env, r_expr).and_then(as_int_or_error)?;
+            let l =
+                expression_to_dynamic(ctx, Rc::clone(&stack), l_expr).and_then(as_int_or_error)?;
+            let r = expression_to_dynamic(ctx, stack, r_expr).and_then(as_int_or_error)?;
 
             return Ok(Dynamic::from(l.modulo(&r)));
         }
         Expression::Negative(expr) => {
-            let e = expression_to_dynamic(ctx, Rc::clone(&env), expr).and_then(as_int_or_error)?;
+            let e =
+                expression_to_dynamic(ctx, Rc::clone(&stack), expr).and_then(as_int_or_error)?;
 
-            return Ok(Dynamic::from(e.unary_minus()))
+            return Ok(Dynamic::from(e.unary_minus()));
         }
         Expression::Not(expr) => {
-            let expr = expression_to_dynamic(ctx, env, expr).and_then(as_bool_or_error)?;
+            let expr = expression_to_dynamic(ctx, stack, expr).and_then(as_bool_or_error)?;
 
             return Ok(Dynamic::from(expr.not()));
         }
-
-        Expression::Identifier(id) => match get_from_stack(&env, id) {
-            Some(var) => match var {
-                Variable::Int(i) => {
-                    //klopt dit, moet ik niet de reference naar de variable in de env passen?
-                    return Ok(Dynamic::from(i.clone()));
-                }
-                Variable::Bool(b) => {
-                    //klopt dit, moet ik niet de reference naar de variable in de env passen?
-                    return Ok(Dynamic::from(b.clone()));
-                }
-                _ => todo!("Variable type not implemented")
-            },
-            None => {
-                return Err(Error::Semantics(format!("Variable {} is undeclared", id)));
-            }
-        },
-        Expression::Literal(Literal::Integer(n)) => {
-            return Ok(Dynamic::from(ast::Int::from_i64(ctx, *n)))
-        }
+        Expression::Identifier(id) => get_dyn_from_stack(&stack, id),
+        Expression::Literal(Literal::Integer(n)) => Ok(Dynamic::from(ast::Int::from_i64(ctx, *n))),
         Expression::Literal(Literal::Boolean(b)) => {
-            return Ok(Dynamic::from(ast::Bool::from_bool(ctx, *b)))
+            Ok(Dynamic::from(ast::Bool::from_bool(ctx, *b)))
         }
         otherwise => {
             return Err(Error::Semantics(format!(
-                "Expressions of the form {:?} are not valid",
+                "Expressions of the form {:?} are not parseable to a z3 ast",
                 otherwise
             )));
         }
@@ -284,7 +296,7 @@ fn as_int_or_error<'ctx>(d: Dynamic<'ctx>) -> Result<Int<'ctx>, Error> {
 mod tests {
 
     use super::*;
-    use z3::Config;
+    use z3::{Config, FuncDecl};
 
     #[test]
     fn test_solving() {
@@ -308,5 +320,27 @@ mod tests {
         let x_plus_z = ast::Real::add(&ctx, &[&x, &z]);
         let substitutions = &[(&y, &z)];
         assert!(x_plus_y.substitute(substitutions) == x_plus_z);
+    }
+    #[test]
+    fn exist_example() {
+        let cfg = Config::new();
+        let ctx = Context::new(&cfg);
+        let solver = Solver::new(&ctx);
+
+        let x = ast::Int::new_const(&ctx, "x");
+        let one = ast::Int::from_i64(&ctx, 1);
+
+        let exists: ast::Bool = ast::exists_const(
+            &ctx,
+            &[&x],
+            &[],
+            &x._eq(&one), // hier gaat expression in
+        )
+        .try_into()
+        .unwrap();
+
+        println!("{:?}", exists);
+
+        solver.assert(&exists.not());
     }
 }

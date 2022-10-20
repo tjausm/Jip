@@ -1,25 +1,44 @@
+// The contrived program below checks if $x$ is divisible by N.
+// Do note that in your cases N is a constant, which is at least 2.
+
+// N is an experiment parameter; replace it with a concrete value in [2..10].
+// Below I will use maximum N, namely 10.
 
 class Main {
-    static void main(){
-        int x;
-        int k;
-        bool divisible;
 
-        assume x > 1;
-        divisible := false;
-        while (k <= x && !divisible) {
-            int i;
-            while (i < 20) i := i + 1;
-            divisible := (i * k == x);
-        }
-        k := k + 1;
-
-        int m;
-        if (divisible)
-        assert exists m : 0 < m && m <= x && m * 20 == x;
-        else
-        assert exists m : !(0 < m && m <= x && m * 20 == x);
+    static void main(int x) {
+      // N is an experiment parameter, setting it to max. 10:
+      int N := 5 ;
+      assume x>1 ;
+      int k := 1 ;
+      bool divisible := false ;
+      while (k<=x && !divisible) {
+        //assert divisible
+        //       =
+        //       (exists m:: 0<m && m<k && m*N = x)  ;
+        int i := 0 ;
+        while (i<N) // deliberate bug ... should i<N. Change: removing the bug.
+           i := i+1 ;
+           // so, now i == N
+        divisible := i*k == x ;   // in other words, d := (N*k = x)
+        k := k+1 ;
+      }
+      //original:
+      // assert divisible = (exists m:: 0<m && m<=x && m*N = x)
+      // but we don't have such a quantifier in oox, so let's
+      // write it as a function
+      bool check := Main.check(1, x, N);
+      assert divisible == check ;
     }
+
+    static bool check(int m, int x, int N){
+      while (m <= x) {
+         if (m*N == x) {
+            return true;
+         } else ;
+         m := m+1 ;
+      }
+      return false;
+    }
+
 }
-
-

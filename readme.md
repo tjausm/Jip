@@ -23,7 +23,7 @@ All tests are executed with `cargo test`, we have 2 types of tests:
 - Does require translate to assume and ensure to assert?
 
 ## Todo's
-- [ ] generate benchmark flag
+- [ ] stop searching if assume can't be validated
 - [ ] objects representeren in de cfg
     - if we enter constructor we initialize fields, assign referenc of oject to 'this' and we assign 'this' to 'retval'
     - if we enter a method we assign reference of object to 'this'
