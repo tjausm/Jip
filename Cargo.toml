@@ -18,6 +18,7 @@ z3 = {version="0.11.2", features = ["static-link-z3"]}
 clap = { version = "3.1.18", features = ["derive"] }
 assert_cmd = "2.0.4" #integration testing through cmd line
 non-empty-vec = "0.2.3" #to represent non-empty structures in syntax 
+rustc-hash = "1.1.0" #more efficient hashmap/hashset
 
 [dependencies.uuid]
 version = "1.2.1"
@@ -26,3 +27,8 @@ features = [
     "fast-rng",          # Use a faster (but still sufficiently random) RNG
     "macro-diagnostics", # Enable better diagnostics for compile-time UUIDs
 ]
+
+[profile.release]
+lto = true
+codegen-units = 1 # this is a heuristic
+panic = "abort" # not tested since performance increase is small

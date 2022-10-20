@@ -7,6 +7,24 @@
 ### Profiler (windows)
 1. install [wsl](https://learn.microsoft.com/en-us/windows/wsl/install)
 
+**todo**
+
+make seperate builds with following flags:
+[profile.release]
+lto = true
+codegen-units = 1 # this is a heuristic
+panic = "abort" # can improve program slightly
+
+Build for native cpu
+RUSTFLAGS="-C target-cpu=native" cargo build --release
+
+move to fast hashing (library)[https://nnethercote.github.io/perf-book/hashing.html]
+
+use clippy linter
+
+future:
+profile guided optimalisation (https://doc.rust-lang.org/rustc/profile-guided-optimization.html)
+
 ## Testing
 All tests are executed with `cargo test`, we have 2 types of tests:
 

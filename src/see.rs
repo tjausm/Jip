@@ -17,7 +17,7 @@ use petgraph::visit::EdgeRef;
 use uuid::Uuid;
 use z3::{Config, Context};
 
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 use std::collections::VecDeque;
 use std::fs;
 
@@ -89,7 +89,7 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<(), Error> {
             class: "Main".to_string(),
             method: "main".to_string(),
         },
-        env: HashMap::new(),
+        env: FxHashMap::default(),
     };
     q.push_back((vec![main.clone()], vec![], d, start_node));
 
@@ -208,7 +208,7 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<(), Error> {
 
                         envs.push(Frame {
                             scope: scope.clone(),
-                            env: HashMap::new(),
+                            env: FxHashMap::default(),
                         });
 
                         // declare retval with correct type in new scope

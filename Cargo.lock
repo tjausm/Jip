@@ -363,6 +363,7 @@ dependencies = [
  "non-empty-vec",
  "petgraph",
  "regex",
+ "rustc-hash",
  "uuid",
  "z3",
 ]

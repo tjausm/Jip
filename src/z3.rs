@@ -5,8 +5,7 @@ extern crate z3;
 
 use z3::ast::{Ast, Bool, Dynamic, Int};
 use z3::{ast, Context, SatResult, Solver};
-
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 use std::fmt;
 use std::rc::Rc;
 
@@ -17,15 +16,15 @@ pub type Identifier = String;
 #[derive(Debug, Clone)]
 pub enum Variable<'a> {
     Int(Int<'a>),
-    Bool(Bool<'a>),
+    Bool(Bool<'a>)
 }
 
 /// Environment where each environment is annotated with the scope it belongs to
 #[derive(Debug, Clone)]
 pub struct Frame<'a> {
     pub scope: Scope,
-    pub env: HashMap<&'a Identifier, Variable<'a>>,
-}
+    pub env: FxHashMap<&'a Identifier, Variable<'a>>
+} 
 
 pub type Stack<'a> = Vec<Frame<'a>>;
 
