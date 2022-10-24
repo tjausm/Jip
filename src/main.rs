@@ -41,16 +41,20 @@ enum Mode {
         /// Up to which depth program is evaluated
         #[clap(default_value_t = 40)]
         depth: see::Depth,
+        /// Report diagnostic information after succesful program verification
+        #[clap(short, long)]
+        verbose: bool,
     },
     /// Print cfg in Dot format
     PrintCFG,
-    /// Measure time to verify a program for a given range of depths
+    /// Measure time to verify a program. 
     Bench {
-        /// Lowest depth
+        /// Given start depth s we measure verification time for depth s
         start: see::Depth,
-        /// Highest depth
-        end: see::Depth,
-        /// Interval between depths
+        /// Gven end depth e we measure verification time for each depth between s and e with intervals of 5
+        end: Option<see::Depth>,
+        /// Given interval i we measure verification time for each depth between s and e with intervals of i
+        #[clap(default_value_t = 5)]
         interval: see::Depth,
         
     }
@@ -81,7 +85,7 @@ fn main() {
     // if program loaded execute function corresponding to cmd and exit with the result
     match cli.mode {
         Mode::PrintCFG => exit(see::print_cfg(&program)),
-        Mode::Verify {depth} => exit(see::print_verification(&program, depth)),
+        Mode::Verify {depth, verbose} => exit(see::print_verification(&program, depth, verbose)),
         Mode::Bench {start, end, interval} => exit(bench::bench(&program, start, end, interval)),
     };
 }
