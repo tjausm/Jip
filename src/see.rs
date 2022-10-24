@@ -3,10 +3,10 @@
 
 use crate::ast::*;
 use crate::cfg::{generate_cfg, generate_dot_cfg, Action, Node};
-use crate::shared::{get_methodcontent, Error, Scope};
+use crate::shared::{Error, Scope};
 use crate::z3::{
     check_path, expression_to_bool, expression_to_int, fresh_bool, fresh_int, get_from_stack,
-    insert_into_stack,  Frame, PathConstraint, Stack, Variable,
+    insert_into_stack, Frame, PathConstraint, Stack, Variable,
 };
 
 lalrpop_mod!(pub parser);
@@ -33,7 +33,13 @@ pub enum ExitCode {
 /// Defines search depth for SEE
 pub type Depth = i32;
 
-fn print_result(r: Result<(), Error>) -> (ExitCode, String) {
+#[derive(Clone)]
+struct Diagnostics {
+    paths: i32,
+    z3Invocations: i32,
+}
+
+fn print_result(r: Result<Diagnostics, Error>) -> (ExitCode, String) {
     match r {
         Err(Error::Syntax(why)) => (ExitCode::Error, format!("Syntax error: {}", why)),
         Err(Error::Semantics(why)) => (ExitCode::Error, format!("Semantics error: {}", why)),
@@ -67,11 +73,33 @@ pub fn print_cfg(program: &str) -> (ExitCode, String) {
     }
 }
 
-pub fn print_verification(program: &str, d: Depth) -> (ExitCode, String) {
-    return print_result(verify_program(program, d));
+pub fn print_verification(program: &str, d: Depth, verbose: bool) -> (ExitCode, String) {
+    let print_diagnostics = |d: Result<Diagnostics, _>| match d {
+        Ok(Diagnostics {
+            paths,
+            z3Invocations,
+        }) => format!(
+            "\nPaths checked    {}\nZ3 invocations   {}",
+            paths, z3Invocations
+        ),
+        _ => "".to_string(),
+    };
+    let result = verify_program(program, d);
+    let (ec, r) = print_result(result.clone());
+
+    if (verbose) {
+        return (ec, format!("{}{}", r, print_diagnostics(result)));
+    }
+    return (ec, r);
 }
 
-fn verify_program(prog_string: &str, d: Depth) -> Result<(), Error> {
+fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
+    //init diagnostic info
+    let mut diagnostics = Diagnostics {
+        paths: 0,
+        z3Invocations: 0,
+    };
+
     // init retval such that it outlives env
     let retval_id = &"retval".to_string();
 
@@ -85,7 +113,7 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<(), Error> {
     let mut q: VecDeque<(Stack, Vec<PathConstraint>, Depth, NodeIndex)> = VecDeque::new();
     let main = Frame {
         scope: Scope {
-            id: Some(Uuid::new_v4()),
+            id: None,
             class: "Main".to_string(),
             method: "main".to_string(),
         },
@@ -139,9 +167,8 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<(), Error> {
                             )))
                         }
                     },
-                    // dismiss path if it's infeasible else continue
                     Statement::Assume(expr) => {
-                        let ast = expression_to_bool(&ctx, &envs, &expr) ?;
+                        let ast = expression_to_bool(&ctx, &envs, &expr)?;
                         pc.push(PathConstraint::Assume(ast));
                     }
 
@@ -149,6 +176,8 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<(), Error> {
                     Statement::Assert(expr) => match expression_to_bool(&ctx, &envs, &expr) {
                         Err(why) => return Err(why),
                         Ok(ast) => {
+                            diagnostics.z3Invocations = diagnostics.z3Invocations + 1;
+
                             pc.push(PathConstraint::Assert(ast));
                             match check_path(&ctx, &pc) {
                                 Err(why) => return Err(why),
@@ -174,79 +203,76 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<(), Error> {
                     _ => (),
                 }
             }
+            Node::End => diagnostics.paths = diagnostics.paths + 1,
             _ => (),
         }
 
         'q_nodes: for edge in cfg.edges(curr_node) {
             // clone new env to perform actions on
-            let mut envs = envs.clone();
+            let mut stack = envs.clone();
 
             // perform all actions in an edge and enque the result
             for action in edge.weight() {
                 match action {
-                    Action::EnterScope {
-                        to: scope,
-                        params,
-                        args,
-                    } => {
-                        let (ty, _, params, _) =
-                            get_methodcontent(&prog, &scope.class, &scope.method)?;
-                        let variables = params_to_vars(
-                            &ctx,
-                            &mut envs,
-                            &params,
-                            &args,
-                            &scope.class,
-                            &scope.method,
-                        )?;
-
-                        envs.push(Frame {
-                            scope: scope.clone(),
-                            env: FxHashMap::default(),
-                        });
-
+                    Action::EnterScope { to: scope } => stack.push(Frame {
+                        scope: scope.clone(),
+                        env: FxHashMap::default(),
+                    }),
+                    Action::DeclareRetval { ty } => {
                         // declare retval with correct type in new scope
                         match ty {
                             Type::Int => insert_into_stack(
-                                &mut envs,
+                                &mut stack,
                                 retval_id,
                                 fresh_int(&ctx, "retval".to_string()),
                             ),
                             Type::Bool => insert_into_stack(
-                                &mut envs,
+                                &mut stack,
                                 retval_id,
                                 fresh_bool(&ctx, "retval".to_string()),
                             ),
                             _ => (),
                         }
+                    }
+                    Action::AssignArgs { params, args } => {
+                        let variables = params_to_vars(&ctx, &mut stack, params, &args)?;
 
                         for (id, var) in variables {
-                            insert_into_stack(&mut envs, id, var);
+                            insert_into_stack(&mut stack, id, var);
                         }
                     }
-                    Action::LeaveScope { from: to_scope } => {
+                    Action::DeclareThis { object_id: object } => {
+                        todo!("Enter previous scope, retreive this_object and assign to this")
+                    }
+                    Action::InitObj { class, id } => {
+                        todo!("Init new object")
+                    }
+                    Action::LiftRetval => {
                         // get retval from scope before we leave it
-                        let retval = get_from_stack(&envs, retval_id);
-
-                        // if we can leave over this edge pop scope otherwise dismiss path pe
-                        match envs.last() {
-                            Some(env) if env.scope == *to_scope => envs.pop(),
-                            _ => continue 'q_nodes,
-                        };
-
+                        let retval = get_from_stack(&stack, retval_id);
                         // assign retval from previous scope if necessary
                         match retval {
-                            Some(retval) => insert_into_stack(&mut envs, retval_id, retval),
+                            Some(retval) => {
+                                let higher_frame = stack.len() - 2;
+                                match stack.get_mut(higher_frame) {
+                                    Some(frame) => {frame.env.insert(retval_id, retval);},
+                                    None => {return Err(Error::Semantics("Can't return from main scope".to_owned()));}
+                                }},
                             None => (),
                         };
                     }
+                    // if we can leave over this edge pop scope otherwise dismiss path pe
+                    Action::LeaveScope { from: to_scope } => match stack.last() {
+                        Some(env) if env.scope == *to_scope => {stack.pop();},
+                        _ => continue 'q_nodes,
+                    },
                 }
             }
             let next = edge.target();
-            q.push_back((envs, pc.clone(), d - 1, next));
+            q.push_back((stack, pc.clone(), d - 1, next));
         }
     }
-    return Ok(());
+    return Ok(diagnostics);
 }
 
 /// Assigns an expression to an identifier in the passed environment
@@ -282,8 +308,6 @@ fn params_to_vars<'ctx>(
     env: &mut Stack<'ctx>,
     params: &'ctx Parameters,
     args: &'ctx Arguments,
-    class: &String,
-    method: &String,
 ) -> Result<Vec<(&'ctx String, Variable<'ctx>)>, Error> {
     let mut params_iter = params.iter();
     let mut args_iter = args.iter();
@@ -305,16 +329,16 @@ fn params_to_vars<'ctx>(
                     ty
                 )))
             }
-            (Some(_), None) => {
+            (Some((_, param)), None) => {
                 return Err(Error::Semantics(format!(
-                    "One or more arguments are missing in a call of method {}.{}",
-                    class, method
+                    "Missing an argument for parameter {:?} in a method call",
+                    param
                 )))
             }
-            (None, Some(_)) => {
+            (None, Some(expr)) => {
                 return Err(Error::Semantics(format!(
-                    "One or more arguments too much in a call of method {}.{}",
-                    class, method
+                    "Expression {:?} has no parameter it can be assigned to in a method call",
+                    expr
                 )))
             }
             (None, None) => break,

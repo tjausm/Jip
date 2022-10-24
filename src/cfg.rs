@@ -5,40 +5,51 @@ lalrpop_mod!(pub parser); // synthesized by LALRPOP
 
 use crate::ast::*;
 use crate::shared::{
-    get_class, get_from_env, get_method, get_methodcontent, insert_into_env, Error, Scope,
+    get_class, get_from_env, get_method, get_methodcontent, insert_into_env, Error, Scope, print_short_id,
 };
 use petgraph::dot::Dot;
 use petgraph::graph::{Graph, NodeIndex};
-use std::collections::VecDeque;
 use rustc_hash::FxHashMap;
+use std::collections::VecDeque;
 use std::fmt;
 use uuid::Uuid;
 
 pub enum Node {
     EnteringMain(Parameters),
     Statement(Statement),
-    /// objectname, methodname and list of expressions we assign to parameters
-    EnterMethod((Identifier, Identifier)),
-    /// objectname, methodname and variable name we assign retval to
-    LeaveMethod((Identifier, Identifier)),
     /// classname, methodname and list of expressions we assign to parameters
-    EnterStaticMethod((Identifier, Identifier)),
+    EnterMethod((Identifier, Identifier)),
     /// classname, methodname and variable name we assign retval to
-    LeaveStaticMethod((Identifier, Identifier)),
+    LeaveMethod((Identifier, Identifier)),
     End,
 }
 
 /// describes the actions we have to perform upon traversing edge
 #[derive(Clone)]
 pub enum Action {
-    /// methodname, list op parameters & arguments that function which we are entering
     EnterScope {
         to: Scope,
-        params: Vec<Identifier>,
+    },
+    // declare retval with correct type in current scope
+    DeclareRetval {
+        ty: Type
+    },
+    AssignArgs {
+        params: Parameters,
         args: Vec<Expression>,
     },
-    /// classname & methodname of the scope we are leaving to
-    LeaveScope { from: Scope },
+    // assign reference in 'object' to this
+    DeclareThis {object_id: Identifier},
+    /// Initialise object of this class on heap and add reference of object to stack
+    InitObj {
+        class: Identifier,
+        id: Identifier
+    },
+    /// lifts value of retval 1 scope higher
+    LiftRetval,
+    LeaveScope {
+        from: Scope,
+    },
 }
 
 type Edge = Vec<Action>;
@@ -51,6 +62,7 @@ type TypeEnv = Vec<FxHashMap<Identifier, Class>>;
 /// Map tuple (class, method) to a tuple of start- and end-node for the subgraph of the method
 type FunEnv = FxHashMap<(Identifier, Identifier), (NodeIndex, NodeIndex)>;
 
+/// Given a generated subgraph, this struct denotes the last node & which edge comes from it should we want to extend it
 #[derive(Clone)]
 struct Start {
     node: NodeIndex,
@@ -260,16 +272,7 @@ fn stmts_to_cfg<'a>(
 
             // generate
             Statement::Call(inv) => {
-                let (f_end_node, fun_scope) =
-                    invocation_to_cfg(inv, ty_env, f_env, prog, cfg, starts)?;
-
-                // annotate function ending with the leave to curr_scop action
-                let an_f_end = Start {
-                    node: f_end_node,
-                    edge: vec![Action::LeaveScope {
-                        from: fun_scope.clone(),
-                    }],
-                };
+                let f_end = invocation_to_cfg(inv, ty_env, f_env, prog, cfg, starts)?;
 
                 return stmts_to_cfg(
                     ty_env,
@@ -277,28 +280,21 @@ fn stmts_to_cfg<'a>(
                     prog,
                     stmts,
                     cfg,
-                    vec![an_f_end],
+                    vec![f_end],
                     curr_scope,
                     scope_end,
                 );
             }
 
             Statement::Assignment((lhs, Rhs::Invocation(inv))) => {
-                let (f_end_node, fun_scope) =
-                    invocation_to_cfg(inv, ty_env, f_env, prog, cfg, starts)?;
+                let f_end = invocation_to_cfg(inv, ty_env, f_env, prog, cfg, starts)?;
 
                 let assign_retval = cfg.add_node(Node::Statement(Statement::Assignment((
                     lhs,
                     Rhs::Expression(Expression::Identifier("retval".to_string())),
                 ))));
 
-                cfg.add_edge(
-                    f_end_node,
-                    assign_retval,
-                    vec![Action::LeaveScope {
-                        from: fun_scope.clone(),
-                    }],
-                );
+                cfg.add_edge(f_end.node, assign_retval, f_end.edge);
 
                 return stmts_to_cfg(
                     ty_env,
@@ -311,16 +307,12 @@ fn stmts_to_cfg<'a>(
                     scope_end,
                 );
             }
-
-            // replace assignment by this and prepend constructor call
-            Statement::Assignment((lhs, Rhs::Newobject(class, arguments))) => {
-                let constructor = get_constructor(prog, &class)?;
-                // stmts.push_front(Statement::Call((class, consName, )));
-
-                return stmts_to_cfg(
-                    ty_env, f_env, prog, stmts, cfg, starts, curr_scope, scope_end,
-                );
-            }
+            // Statement::Assignment((lhs, Rhs::Newobject(id, args))) => {
+            //     todo!(
+            //         "initObj and make the lefthandside a reference
+            //            add retval := this assignment upon leaving invocatio"
+            //     );
+            // }
 
             // for 'return x' we assign 'retval := x', add edge to scope_end and stop recursing
             Statement::Return(expr) => {
@@ -339,7 +331,7 @@ fn stmts_to_cfg<'a>(
                         )))
                     }
                 }
-                return Ok((vec![]));
+                return Ok(vec![]);
             }
             // split declareassign by prepending a declaration and assignment
             Statement::DeclareAssign((t, id, rhs)) => {
@@ -386,48 +378,56 @@ fn stmts_to_cfg<'a>(
     }
 }
 
-/// because both assigning invocation and just calling are almost the same we generalize using invocation_to_cfg()
-/// remember to
+/// function generalizes over static, non-static calls/invocations and constructor calls
+/// 
 fn invocation_to_cfg<'a>(
-    (class_or_obj, method, args): Invocation,
+    (class_or_obj, method, args) : Invocation,
     ty_env: &mut TypeEnv,
     f_env: &mut FunEnv,
     prog: &Program,
     cfg: &mut CFG,
     starts: Vec<Start>,
-) -> Result<(NodeIndex, Scope), Error> {
+) -> Result<Start, Error> {
     let class = get_class_name(ty_env, class_or_obj.clone());
 
     // collect information for the actions on the cfg edge
     let params = get_params(prog, &class, &method)?;
+    
     let fun_scope = Scope {
         id: Some(Uuid::new_v4()),
         class: class.clone(),
         method: method.clone(),
     };
-    let enter_scope = Action::EnterScope {
-        to: fun_scope.clone(),
+    let assign_args = Action::AssignArgs {
         params: params.clone(),
         args: args.clone(),
+    };
+    let enter_scope = Action::EnterScope {
+        to: fun_scope.clone(),
     };
 
     // create subgraph for function if it does not exist yet
     let (f_start_node, f_end_node) =
-        fun_to_cfg(&class, &method, ty_env, f_env, prog, cfg, &fun_scope)?;
+        method_to_cfg(&class, &method, ty_env, f_env, prog, cfg, &fun_scope)?;
 
     for start in starts {
         cfg.add_edge(
             start.node,
             f_start_node,
-            [vec![enter_scope.clone()], start.edge].concat(),
+            [vec![assign_args.clone(), enter_scope.clone()], start.edge].concat(),
         );
     }
 
-    return Ok((f_end_node, fun_scope));
+    return Ok(Start {
+        node: f_end_node,
+        edge: vec![Action::LeaveScope {
+            from: fun_scope.clone(),
+        }],
+    });
 }
 
-// if subgraph of function exists return, otherwise create & return
-fn fun_to_cfg<'a>(
+// returns (or builds) subgraph of a method/constructor
+fn method_to_cfg<'a>(
     class: &String,
     method: &String,
     ty_env: &mut TypeEnv,
@@ -443,11 +443,12 @@ fn fun_to_cfg<'a>(
     }
 
     // Check whether method exists and get body
+    // if constructor get_constructorbody
     let (_, _, _, body) = get_methodcontent(prog, &class, &method)?;
 
-    let enter_function = cfg.add_node(Node::EnterStaticMethod((class.clone(), method.clone())));
+    let enter_function = cfg.add_node(Node::EnterMethod((class.clone(), method.clone())));
 
-    let leave_function = cfg.add_node(Node::LeaveStaticMethod((class.clone(), method.clone())));
+    let leave_function = cfg.add_node(Node::LeaveMethod((class.clone(), method.clone())));
 
     //update environments
     ty_env.push(FxHashMap::default());
@@ -481,11 +482,11 @@ fn get_params<'a>(
     prog: &'a Program,
     class_name: &str,
     method_name: &str,
-) -> Result<Vec<Identifier>, Error> {
-    let params: Vec<Identifier> = get_methodcontent(prog, &class_name, &method_name)?
+) -> Result<Parameters, Error> {
+    let params: Parameters = get_methodcontent(prog, &class_name, &method_name)?
         .2
         .iter()
-        .map(|e| e.1.clone())
+        .map(|(t,i)| (t.clone(), i.clone()))
         .collect();
     return Ok(params);
 }
@@ -512,13 +513,13 @@ impl fmt::Debug for Node {
             Node::LeaveMethod((object, method)) => {
                 write!(f, "Leaving {}.{}", object, method)
             }
-            Node::EnterStaticMethod((class, method)) => {
+            Node::EnterMethod((class, method)) => {
                 write!(f, "Entering static {}.{}", class, method)
             }
-            Node::LeaveStaticMethod((class, method)) => {
+            Node::LeaveMethod((class, method)) => {
                 write!(f, "Leaving {}.{}", class, method)
             }
-            Node::LeaveStaticMethod((class, method)) => {
+            Node::LeaveMethod((class, method)) => {
                 write!(f, "Leaving {}.{}", class, method)
             }
             Node::End => {
@@ -533,21 +534,25 @@ impl fmt::Debug for Action {
         match self {
             Action::EnterScope {
                 to: scope,
-                params,
-                args,
             } => {
+                write!(f, "Entering scope {}", print_short_id(scope))
+            }
+            Action::AssignArgs { params, args } => {
                 let ap_str = params
                     .iter()
                     .zip(args.iter())
-                    .map(|(arg, param)| format!("{} = {:?}", arg, param))
+                    .map(|((_, arg), param)| format!("{} = {:?}", arg, param))
                     .collect::<Vec<String>>()
                     .join(", ");
-                write!(f, "Entering {}({}) {:?}\n", scope.method, ap_str, scope.id)
+                write!(f, "Assigning {}", ap_str)
             }
             Action::LeaveScope { from } => {
-                write!(f, "Leaving {}{:?}\n", from.method, from.id)
+                write!(f, "Leaving scope {}", print_short_id(from))
             }
-            _ => write!(f, ""),
+            Action::DeclareThis { object_id: this_object } => write!(f, "Entering non-static method"),
+            Action::InitObj { class, id } => write!(f, "Init {} {} on heap", class, id),
+           Action::LiftRetval  => write!(f, "Lifting retval"),
+           Action::DeclareRetval { ty } => write!(f, "Declaring '{:?} retval'", ty),
         }
     }
 }

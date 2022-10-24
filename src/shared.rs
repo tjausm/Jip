@@ -9,7 +9,7 @@ use std::fmt::Display;
 use std::hash::Hash;
 use uuid::Uuid;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Error {
     Syntax(String),
     Semantics(String),
@@ -25,6 +25,18 @@ pub struct Scope {
     pub method: Identifier
 }
 
+/// print the first 4 symbols of a scope id
+pub fn print_short_id(scope: &Scope) -> String {
+    let id = scope.id.map(|id| format!("{:?}", id));
+    match id{
+        None => "".to_owned(),
+        Some(id) => {
+            let (short_id, _) = id.split_at(4);
+            short_id.to_owned()
+        } 
+    }
+
+}
 
 
 pub fn insert_into_env<K: Eq + Hash, V>(env: &mut Vec<FxHashMap<K, V>>, key: K, value: V) -> () {
