@@ -41,12 +41,13 @@ All tests are executed with `cargo test`, we have 2 types of tests:
 - Does require translate to assume and ensure to assert?
 
 ## Todo's
-- [ ] stop searching if assume can't be validated
-- [ ] report paths searched and z3 invocations
+- [ ] put entering main on edge
+- [ ] explain for the cfg mod what you do per type of node: while we split (show picture), with routine we generalize over methods & constructors, show action table etc etc
 - [ ] objects representeren in de cfg
     - if we enter constructor we initialize fields, assign referenc of oject to 'this' and we assign 'this' to 'retval'
     - if we enter a method we assign reference of object to 'this'
 - [ ] add require and ensure
+- [ ] clean up shared mod
 
 - [ ] add profiling als program is veel langzamer dan die van stefan
 - [ ] object accesing vanaf de heap e.g.

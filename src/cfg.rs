@@ -5,7 +5,8 @@ lalrpop_mod!(pub parser); // synthesized by LALRPOP
 
 use crate::ast::*;
 use crate::shared::{
-    get_class, get_from_env, get_method, get_methodcontent, insert_into_env, Error, Scope, print_short_id,
+    get_class, get_class_name, get_from_env, get_routine_content, get_static_method,
+    insert_into_env, is_static, print_short_id, Error, Routine, Scope, TypeEnv,
 };
 use petgraph::dot::Dot;
 use petgraph::graph::{Graph, NodeIndex};
@@ -18,9 +19,9 @@ pub enum Node {
     EnteringMain(Parameters),
     Statement(Statement),
     /// classname, methodname and list of expressions we assign to parameters
-    EnterMethod((Identifier, Identifier)),
+    EnterRoutine(Routine),
     /// classname, methodname and variable name we assign retval to
-    LeaveMethod((Identifier, Identifier)),
+    LeaveRoutine(Routine),
     End,
 }
 
@@ -32,18 +33,20 @@ pub enum Action {
     },
     // declare retval with correct type in current scope
     DeclareRetval {
-        ty: Type
+        ty: Type,
     },
     AssignArgs {
         params: Parameters,
         args: Vec<Expression>,
     },
     // assign reference in 'object' to this
-    DeclareThis {object_id: Identifier},
+    DeclareThis {
+        object_id: Identifier,
+    },
     /// Initialise object of this class on heap and add reference of object to stack
     InitObj {
         class: Identifier,
-        id: Identifier
+        id: Identifier,
     },
     /// lifts value of retval 1 scope higher
     LiftRetval,
@@ -56,11 +59,8 @@ type Edge = Vec<Action>;
 
 pub type CFG = Graph<Node, Edge>;
 
-/// Map identifier to clas, to know where to find invoked functions e.g. c.increment() can only be performed if we know where to find the increment function
-type TypeEnv = Vec<FxHashMap<Identifier, Class>>;
-
-/// Map tuple (class, method) to a tuple of start- and end-node for the subgraph of the method
-type FunEnv = FxHashMap<(Identifier, Identifier), (NodeIndex, NodeIndex)>;
+/// Maps the collection type routine (covering all methods & constructors) to a tuple of start- and endnode for the subgraph of that routine
+type FunEnv = FxHashMap<Routine, (NodeIndex, NodeIndex)>;
 
 /// Given a generated subgraph, this struct denotes the last node & which edge comes from it should we want to extend it
 #[derive(Clone)]
@@ -89,10 +89,10 @@ pub fn generate_dot_cfg(program: Program) -> Result<String, Error> {
 /// Returns cfg, and the start_node representing entry point of the program
 pub fn generate_cfg(prog: Program) -> Result<(NodeIndex, CFG), Error> {
     //extract main.main method from program
-    let main_method = get_method(&prog, "Main", "main")?;
+    let main_method = get_static_method(&prog, &"Main".to_string(), &"main".to_string())?;
 
     match main_method {
-        Method::Static((Type::Void, id, args, body)) => {
+        (Type::Void, _, args, body) => {
             //initiate cfg
             let mut cfg: CFG = Graph::<Node, Vec<Action>>::new();
             let start = to_start(cfg.add_node(Node::EnteringMain(args.clone())));
@@ -110,11 +110,7 @@ pub fn generate_cfg(prog: Program) -> Result<(NodeIndex, CFG), Error> {
                 VecDeque::from(body.clone()),
                 &mut cfg,
                 vec![start.clone()],
-                &(Scope {
-                    id: None,
-                    class: "Main".to_string(),
-                    method: "main".to_string(),
-                }),
+                &(Scope { id: None }),
                 None,
             )?;
 
@@ -131,21 +127,6 @@ pub fn generate_cfg(prog: Program) -> Result<(NodeIndex, CFG), Error> {
             ))
         }
     }
-}
-
-fn get_constructor<'a>(prog: &'a Program, class_name: &str) -> Result<&'a Constructor, Error> {
-    let class = get_class(prog, class_name)?;
-
-    for m in class.1.iter() {
-        match m {
-            Member::Constructor(c) => return Ok(c),
-            _ => continue,
-        }
-    }
-    return Err(Error::Semantics(format!(
-        "Class {} does not have a constructor",
-        class_name
-    )));
 }
 
 /// adds edges from all passed start nodes to first node it generates from stmts and adds edges from the last nodes it generates to the ending node if one is specified.
@@ -271,8 +252,41 @@ fn stmts_to_cfg<'a>(
             }
 
             // generate
-            Statement::Call(inv) => {
-                let f_end = invocation_to_cfg(inv, ty_env, f_env, prog, cfg, starts)?;
+            Statement::Call((class_or_obj, method, args)) => {
+                // get class_name if call is not-static and keep track of staticness
+                let class_name = get_class_name(&class_or_obj, &ty_env);
+                let is_static = class_name.clone() == class_or_obj;
+
+                // closure to upate actions on the incomming edge of the routine body
+                let update_incoming = |v| {
+                    if is_static {
+                        v
+                    } else {
+                        [
+                            vec![Action::DeclareThis {
+                                object_id: class_or_obj,
+                            }],
+                            v,
+                        ]
+                        .concat()
+                    }
+                };
+
+                let routine = Routine::Method {
+                    class: class_name,
+                    method: method,
+                };
+
+                let f_end = routine_to_cfg(
+                    routine,
+                    update_incoming,
+                    args,
+                    ty_env,
+                    f_env,
+                    prog,
+                    cfg,
+                    starts,
+                )?;
 
                 return stmts_to_cfg(
                     ty_env,
@@ -286,8 +300,46 @@ fn stmts_to_cfg<'a>(
                 );
             }
 
-            Statement::Assignment((lhs, Rhs::Invocation(inv))) => {
-                let f_end = invocation_to_cfg(inv, ty_env, f_env, prog, cfg, starts)?;
+            Statement::Assignment((lhs, Rhs::Invocation((class_or_obj, method_name, args)))) => {
+                // get class_name if call is not-static and keep track of staticness
+                let class_name = get_class_name(&class_or_obj, &ty_env);
+                let is_static = class_name.clone() == class_or_obj;
+
+                // closure to upate actions on the incomming edge of the routine body
+                let update_incoming = |v| {
+                    if is_static {
+                        [
+                            vec![Action::DeclareRetval { ty: () }],
+                            v,
+                        ]
+                        .concat()
+                    } else {
+                        [
+                            vec![Action::DeclareThis {
+                                object_id: class_or_obj,
+                            }],
+                            vec![Action::DeclareRetval { ty: () }],
+                            v,
+                        ]
+                        .concat()
+                    }
+                };
+
+                let routine = Routine::Method {
+                    class: class_name,
+                    method: method_name,
+                };
+
+                let f_end = routine_to_cfg(
+                    routine,
+                    update_incoming,
+                    args,
+                    ty_env,
+                    f_env,
+                    prog,
+                    cfg,
+                    starts,
+                )?;
 
                 let assign_retval = cfg.add_node(Node::Statement(Statement::Assignment((
                     lhs,
@@ -379,24 +431,21 @@ fn stmts_to_cfg<'a>(
 }
 
 /// function generalizes over static, non-static calls/invocations and constructor calls
-/// 
-fn invocation_to_cfg<'a>(
-    (class_or_obj, method, args) : Invocation,
+fn routine_to_cfg<'a>(
+    routine: Routine,
+    f: &dyn Fn(&Vec<Action>) -> &Vec<Action>,
+    args: Vec<Expression>,
     ty_env: &mut TypeEnv,
     f_env: &mut FunEnv,
     prog: &Program,
     cfg: &mut CFG,
     starts: Vec<Start>,
 ) -> Result<Start, Error> {
-    let class = get_class_name(ty_env, class_or_obj.clone());
-
     // collect information for the actions on the cfg edge
-    let params = get_params(prog, &class, &method)?;
-    
+    let (params, _) = get_routine_content(prog, &routine)?;
+
     let fun_scope = Scope {
         id: Some(Uuid::new_v4()),
-        class: class.clone(),
-        method: method.clone(),
     };
     let assign_args = Action::AssignArgs {
         params: params.clone(),
@@ -408,8 +457,10 @@ fn invocation_to_cfg<'a>(
 
     // create subgraph for function if it does not exist yet
     let (f_start_node, f_end_node) =
-        method_to_cfg(&class, &method, ty_env, f_env, prog, cfg, &fun_scope)?;
+        routinebody_to_cfg(routine, ty_env, f_env, prog, cfg, &fun_scope)?;
 
+    // update incoming actions with passed function & insert into cfg
+    let updated_actions = f(&vec![assign_args.clone(), enter_scope.clone()]);
     for start in starts {
         cfg.add_edge(
             start.node,
@@ -427,9 +478,8 @@ fn invocation_to_cfg<'a>(
 }
 
 // returns (or builds) subgraph of a method/constructor
-fn method_to_cfg<'a>(
-    class: &String,
-    method: &String,
+fn routinebody_to_cfg<'a>(
+    routine: Routine,
     ty_env: &mut TypeEnv,
     f_env: &mut FunEnv,
     prog: &Program,
@@ -437,25 +487,22 @@ fn method_to_cfg<'a>(
     curr_scope: &Scope,
 ) -> Result<(NodeIndex, NodeIndex), Error> {
     // return function if it cfg is already generated
-    match f_env.get(&(class.clone(), method.clone())) {
+    match f_env.get(&routine) {
         Some(fun) => return Ok(*fun),
         _ => (),
     }
 
     // Check whether method exists and get body
     // if constructor get_constructorbody
-    let (_, _, _, body) = get_methodcontent(prog, &class, &method)?;
+    let (_, body) = get_routine_content(prog, &routine)?;
 
-    let enter_function = cfg.add_node(Node::EnterMethod((class.clone(), method.clone())));
+    let enter_function = cfg.add_node(Node::EnterRoutine(routine.clone()));
 
-    let leave_function = cfg.add_node(Node::LeaveMethod((class.clone(), method.clone())));
+    let leave_function = cfg.add_node(Node::LeaveRoutine(routine.clone()));
 
     //update environments
     ty_env.push(FxHashMap::default());
-    f_env.insert(
-        (class.clone(), method.clone()),
-        (enter_function, leave_function),
-    );
+    f_env.insert(routine, (enter_function, leave_function));
 
     //generate subgraph from function body starting from enter_function and ending at leave_function node
     let fun_endings = stmts_to_cfg(
@@ -478,48 +525,27 @@ fn method_to_cfg<'a>(
     return Ok((enter_function, leave_function));
 }
 
-fn get_params<'a>(
-    prog: &'a Program,
-    class_name: &str,
-    method_name: &str,
-) -> Result<Parameters, Error> {
-    let params: Parameters = get_methodcontent(prog, &class_name, &method_name)?
-        .2
-        .iter()
-        .map(|(t,i)| (t.clone(), i.clone()))
-        .collect();
-    return Ok(params);
-}
-
-/// given a object- or classname returns the class_name
-/// e.g. if we call o.f(), where the object o is of class O, calling get_class() will give us the objects class
-fn get_class_name(ty_env: &TypeEnv, class_or_object: String) -> String {
-    get_from_env(ty_env, &class_or_object)
-        .map(|t| t.0)
-        .unwrap_or(class_or_object)
-}
-
 impl fmt::Debug for Node {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Node::EnteringMain(_) => write!(f, "Entering Main.main"),
             Node::Statement(stmt) => write!(f, "{:?}", stmt),
-            Node::EnterMethod((object, method)) => {
+            Node::EnterRoutine((object, method)) => {
                 write!(f, "Entering {}.{}", object, method)
             }
-            Node::LeaveMethod((object, method)) => {
+            Node::LeaveRoutine((object, method)) => {
                 write!(f, "Leaving {}.{}", object, method)
             }
-            Node::LeaveMethod((object, method)) => {
+            Node::LeaveRoutine((object, method)) => {
                 write!(f, "Leaving {}.{}", object, method)
             }
-            Node::EnterMethod((class, method)) => {
+            Node::EnterRoutine((class, method)) => {
                 write!(f, "Entering static {}.{}", class, method)
             }
-            Node::LeaveMethod((class, method)) => {
+            Node::LeaveRoutine((class, method)) => {
                 write!(f, "Leaving {}.{}", class, method)
             }
-            Node::LeaveMethod((class, method)) => {
+            Node::LeaveRoutine((class, method)) => {
                 write!(f, "Leaving {}.{}", class, method)
             }
             Node::End => {
@@ -532,9 +558,7 @@ impl fmt::Debug for Node {
 impl fmt::Debug for Action {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Action::EnterScope {
-                to: scope,
-            } => {
+            Action::EnterScope { to: scope } => {
                 write!(f, "Entering scope {}", print_short_id(scope))
             }
             Action::AssignArgs { params, args } => {
@@ -549,10 +573,12 @@ impl fmt::Debug for Action {
             Action::LeaveScope { from } => {
                 write!(f, "Leaving scope {}", print_short_id(from))
             }
-            Action::DeclareThis { object_id: this_object } => write!(f, "Entering non-static method"),
+            Action::DeclareThis {
+                object_id: this_object,
+            } => write!(f, "Entering non-static method"),
             Action::InitObj { class, id } => write!(f, "Init {} {} on heap", class, id),
-           Action::LiftRetval  => write!(f, "Lifting retval"),
-           Action::DeclareRetval { ty } => write!(f, "Declaring '{:?} retval'", ty),
+            Action::LiftRetval => write!(f, "Lifting retval"),
+            Action::DeclareRetval { ty } => write!(f, "Declaring '{:?} retval'", ty),
         }
     }
 }
