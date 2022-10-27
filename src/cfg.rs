@@ -39,15 +39,15 @@ pub enum Action {
         params: Parameters,
         args: Vec<Expression>,
     },
-    // assign reference of 'object' on stack to 'this'
+    /// assign ref_id's corresponding reference to 'this'
     DeclareThis {
+        ref_id: Identifier,
         class: Identifier,
-        object: Identifier,
     },
-    /// Initialise object of this class on heap and add reference of object to value in lhs stack or heap
+    /// Initialise object of class on heap and make lhs a reference to object
     InitObj {
-        class: Identifier,
-        object: Lhs,
+        from: Class,
+        to: Lhs,
     },
     /// lifts value of retval 1 scope higher
     LiftRetval,
@@ -264,7 +264,7 @@ fn stmts_to_cfg<'a>(
                 } else {
                     vec![Action::DeclareThis {
                         class: class.clone(),
-                        object: class_or_obj.clone(),
+                        ref_id: class_or_obj.clone(),
                     }]
                 };
 
@@ -301,7 +301,6 @@ fn stmts_to_cfg<'a>(
                 let class = get_classname(&class_or_obj, &ty_env);
                 let is_static = class.clone() == class_or_obj;
 
-                
                 let (ty, _, _, _) = get_methodcontent(prog, &class, &method_name)?;
                 let append_actions = if is_static {
                     vec![Action::DeclareRetval { ty: ty.clone() }]
@@ -310,7 +309,7 @@ fn stmts_to_cfg<'a>(
                         Action::DeclareRetval { ty: ty.clone() },
                         Action::DeclareThis {
                             class: class.clone(),
-                            object: class_or_obj.clone(),
+                            ref_id: class_or_obj.clone(),
                         },
                     ]
                 };
@@ -320,14 +319,27 @@ fn stmts_to_cfg<'a>(
                     method: method_name,
                 };
 
-                let f_end = routine_to_cfg(routine, append_actions, args, ty_env, f_env, prog, cfg, starts)?;
+                let f_end = routine_to_cfg(
+                    routine,
+                    append_actions,
+                    args,
+                    ty_env,
+                    f_env,
+                    prog,
+                    cfg,
+                    starts,
+                )?;
 
                 let assign_retval = cfg.add_node(Node::Statement(Statement::Assignment((
                     lhs,
                     Rhs::Expression(Expression::Identifier("retval".to_string())),
                 ))));
 
-                cfg.add_edge(f_end.node, assign_retval, [f_end.edge, vec![Action::LiftRetval]].concat());
+                cfg.add_edge(
+                    f_end.node,
+                    assign_retval,
+                    [vec![Action::LiftRetval], f_end.edge].concat(),
+                );
 
                 return stmts_to_cfg(
                     ty_env,
@@ -340,24 +352,35 @@ fn stmts_to_cfg<'a>(
                     scope_end,
                 );
             }
-            Statement::Assignment((lhs, Rhs::Newobject(class, args))) => {
-                // we pass actions InitObj and declareThis 
+            Statement::Assignment((lhs, Rhs::Newobject(class_name, args))) => {
+                let class = get_class(prog, &class_name)?;
+
+                // we pass actions InitObj and declareThis
                 let append_actions = vec![
                     Action::DeclareThis {
-                        class: class.clone(),
-                        object: class.clone(),
+                        class: class_name.clone(),
+                        ref_id: class_name.clone(),
                     },
                     Action::InitObj {
-                        class: class.clone(),
-                        object: lhs,
+                        from: class.clone(),
+                        to: lhs,
                     },
                 ];
 
                 let routine = Routine::Constructor {
-                    class: class.to_string(),
+                    class: class_name.to_string(),
                 };
 
-                let f_end = routine_to_cfg(routine, append_actions, args, ty_env, f_env, prog, cfg, starts)?;
+                let f_end = routine_to_cfg(
+                    routine,
+                    append_actions,
+                    args,
+                    ty_env,
+                    f_env,
+                    prog,
+                    cfg,
+                    starts,
+                )?;
 
                 return stmts_to_cfg(
                     ty_env,
@@ -470,9 +493,9 @@ fn routine_to_cfg<'a>(
             start.node,
             f_start_node,
             [
-                append_incoming.clone(),
-                vec![assign_args.clone(), enter_scope.clone()],
                 start.edge,
+                vec![enter_scope.clone(), assign_args.clone()],
+                append_incoming.clone(),
             ]
             .concat(),
         );
@@ -572,10 +595,10 @@ impl fmt::Debug for Action {
             }
             Action::DeclareThis {
                 class: class,
-                object,
+                ref_id: object,
             } => write!(f, "{} this := {}", class, object),
-            Action::InitObj { class, object } => {
-                write!(f, "Init {} {:?} on heap", class, object)
+            Action::InitObj { from, to } => {
+                write!(f, "Init {} {:?} on heap", from.0, to)
             }
             Action::LiftRetval => write!(f, "Lifting retval"),
             Action::DeclareRetval { ty } => write!(f, "Declaring '{:?} retval'", ty),

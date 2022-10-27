@@ -238,24 +238,22 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                             insert_into_stack(&mut stack, id, var);
                         }
                     }
-                    Action::DeclareThis { class, object } => {
+                    Action::DeclareThis { class, ref_id: object } => {
                         todo!("Enter previous scope, retreive this_object and assign to this")
                     }
-                    Action::InitObj { class, object: id } => {
+                    Action::InitObj { from: class, to: id } => {
                         todo!("Init new object")
                     }
+                    // lift retval 1 scope up
                     Action::LiftRetval => {
-                        // get retval from scope before we leave it
-                        let retval = get_from_stack(&stack, retval_id);
-                        // assign retval from previous scope if necessary
-                        match retval {
+                        match get_from_stack(&stack, retval_id) {
                             Some(retval) => {
                                 let higher_frame = stack.len() - 2;
                                 match stack.get_mut(higher_frame) {
                                     Some(frame) => {frame.env.insert(retval_id, retval);},
                                     None => {return Err(Error::Semantics("Can't return from main scope".to_owned()));}
                                 }},
-                            None => (),
+                            None => {return Err(Error::Semantics("Can't lift retval to a higher scope".to_owned()));},
                         };
                     }
                     // if we can leave over this edge pop scope otherwise dismiss path pe

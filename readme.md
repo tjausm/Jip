@@ -47,6 +47,7 @@ All tests are executed with `cargo test`, we have 2 types of tests:
     - if we enter constructor we initialize fields, assign referenc of oject to 'this' and we assign 'this' to 'retval'
     - if we enter a method we assign reference of object to 'this'
 - [ ] split cfg into cfg_utils and cfg, and put some more structure in it
+    - [ ] make Edge object with special debug printer & mkEdge function to remove [edge vec![edge]].concat() statements
 - [ ] explain for the cfg mod what you do per type of node: while we split (show picture), with routine we generalize over methods & constructors, show action table etc etc
 - [ ] add require and ensure
 - [ ] clean up shared mod
