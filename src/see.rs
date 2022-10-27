@@ -113,9 +113,7 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
     let mut q: VecDeque<(Stack, Vec<PathConstraint>, Depth, NodeIndex)> = VecDeque::new();
     let main = Frame {
         scope: Scope {
-            id: None,
-            class: "Main".to_string(),
-            method: "main".to_string(),
+            id: None
         },
         env: FxHashMap::default(),
     };
@@ -191,8 +189,7 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                     Statement::Return(expr) => {
                         match envs.last() {
                             Some(anScope)
-                                if anScope.scope.class == main.scope.class
-                                    && anScope.scope.method == main.scope.method =>
+                                if anScope.scope.id == main.scope.id =>
                             {
                                 continue
                             }
@@ -241,10 +238,10 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                             insert_into_stack(&mut stack, id, var);
                         }
                     }
-                    Action::DeclareThis { object_id: object } => {
+                    Action::DeclareThis { class, object } => {
                         todo!("Enter previous scope, retreive this_object and assign to this")
                     }
-                    Action::InitObj { class, id } => {
+                    Action::InitObj { class, object: id } => {
                         todo!("Init new object")
                     }
                     Action::LiftRetval => {

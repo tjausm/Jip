@@ -5,8 +5,8 @@ lalrpop_mod!(pub parser); // synthesized by LALRPOP
 
 use crate::ast::*;
 use crate::shared::{
-    get_class, get_class_name, get_from_env, get_routine_content, get_static_method,
-    insert_into_env, is_static, print_short_id, Error, Routine, Scope, TypeEnv,
+    get_class, get_classname, get_from_env, get_methodcontent, get_routine_content,
+    insert_into_env, print_short_id, Error, Routine, Scope, TypeEnv,
 };
 use petgraph::dot::Dot;
 use petgraph::graph::{Graph, NodeIndex};
@@ -39,14 +39,15 @@ pub enum Action {
         params: Parameters,
         args: Vec<Expression>,
     },
-    // assign reference in 'object' to this
+    // assign reference of 'object' on stack to 'this'
     DeclareThis {
-        object_id: Identifier,
+        class: Identifier,
+        object: Identifier,
     },
-    /// Initialise object of this class on heap and add reference of object to stack
+    /// Initialise object of this class on heap and add reference of object to value in lhs stack or heap
     InitObj {
         class: Identifier,
-        id: Identifier,
+        object: Lhs,
     },
     /// lifts value of retval 1 scope higher
     LiftRetval,
@@ -89,7 +90,7 @@ pub fn generate_dot_cfg(program: Program) -> Result<String, Error> {
 /// Returns cfg, and the start_node representing entry point of the program
 pub fn generate_cfg(prog: Program) -> Result<(NodeIndex, CFG), Error> {
     //extract main.main method from program
-    let main_method = get_static_method(&prog, &"Main".to_string(), &"main".to_string())?;
+    let main_method = get_methodcontent(&prog, &"Main".to_string(), &"main".to_string())?;
 
     match main_method {
         (Type::Void, _, args, body) => {
@@ -254,32 +255,27 @@ fn stmts_to_cfg<'a>(
             // generate
             Statement::Call((class_or_obj, method, args)) => {
                 // get class_name if call is not-static and keep track of staticness
-                let class_name = get_class_name(&class_or_obj, &ty_env);
-                let is_static = class_name.clone() == class_or_obj;
+                let class = get_classname(&class_or_obj, &ty_env);
+                let is_static = class.clone() == class_or_obj;
 
-                // closure to upate actions on the incomming edge of the routine body
-                let update_incoming = |v| {
-                    if is_static {
-                        v
-                    } else {
-                        [
-                            vec![Action::DeclareThis {
-                                object_id: class_or_obj,
-                            }],
-                            v,
-                        ]
-                        .concat()
-                    }
+                // // if nonstatic we pass action declareThis
+                let append_actions = if is_static {
+                    vec![]
+                } else {
+                    vec![Action::DeclareThis {
+                        class: class.clone(),
+                        object: class_or_obj.clone(),
+                    }]
                 };
 
                 let routine = Routine::Method {
-                    class: class_name,
+                    class: class.to_string(),
                     method: method,
                 };
 
                 let f_end = routine_to_cfg(
                     routine,
-                    update_incoming,
+                    append_actions,
                     args,
                     ty_env,
                     f_env,
@@ -302,51 +298,36 @@ fn stmts_to_cfg<'a>(
 
             Statement::Assignment((lhs, Rhs::Invocation((class_or_obj, method_name, args)))) => {
                 // get class_name if call is not-static and keep track of staticness
-                let class_name = get_class_name(&class_or_obj, &ty_env);
-                let is_static = class_name.clone() == class_or_obj;
+                let class = get_classname(&class_or_obj, &ty_env);
+                let is_static = class.clone() == class_or_obj;
 
-                // closure to upate actions on the incomming edge of the routine body
-                let update_incoming = |v| {
-                    if is_static {
-                        [
-                            vec![Action::DeclareRetval { ty: () }],
-                            v,
-                        ]
-                        .concat()
-                    } else {
-                        [
-                            vec![Action::DeclareThis {
-                                object_id: class_or_obj,
-                            }],
-                            vec![Action::DeclareRetval { ty: () }],
-                            v,
-                        ]
-                        .concat()
-                    }
+                
+                let (ty, _, _, _) = get_methodcontent(prog, &class, &method_name)?;
+                let append_actions = if is_static {
+                    vec![Action::DeclareRetval { ty: ty.clone() }]
+                } else {
+                    vec![
+                        Action::DeclareRetval { ty: ty.clone() },
+                        Action::DeclareThis {
+                            class: class.clone(),
+                            object: class_or_obj.clone(),
+                        },
+                    ]
                 };
 
                 let routine = Routine::Method {
-                    class: class_name,
+                    class: class.to_string(),
                     method: method_name,
                 };
 
-                let f_end = routine_to_cfg(
-                    routine,
-                    update_incoming,
-                    args,
-                    ty_env,
-                    f_env,
-                    prog,
-                    cfg,
-                    starts,
-                )?;
+                let f_end = routine_to_cfg(routine, append_actions, args, ty_env, f_env, prog, cfg, starts)?;
 
                 let assign_retval = cfg.add_node(Node::Statement(Statement::Assignment((
                     lhs,
                     Rhs::Expression(Expression::Identifier("retval".to_string())),
                 ))));
 
-                cfg.add_edge(f_end.node, assign_retval, f_end.edge);
+                cfg.add_edge(f_end.node, assign_retval, [f_end.edge, vec![Action::LiftRetval]].concat());
 
                 return stmts_to_cfg(
                     ty_env,
@@ -359,12 +340,36 @@ fn stmts_to_cfg<'a>(
                     scope_end,
                 );
             }
-            // Statement::Assignment((lhs, Rhs::Newobject(id, args))) => {
-            //     todo!(
-            //         "initObj and make the lefthandside a reference
-            //            add retval := this assignment upon leaving invocatio"
-            //     );
-            // }
+            Statement::Assignment((lhs, Rhs::Newobject(class, args))) => {
+                // we pass actions InitObj and declareThis 
+                let append_actions = vec![
+                    Action::DeclareThis {
+                        class: class.clone(),
+                        object: class.clone(),
+                    },
+                    Action::InitObj {
+                        class: class.clone(),
+                        object: lhs,
+                    },
+                ];
+
+                let routine = Routine::Constructor {
+                    class: class.to_string(),
+                };
+
+                let f_end = routine_to_cfg(routine, append_actions, args, ty_env, f_env, prog, cfg, starts)?;
+
+                return stmts_to_cfg(
+                    ty_env,
+                    f_env,
+                    prog,
+                    stmts,
+                    cfg,
+                    vec![f_end],
+                    curr_scope,
+                    scope_end,
+                );
+            }
 
             // for 'return x' we assign 'retval := x', add edge to scope_end and stop recursing
             Statement::Return(expr) => {
@@ -433,7 +438,7 @@ fn stmts_to_cfg<'a>(
 /// function generalizes over static, non-static calls/invocations and constructor calls
 fn routine_to_cfg<'a>(
     routine: Routine,
-    f: &dyn Fn(&Vec<Action>) -> &Vec<Action>,
+    append_incoming: Edge,
     args: Vec<Expression>,
     ty_env: &mut TypeEnv,
     f_env: &mut FunEnv,
@@ -459,13 +464,17 @@ fn routine_to_cfg<'a>(
     let (f_start_node, f_end_node) =
         routinebody_to_cfg(routine, ty_env, f_env, prog, cfg, &fun_scope)?;
 
-    // update incoming actions with passed function & insert into cfg
-    let updated_actions = f(&vec![assign_args.clone(), enter_scope.clone()]);
+    // update incoming actions with actions passed from start struct, and appendable actions from append_incoming
     for start in starts {
         cfg.add_edge(
             start.node,
             f_start_node,
-            [vec![assign_args.clone(), enter_scope.clone()], start.edge].concat(),
+            [
+                append_incoming.clone(),
+                vec![assign_args.clone(), enter_scope.clone()],
+                start.edge,
+            ]
+            .concat(),
         );
     }
 
@@ -530,23 +539,11 @@ impl fmt::Debug for Node {
         match self {
             Node::EnteringMain(_) => write!(f, "Entering Main.main"),
             Node::Statement(stmt) => write!(f, "{:?}", stmt),
-            Node::EnterRoutine((object, method)) => {
-                write!(f, "Entering {}.{}", object, method)
+            Node::EnterRoutine(r) => {
+                write!(f, "Entering {:?}", r)
             }
-            Node::LeaveRoutine((object, method)) => {
-                write!(f, "Leaving {}.{}", object, method)
-            }
-            Node::LeaveRoutine((object, method)) => {
-                write!(f, "Leaving {}.{}", object, method)
-            }
-            Node::EnterRoutine((class, method)) => {
-                write!(f, "Entering static {}.{}", class, method)
-            }
-            Node::LeaveRoutine((class, method)) => {
-                write!(f, "Leaving {}.{}", class, method)
-            }
-            Node::LeaveRoutine((class, method)) => {
-                write!(f, "Leaving {}.{}", class, method)
+            Node::LeaveRoutine(r) => {
+                write!(f, "Leaving {:?}", r)
             }
             Node::End => {
                 write!(f, "End")
@@ -574,9 +571,12 @@ impl fmt::Debug for Action {
                 write!(f, "Leaving scope {}", print_short_id(from))
             }
             Action::DeclareThis {
-                object_id: this_object,
-            } => write!(f, "Entering non-static method"),
-            Action::InitObj { class, id } => write!(f, "Init {} {} on heap", class, id),
+                class: class,
+                object,
+            } => write!(f, "{} this := {}", class, object),
+            Action::InitObj { class, object } => {
+                write!(f, "Init {} {:?} on heap", class, object)
+            }
             Action::LiftRetval => write!(f, "Lifting retval"),
             Action::DeclareRetval { ty } => write!(f, "Declaring '{:?} retval'", ty),
         }

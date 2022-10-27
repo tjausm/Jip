@@ -42,10 +42,12 @@ All tests are executed with `cargo test`, we have 2 types of tests:
 
 ## Todo's
 - [ ] put entering main on edge
-- [ ] explain for the cfg mod what you do per type of node: while we split (show picture), with routine we generalize over methods & constructors, show action table etc etc
+
 - [ ] objects representeren in de cfg
     - if we enter constructor we initialize fields, assign referenc of oject to 'this' and we assign 'this' to 'retval'
     - if we enter a method we assign reference of object to 'this'
+- [ ] split cfg into cfg_utils and cfg, and put some more structure in it
+- [ ] explain for the cfg mod what you do per type of node: while we split (show picture), with routine we generalize over methods & constructors, show action table etc etc
 - [ ] add require and ensure
 - [ ] clean up shared mod
 

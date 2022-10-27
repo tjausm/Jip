@@ -28,7 +28,7 @@ pub struct Scope {
 pub type TypeEnv = Vec<FxHashMap<Identifier, Class>>;
 
 /// Collection type to identify and retreive content of methods & constructors
-#[derive(Clone, Hash, PartialEq, Eq)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum Routine {
     Method {
         class: Identifier,
@@ -73,12 +73,12 @@ pub fn get_from_env<K: Eq + Hash + Display, V: Clone>(
     return None;
 }
 
-/// given a object- or classname returns the class_name
-/// e.g. if we call o.f(), where the object o is of class O, calling get_class() will give us the objects class
-pub fn get_class_name(object_or_class: &String, ty_env: &TypeEnv) -> &String {
+/// given an object or class name, return class name
+/// e.g. if we call o.f(), where object o is of class O then get_class(o) = O 
+pub fn get_classname<'a>(object_or_class: &'a String, ty_env: &TypeEnv) -> String {
     get_from_env(ty_env, &object_or_class)
-        .map(|t| &t.0)
-        .unwrap_or(object_or_class)
+        .map(|t| t.0)
+        .unwrap_or(object_or_class.clone())
 }
 
 pub fn get_class<'a>(prog: &'a Program, class_name: &str) -> Result<&'a Class, Error> {
@@ -90,33 +90,7 @@ pub fn get_class<'a>(prog: &'a Program, class_name: &str) -> Result<&'a Class, E
         )))
 }
 
-pub fn get_method<'a>(
-    prog: &'a Program,
-    class_name: &Identifier,
-    method_name: &Identifier
-) -> Result<&'a Methodcontent, Error> {
-    let class = get_class(prog, &class_name)?;
-
-    for member in class.1.iter() {
-        match member {
-            Member::Method(method) => match method {
-                Method::Nonstatic(content @ (_, id, _, _)) => {
-                    if id == method_name {
-                        return Ok(content);
-                    }
-                }
-                _ => (),
-            },
-            _ => (),
-        }
-    }
-    return Err(Error::Semantics(format!(
-        "Non-static method {}.{} doesn't exist",
-        class.0, class_name
-    )));
-}
-
-pub fn get_static_method<'a>(
+pub fn get_methodcontent<'a>(
     prog: &'a Program,
     class_name: &Identifier,
     method_name: &Identifier,
@@ -131,6 +105,11 @@ pub fn get_static_method<'a>(
                         return Ok(content);
                     }
                 }
+                Method::Nonstatic(content @ (_, id, _, _)) => {
+                    if id == method_name {
+                        return Ok(content);
+                    }
+                }
                 _ => (),
             },
             _ => (),
@@ -141,13 +120,6 @@ pub fn get_static_method<'a>(
         class.0, method_name
     )));
 }
-
-pub fn is_static(
-    prog: &Program,
-    class_name: &Identifier,
-    method_name: &Identifier) -> bool {
-        get_static_method(prog, class_name, method_name).is_ok()
-    }
     
 fn get_constructor<'a>(prog: &'a Program, class_name: &str) -> Result<&'a Constructor, Error> {
     let class = get_class(prog, class_name)?;
@@ -173,12 +145,8 @@ pub fn get_routine_content<'a>(
             let (_, params, stmts) = get_constructor(prog, class)?;
             Ok((params, stmts))
         },
-        Routine::Static { class, method } => {
-            let (_, _, params, stmts) = get_static_method(prog, class, method)?;
-            Ok((params, stmts))
-        },
-        Routine::NonStatic { object, method } => {
-            let (_, _, params, stmts) = get_method(prog, object, method)?;
+        Routine::Method { class, method } => {
+            let (_, _, params, stmts) = get_methodcontent(prog, class, method)?;
             Ok((params, stmts))
         },
     }
