@@ -112,9 +112,7 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
     //init our bfs through the cfg
     let mut q: VecDeque<(Stack, Vec<PathConstraint>, Depth, NodeIndex)> = VecDeque::new();
     let main = Frame {
-        scope: Scope {
-            id: None
-        },
+        scope: Scope { id: None },
         env: FxHashMap::default(),
     };
     q.push_back((vec![main.clone()], vec![], d, start_node));
@@ -123,7 +121,7 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
     // Assume -> build & verify z3 formula, stop evaluating pad if disproven
     // assignment -> evaluate rhs and update env
     // then we enque all connected nodes, till d=0 or we reach end of cfg
-    while let Some((mut envs, mut pc, d, curr_node)) = q.pop_front() {
+    while let Some((mut stack, mut pc, d, curr_node)) = q.pop_front() {
         if d == 0 {
             continue;
         }
@@ -134,10 +132,10 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                 for p in parameters {
                     match p {
                         (Type::Int, id) => {
-                            insert_into_stack(&mut envs, &id, fresh_int(&ctx, id.clone()))
+                            insert_into_stack(&mut stack, &id, fresh_int(&ctx, id.clone()))
                         }
                         (Type::Bool, id) => {
-                            insert_into_stack(&mut envs, &id, fresh_bool(&ctx, id.clone()))
+                            insert_into_stack(&mut stack, &id, fresh_bool(&ctx, id.clone()))
                         }
                         (ty, id) => {
                             return Err(Error::Semantics(format!(
@@ -153,10 +151,10 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                 match stmt {
                     Statement::Declaration((ty, id)) => match ty {
                         Type::Int => {
-                            insert_into_stack(&mut envs, &id, fresh_int(&ctx, id.clone()));
+                            insert_into_stack(&mut stack, &id, fresh_int(&ctx, id.clone()));
                         }
                         Type::Bool => {
-                            insert_into_stack(&mut envs, &id, fresh_bool(&ctx, id.clone()));
+                            insert_into_stack(&mut stack, &id, fresh_bool(&ctx, id.clone()));
                         }
                         weird_type => {
                             return Err(Error::Semantics(format!(
@@ -166,12 +164,12 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                         }
                     },
                     Statement::Assume(expr) => {
-                        let ast = expression_to_bool(&ctx, &envs, &expr)?;
+                        let ast = expression_to_bool(&ctx, &stack, &expr)?;
                         pc.push(PathConstraint::Assume(ast));
                     }
 
                     // return err if is invalid else continue
-                    Statement::Assert(expr) => match expression_to_bool(&ctx, &envs, &expr) {
+                    Statement::Assert(expr) => match expression_to_bool(&ctx, &stack, &expr) {
                         Err(why) => return Err(why),
                         Ok(ast) => {
                             diagnostics.z3Invocations = diagnostics.z3Invocations + 1;
@@ -183,19 +181,36 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                             }
                         }
                     },
-                    Statement::Assignment((Lhs::Identifier(id), Rhs::Expression(expr))) => {
-                        assign_expr(&ctx, &mut envs, &id, &expr)?;
+                    Statement::Assignment((lhs, rhs)) => {
+                        // get lhs type
+                        // parse expression variable
+                        // assign to id in stack
+                        lhs_from_rhs(&ctx, &mut stack, lhs, rhs)?;
                     }
                     Statement::Return(expr) => {
-                        match envs.last() {
-                            Some(anScope)
-                                if anScope.scope.id == main.scope.id =>
-                            {
-                                continue
-                            }
+                        match stack.last() {
+                            Some(anScope) if anScope.scope.id == main.scope.id => continue,
                             _ => (),
                         }
-                        assign_expr(&ctx, &mut envs, retval_id, &expr)?;
+
+                        // evaluate return expression with type of retval and add to stack
+                        match get_from_stack(&stack, retval_id) {
+                            Some(Variable::Int(_)) => {
+                                let ast = expression_to_int(&ctx, &stack, &expr)?;
+                                insert_into_stack(&mut stack, retval_id, Variable::Int(ast));
+                            }
+                    
+                            Some(Variable::Bool(_)) => {
+                                let ast = expression_to_bool(&ctx, &stack, &expr)?;
+                                insert_into_stack(&mut stack, retval_id, Variable::Bool(ast));
+                            }
+                            Some(Variable::Ref) => todo!(""),
+                            None => {
+                                return Err(Error::Semantics(format!(
+                                    "retval is undeclared"
+                                )));
+                            }
+                        }
                     }
                     _ => (),
                 }
@@ -206,7 +221,7 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
 
         'q_nodes: for edge in cfg.edges(curr_node) {
             // clone new env to perform actions on
-            let mut stack = envs.clone();
+            let mut stack = stack.clone();
 
             // perform all actions in an edge and enque the result
             for action in edge.weight() {
@@ -238,10 +253,16 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                             insert_into_stack(&mut stack, id, var);
                         }
                     }
-                    Action::DeclareThis { class, ref_id: object } => {
+                    Action::DeclareThis {
+                        class,
+                        reference: object,
+                    } => {
                         todo!("Enter previous scope, retreive this_object and assign to this")
                     }
-                    Action::InitObj { from: class, to: id } => {
+                    Action::InitObj {
+                        from: class,
+                        to: id,
+                    } => {
                         todo!("Init new object")
                     }
                     // lift retval 1 scope up
@@ -250,15 +271,28 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                             Some(retval) => {
                                 let higher_frame = stack.len() - 2;
                                 match stack.get_mut(higher_frame) {
-                                    Some(frame) => {frame.env.insert(retval_id, retval);},
-                                    None => {return Err(Error::Semantics("Can't return from main scope".to_owned()));}
-                                }},
-                            None => {return Err(Error::Semantics("Can't lift retval to a higher scope".to_owned()));},
+                                    Some(frame) => {
+                                        frame.env.insert(retval_id, retval);
+                                    }
+                                    None => {
+                                        return Err(Error::Semantics(
+                                            "Can't return from main scope".to_owned(),
+                                        ));
+                                    }
+                                }
+                            }
+                            None => {
+                                return Err(Error::Semantics(
+                                    "Can't lift retval to a higher scope".to_owned(),
+                                ));
+                            }
                         };
                     }
                     // if we can leave over this edge pop scope otherwise dismiss path pe
                     Action::LeaveScope { from: to_scope } => match stack.last() {
-                        Some(env) if env.scope == *to_scope => {stack.pop();},
+                        Some(env) if env.scope == *to_scope => {
+                            stack.pop();
+                        }
                         _ => continue 'q_nodes,
                     },
                 }
@@ -270,37 +304,72 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
     return Ok(diagnostics);
 }
 
-/// Assigns an expression to an identifier in the passed environment
-fn assign_expr<'ctx>(
-    ctx: &'ctx Context,
-    env: &mut Stack<'ctx>,
-    id: &'ctx Identifier,
-    expr: &'ctx Expression,
-) -> Result<(), Error> {
-    match get_from_stack(&env, id) {
-        None => {
-            return Err(Error::Semantics(format!(
-                "Assignment {} := {:?} failed because variable {} is undeclared",
-                id, expr, id
-            )));
-        }
-        Some(Variable::Int(_)) => {
-            let ast = expression_to_int(&ctx, &env, &expr)?;
-            insert_into_stack(env, &id, Variable::Int(ast));
-        }
+fn type_lhs<'ctx>(ctx: &'ctx Context, env: &Stack<'ctx>, lhs: &'ctx Lhs) -> Result<Type, Error> {
+    match lhs {
+        Lhs::Accessfield(obj, field) => todo!(""),
+        Lhs::Identifier(id) => match get_from_stack(env, id) {
+            Some(Variable::Bool(_)) => Ok(Type::Bool),
+            Some(Variable::Int(_)) => Ok(Type::Int),
+            Some(Variable::Ref) => Ok(Type::Classtype(todo!("Get class from heap"))),
+            None => Err(Error::Semantics(format!(
+                "Can't type {} because variable is undeclared",
+                id
+            ))),
+        },
+    }
+}
 
-        Some(Variable::Bool(_)) => {
-            let ast = expression_to_bool(&ctx, &env, &expr)?;
-            insert_into_stack(env, &id, Variable::Bool(ast));
-        }
-    };
-    return Ok(());
+/// Assigns an expression to an identifier in the passed environment
+fn parse_rhs<'ctx>(
+    ctx: &'ctx Context,
+    env: &Stack<'ctx>,
+    ty: &Type,
+    rhs: &'ctx Rhs,
+) -> Result<Variable<'ctx>, Error> {
+    match rhs {
+        Rhs::Accessfield(obj, field) => todo!(),
+        Rhs::Expression(expr) => match ty {
+            Type::Int => {
+                let ast = expression_to_int(&ctx, &env, &expr)?;
+                Ok(Variable::Int(ast))
+            }
+
+            Type::Bool => {
+                let ast = expression_to_bool(&ctx, &env, &expr)?;
+                Ok(Variable::Bool(ast))
+            }
+            Type::Classtype(_) => todo!(),
+            Type::Void => Err(Error::Other(format!(
+                "Can't evaluate rhs expression of the form {:?} to type void",
+                rhs
+            ))),
+        },
+        _ => Err(Error::Other(format!(
+            "Rhs of the form {:?} should not be in the cfg",
+            rhs
+        ))),
+    }
+}
+
+/// assigns value from rhs to value from lhs
+fn lhs_from_rhs<'ctx>(
+    ctx: &'ctx Context,
+    stack: &mut Stack<'ctx>,
+    lhs: &'ctx Lhs,
+    rhs: &'ctx Rhs,
+) -> Result<(), Error> {
+    let ty = type_lhs(&ctx, &stack, lhs)?;
+    let var = parse_rhs(&ctx, stack, &ty, rhs)?;
+    match lhs {
+        Lhs::Accessfield(obj, field) => todo!("write to field on the heap here"),
+        Lhs::Identifier(id) => Ok(insert_into_stack(stack, id, var)),
+    }
 }
 
 /// evaluates the parameters & arguments to a mapping id -> variable that can be added to a function scope
 fn params_to_vars<'ctx>(
     ctx: &'ctx Context,
-    env: &mut Stack<'ctx>,
+    stack: &mut Stack<'ctx>,
     params: &'ctx Parameters,
     args: &'ctx Arguments,
 ) -> Result<Vec<(&'ctx String, Variable<'ctx>)>, Error> {
@@ -311,11 +380,11 @@ fn params_to_vars<'ctx>(
     loop {
         match (params_iter.next(), args_iter.next()) {
             (Some((Type::Int, id)), Some(expr)) => {
-                let expr = expression_to_int(ctx, env, expr)?;
+                let expr = expression_to_int(ctx, stack, expr)?;
                 variables.push((id, Variable::Int(expr)));
             }
             (Some((Type::Bool, id)), Some(expr)) => {
-                let expr = expression_to_bool(ctx, env, expr)?;
+                let expr = expression_to_bool(ctx, stack, expr)?;
                 variables.push((id, Variable::Bool(expr)));
             }
             (Some((ty, _)), Some(_)) => {

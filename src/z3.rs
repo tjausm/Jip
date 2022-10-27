@@ -16,7 +16,8 @@ pub type Identifier = String;
 #[derive(Debug, Clone)]
 pub enum Variable<'a> {
     Int(Int<'a>),
-    Bool(Bool<'a>)
+    Bool(Bool<'a>),
+    Ref
 }
 
 /// Environment where each environment is annotated with the scope it belongs to
@@ -67,13 +68,12 @@ pub fn get_dyn_from_stack<'a>(stack: &Stack<'a>, id: &'a Identifier) -> Result<D
     let err = Error::Semantics(format!("Variable {} is undeclared", id));
     match get_from_stack(stack, id).ok_or(err)? {
         Variable::Int(i) => {
-            //klopt dit, moet ik niet de reference naar de variable in de env passen?
             return Ok(Dynamic::from(i.clone()));
         }
         Variable::Bool(b) => {
-            //klopt dit, moet ik niet de reference naar de variable in de env passen?
             return Ok(Dynamic::from(b.clone()));
         }
+        Variable::Ref => todo!()
     }
 }
 
@@ -149,7 +149,7 @@ fn expression_to_dynamic<'ctx, 'b>(
 ) -> Result<Dynamic<'ctx>, Error> {
     match expr {
         Expression::Exists(id, expr) => {
-            let l = get_dyn_from_stack(&Rc::clone(&stack), id)?;
+            let l = Int::fresh_const(ctx, id);
             let r = expression_to_dynamic(ctx, stack, expr).and_then(as_bool_or_error)?;
 
             return Ok(Dynamic::from(ast::exists_const(&ctx, &[&l], &[], &r)));

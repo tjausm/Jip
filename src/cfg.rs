@@ -41,7 +41,7 @@ pub enum Action {
     },
     /// assign ref_id's corresponding reference to 'this'
     DeclareThis {
-        ref_id: Identifier,
+        reference: Lhs,
         class: Identifier,
     },
     /// Initialise object of class on heap and make lhs a reference to object
@@ -264,7 +264,7 @@ fn stmts_to_cfg<'a>(
                 } else {
                     vec![Action::DeclareThis {
                         class: class.clone(),
-                        ref_id: class_or_obj.clone(),
+                        reference: Lhs::Identifier(class_or_obj),
                     }]
                 };
 
@@ -309,7 +309,7 @@ fn stmts_to_cfg<'a>(
                         Action::DeclareRetval { ty: ty.clone() },
                         Action::DeclareThis {
                             class: class.clone(),
-                            ref_id: class_or_obj.clone(),
+                            reference: Lhs::Identifier(class_or_obj.clone()),
                         },
                     ]
                 };
@@ -359,11 +359,11 @@ fn stmts_to_cfg<'a>(
                 let append_actions = vec![
                     Action::DeclareThis {
                         class: class_name.clone(),
-                        ref_id: class_name.clone(),
+                        reference: lhs.clone(),
                     },
                     Action::InitObj {
                         from: class.clone(),
-                        to: lhs,
+                        to: lhs.clone(),
                     },
                 ];
 
@@ -585,18 +585,18 @@ impl fmt::Debug for Action {
                 let ap_str = params
                     .iter()
                     .zip(args.iter())
-                    .map(|((_, arg), param)| format!("{} = {:?}", arg, param))
+                    .map(|((_, arg), param)| format!("{} := {:?}", arg, param))
                     .collect::<Vec<String>>()
                     .join(", ");
-                write!(f, "Assigning {}", ap_str)
+                write!(f, "{}", ap_str)
             }
             Action::LeaveScope { from } => {
                 write!(f, "Leaving scope {}", print_short_id(from))
             }
             Action::DeclareThis {
                 class: class,
-                ref_id: object,
-            } => write!(f, "{} this := {}", class, object),
+                reference: object,
+            } => write!(f, "{} this := {:?}", class, object),
             Action::InitObj { from, to } => {
                 write!(f, "Init {} {:?} on heap", from.0, to)
             }

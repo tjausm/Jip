@@ -51,7 +51,7 @@ All tests are executed with `cargo test`, we have 2 types of tests:
 - [ ] explain for the cfg mod what you do per type of node: while we split (show picture), with routine we generalize over methods & constructors, show action table etc etc
 - [ ] add require and ensure
 - [ ] clean up shared mod
-
+- [ ] ADD 'new array[]' statement
 - [ ] add profiling als program is veel langzamer dan die van stefan
 - [ ] object accesing vanaf de heap e.g.
 - [ ] generalise over get_from_env and get_from_anEnv
