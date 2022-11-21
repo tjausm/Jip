@@ -1,61 +1,54 @@
-## Installation (windows)
+# Installation (windows)
 1. Install rust & cargo
 2. Install cmake 
 3. Install llvm
 4. run `cargo build -vv` in the root folder (it can take 20 - 30 min to build due to z3 the package, add the `-vv` flag to make sure the build process is still in progress)
 
-### Profiler (windows)
-1. install [wsl](https://learn.microsoft.com/en-us/windows/wsl/install)
+# Usage:
 
-**todo**
+```
+jip.exe <LOAD_MODE> <PROGRAM> <SUBCOMMAND>
 
-make seperate builds with following flags:
-[profile.release]
-lto = true
-codegen-units = 1 # this is a heuristic
-panic = "abort" # can improve program slightly
+ARGS:
+    <LOAD_MODE>    How to load the program [possible values: file, string]
+    <PROGRAM>      Filepath or program as string
 
-Build for native cpu
-RUSTFLAGS="-C target-cpu=native" cargo build --release
+OPTIONS:
+    -h, --help       Print help information
+    -V, --version    Print version information
 
-move to fast hashing (library)[https://nnethercote.github.io/perf-book/hashing.html]
+SUBCOMMANDS:
+    bench        Measure time to verify a program
+        USAGE:
+            jip.exe <LOAD_MODE> <PROGRAM> bench <START> [ARGS]
 
-use clippy linter
+        ARGS:
+            <START>       Given start depth s we measure verification time for depth s
+            <END>         Gven end depth e we measure verification time for each depth between s and e
+                          with intervals of 5
+            <INTERVAL>    Given interval i we measure verification time for each depth between s and e
+                          with intervals of i [default: 5]
 
-future:
-profile guided optimalisation (https://doc.rust-lang.org/rustc/profile-guided-optimization.html)
+    print-cfg    Print cfg in Dot format
 
-## Testing
+    verify       Verify program and print result
+        USAGE:
+            jip.exe <LOAD_MODE> <PROGRAM> verify [OPTIONS] [DEPTH]
+
+        ARGS:
+            <DEPTH>    Up to which depth program is evaluated [default: 40]
+```
+
+
+# Testing
 All tests are executed with `cargo test`, we have 2 types of tests:
 
 1. **Unit tests**: constructed using the [default method](https://doc.rust-lang.org/rust-by-example/testing/unit_testing.html).
 1. **Program tests**: one test is constructed for each OOX program in the `src/tests/programs` folder. We assume a test program contains no violation of it's assertions unless it has a file name ending in `_faulty`.
 
-## Cheatsheet
+# Cheatsheet
 - **Testing** -> `cargo test`
 - **Build** -> `cargo build`
 - **Generate docs** -> `cargo doc --open`
 - **Run** -> `cargo build` and then `target/debug/jip.exe`
 
-## vragen
-- Does require translate to assume and ensure to assert?
-
-## Todo's
-- [ ] put entering main on edge
-
-- [ ] objects representeren in de cfg
-    - if we enter constructor we initialize fields, assign referenc of oject to 'this' and we assign 'this' to 'retval'
-    - if we enter a method we assign reference of object to 'this'
-- [ ] split cfg into cfg_utils and cfg, and put some more structure in it
-    - [ ] make Edge object with special debug printer & mkEdge function to remove [edge vec![edge]].concat() statements
-- [ ] explain for the cfg mod what you do per type of node: while we split (show picture), with routine we generalize over methods & constructors, show action table etc etc
-- [ ] add require and ensure
-- [ ] clean up shared mod
-- [ ] ADD 'new array[]' statement
-- [ ] add profiling als program is veel langzamer dan die van stefan
-- [ ] object accesing vanaf de heap e.g.
-- [ ] generalise over get_from_env and get_from_anEnv
-- [ ] fix vector formatting of edges
-- [ ] change retval_id to a static string in shared?
-- [ ] put all error msgs in one or more enums to 'streamline' them
-- [ ] best practices opzoeken voor variable shadowing
