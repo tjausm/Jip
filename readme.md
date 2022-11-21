@@ -1,4 +1,4 @@
-# Installation (windows)
+# Building (windows)
 1. Install rust & cargo
 2. Install cmake 
 3. Install llvm
