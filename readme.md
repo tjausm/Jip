@@ -4,6 +4,11 @@
 3. Install llvm
 4. run `cargo build -vv` in the root folder (it can take 20 - 30 min to build due to z3 the package, add the `-vv` flag to make sure the build process is still in progress)
 
+# Building (Ubuntu)
+1. (Install rustup)[https://www.rust-lang.org/tools/install]
+2. ```sudo apt install cmake llvm```
+4. run `cargo build -vv` in the root folder (it can take 20 - 30 min to build due to z3 the package, add the `-vv` flag to make sure the build process is still in progress)
+
 # Usage:
 
 ```
