@@ -1,8 +1,10 @@
-# Installation (windows)
-1. Install rust & cargo
-2. Install cmake 
-3. Install llvm
-4. run `cargo build -vv` in the root folder (it can take 20 - 30 min to build due to z3 the package, add the `-vv` flag to make sure the build process is still in progress)
+# Building
+1. [Install rustup](https://www.rust-lang.org/tools/install)
+2.
+    1. **Ubuntu**: ```sudo apt install cmake llvm```
+    2. **Windows**: download [cmake](https://cmake.org/download/) and [llvm](https://llvm.org/builds/)
+3. run `cargo build -vv` in the root folder (it can take 20 - 30 min to build due to z3 the package, add the `-vv` flag to make sure the build process is still in progress)
+
 
 # Usage:
 
