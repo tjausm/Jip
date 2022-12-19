@@ -1,16 +1,12 @@
 class Main{
-    static void main(){
-        Main.mod();
-    }
-    static int mod(int a, int b){
-        assume a >= 0 && b >= 0;
+    static void main(int a, int b){
+        assume a >= 0 && b > 0;
         int res := a;
 
-        while (res > b) { // bug: > should be >=
+        while (res >= b) { 
             res := res - b;
         }
         assert res == a % b;
-        return res;
     }
 
 }

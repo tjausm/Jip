@@ -3,6 +3,7 @@
 
 extern crate z3;
 
+use uuid::Uuid;
 use z3::ast::{Ast, Bool, Dynamic, Int};
 use z3::{ast, Context, SatResult, Solver};
 use rustc_hash::FxHashMap;
@@ -13,21 +14,38 @@ use crate::ast::*;
 use crate::shared::{Error, Scope};
 pub type Identifier = String;
 
+
+pub type Reference = Uuid;
+
 #[derive(Debug, Clone)]
-pub enum Variable<'a> {
+pub enum SymbolicExpression<'a> {
     Int(Int<'a>),
     Bool(Bool<'a>),
-    Ref
+    Ref(Reference)
 }
 
-/// Environment where each environment is annotated with the scope it belongs to
+pub type Object<'a> = FxHashMap<&'a Identifier, SymbolicExpression<'a>>;
+
+pub type Array<'a> = Vec<SymbolicExpression<'a>>;
+
+#[derive(Clone)]
+pub enum ReferenceValue<'a>{
+    Object(Object<'a>),
+    Array(Array<'a>),
+    Uninitialized(Type)
+} 
+
 #[derive(Debug, Clone)]
 pub struct Frame<'a> {
     pub scope: Scope,
-    pub env: FxHashMap<&'a Identifier, Variable<'a>>
+    pub env: FxHashMap<&'a Identifier, SymbolicExpression<'a>>
 } 
 
-pub type Stack<'a> = Vec<Frame<'a>>;
+/// Stack of scope-annotated frames
+pub type SymStack<'a> = Vec<Frame<'a>>;
+
+
+pub type SymHeap<'a> = FxHashMap<Reference, ReferenceValue<'a>>;
 
 #[derive(Clone)]
 pub enum PathConstraint<'a> {
@@ -44,7 +62,7 @@ impl fmt::Debug for PathConstraint<'_> {
     }
 }
 
-pub fn insert_into_stack<'a>(env: &mut Stack<'a>, id: &'a Identifier, var: Variable<'a>) -> () {
+pub fn insert_into_stack<'a>(env: &mut SymStack<'a>, id: &'a Identifier, var: SymbolicExpression<'a>) -> () {
     match env.last_mut() {
         Some(s) => {
             s.env.insert(id, var);
@@ -53,7 +71,7 @@ pub fn insert_into_stack<'a>(env: &mut Stack<'a>, id: &'a Identifier, var: Varia
     };
 }
 
-pub fn get_from_stack<'a>(env: &Stack<'a>, id: &'a Identifier) -> Option<Variable<'a>> {
+pub fn get_from_stack<'a>(env: &SymStack<'a>, id: &'a Identifier) -> Option<SymbolicExpression<'a>> {
     for s in env.iter().rev() {
         match s.env.get(&id) {
             Some(var) => return Some(var.clone()),
@@ -64,25 +82,25 @@ pub fn get_from_stack<'a>(env: &Stack<'a>, id: &'a Identifier) -> Option<Variabl
 }
 
 /// casts identifier directly to dynamic z3 ast value from stack
-pub fn get_dyn_from_stack<'a>(stack: &Stack<'a>, id: &'a Identifier) -> Result<Dynamic<'a>, Error> {
+pub fn get_dyn_from_stack<'a>(stack: &SymStack<'a>, id: &'a Identifier) -> Result<Dynamic<'a>, Error> {
     let err = Error::Semantics(format!("Variable {} is undeclared", id));
     match get_from_stack(stack, id).ok_or(err)? {
-        Variable::Int(i) => {
+        SymbolicExpression::Int(i) => {
             return Ok(Dynamic::from(i.clone()));
         }
-        Variable::Bool(b) => {
+        SymbolicExpression::Bool(b) => {
             return Ok(Dynamic::from(b.clone()));
         }
-        Variable::Ref => todo!()
+        SymbolicExpression::Ref(_) => todo!()
     }
 }
 
-pub fn fresh_int<'ctx>(ctx: &'ctx Context, id: String) -> Variable<'ctx> {
-    return Variable::Int(Int::new_const(&ctx, id));
+pub fn fresh_int<'ctx>(ctx: &'ctx Context, id: String) -> SymbolicExpression<'ctx> {
+    return SymbolicExpression::Int(Int::new_const(&ctx, id));
 }
 
-pub fn fresh_bool<'ctx>(ctx: &'ctx Context, id: String) -> Variable<'ctx> {
-    return Variable::Bool(Bool::new_const(&ctx, id));
+pub fn fresh_bool<'ctx>(ctx: &'ctx Context, id: String) -> SymbolicExpression<'ctx> {
+    return SymbolicExpression::Bool(Bool::new_const(&ctx, id));
 }
 
 /// Combine the constraints in reversed order and check correctness
@@ -128,7 +146,7 @@ pub fn check_path<'ctx>(
 
 pub fn expression_to_int<'ctx>(
     ctx: &'ctx Context,
-    env: &Stack<'ctx>,
+    env: &SymStack<'ctx>,
     expr: &'ctx Expression,
 ) -> Result<Int<'ctx>, Error> {
     return expression_to_dynamic(&ctx, Rc::new(env), expr).and_then(as_int_or_error);
@@ -136,7 +154,7 @@ pub fn expression_to_int<'ctx>(
 
 pub fn expression_to_bool<'ctx>(
     ctx: &'ctx Context,
-    env: &Stack<'ctx>,
+    env: &SymStack<'ctx>,
     expr: &'ctx Expression,
 ) -> Result<Bool<'ctx>, Error> {
     return expression_to_dynamic(&ctx, Rc::new(env), expr).and_then(as_bool_or_error);
@@ -144,7 +162,7 @@ pub fn expression_to_bool<'ctx>(
 
 fn expression_to_dynamic<'ctx, 'b>(
     ctx: &'ctx Context,
-    stack: Rc<&Stack<'ctx>>,
+    stack: Rc<&SymStack<'ctx>>,
     expr: &'ctx Expression,
 ) -> Result<Dynamic<'ctx>, Error> {
     match expr {
