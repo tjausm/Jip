@@ -24,11 +24,11 @@ pub enum SymbolicExpression<'a> {
     Ref(Reference)
 }
 
-pub type Object<'a> = FxHashMap<&'a Identifier, SymbolicExpression<'a>>;
+pub type Object<'a> = (Type, FxHashMap<&'a Identifier, (Type, SymbolicExpression<'a>)>);
 
-pub type Array<'a> = Vec<SymbolicExpression<'a>>;
+pub type Array<'a> = (Type, Vec<SymbolicExpression<'a>>);
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub enum ReferenceValue<'a>{
     Object(Object<'a>),
     Array(Array<'a>),

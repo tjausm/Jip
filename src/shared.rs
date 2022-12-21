@@ -27,7 +27,7 @@ pub struct Scope {
 /// Map identifier to clas, to know where to find invoked functions e.g. c.increment() can only be performed if we know where to find the increment function
 pub type TypeEnv = Vec<FxHashMap<Identifier, Class>>;
 
-/// Collection type to identify and retreive content of methods & constructors
+/// Abstraction type over methods & constructors
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum Routine {
     Method {

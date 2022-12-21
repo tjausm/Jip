@@ -101,8 +101,9 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
         z3Invocations: 0,
     };
 
-    // init retval such that it outlives env
+    // init retval and this such that it outlives env
     let retval_id = &"retval".to_string();
+    let this_id = &"this".to_string();
 
     let prog = parse_program(prog_string)?;
     let (start_node, cfg) = generate_cfg(prog.clone())?;
@@ -129,7 +130,7 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
     // Assume -> build & verify z3 formula, stop evaluating pad if disproven
     // assignment -> evaluate rhs and update env
     // then we enque all connected nodes, till d=0 or we reach end of cfg
-    while let Some((mut symStack, mut symHeap, mut pc, d, curr_node)) = q.pop_front() {
+    while let Some((mut sym_stack, mut sym_heap, mut pc, d, curr_node)) = q.pop_front() {
         if d == 0 {
             continue;
         }
@@ -140,10 +141,10 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                 for p in parameters {
                     match p {
                         (Type::Int, id) => {
-                            insert_into_stack(&mut symStack, &id, fresh_int(&ctx, id.clone()))
+                            insert_into_stack(&mut sym_stack, &id, fresh_int(&ctx, id.clone()))
                         }
                         (Type::Bool, id) => {
-                            insert_into_stack(&mut symStack, &id, fresh_bool(&ctx, id.clone()))
+                            insert_into_stack(&mut sym_stack, &id, fresh_bool(&ctx, id.clone()))
                         }
                         (ty, id) => {
                             return Err(Error::Semantics(format!(
@@ -159,25 +160,24 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                 match stmt {
                     Statement::Declaration((ty, id)) => match ty {
                         Type::Int => {
-                            insert_into_stack(&mut symStack, &id, fresh_int(&ctx, id.clone()));
+                            insert_into_stack(&mut sym_stack, &id, fresh_int(&ctx, id.clone()));
                         }
                         Type::Bool => {
-                            insert_into_stack(&mut symStack, &id, fresh_bool(&ctx, id.clone()));
-                        }
-                        weird_type => {
-                            return Err(Error::Semantics(format!(
-                                "Declaring a var of type {:?} isn't possible",
-                                weird_type
-                            )))
-                        }
+                            insert_into_stack(&mut sym_stack, &id, fresh_bool(&ctx, id.clone()));
+                        },
+                        Type::Classtype(_) => {
+                            let r = Uuid::new_v4();
+                            insert_into_stack(&mut sym_stack, id, SymbolicExpression::Ref(r))
+                        },
+                        Type::Void => panic!("Panic should never trigger, parser doesn't accept void type in declaration"),
                     },
                     Statement::Assume(expr) => {
-                        let ast = expression_to_bool(&ctx, &symStack, &expr)?;
+                        let ast = expression_to_bool(&ctx, &sym_stack, &expr)?;
                         pc.push(PathConstraint::Assume(ast));
                     }
 
                     // return err if is invalid else continue
-                    Statement::Assert(expr) => match expression_to_bool(&ctx, &symStack, &expr) {
+                    Statement::Assert(expr) => match expression_to_bool(&ctx, &sym_stack, &expr) {
                         Err(why) => return Err(why),
                         Ok(ast) => {
                             diagnostics.z3Invocations = diagnostics.z3Invocations + 1;
@@ -193,29 +193,29 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                         // get lhs type
                         // parse expression variable
                         // assign to id in stack
-                        lhs_from_rhs(&ctx, &mut symStack, &mut symHeap, lhs, rhs)?;
+                        lhs_from_rhs(&ctx, &mut sym_stack, &mut sym_heap, lhs, rhs)?;
                     }
                     Statement::Return(expr) => {
-                        match symStack.last() {
+                        match sym_stack.last() {
                             Some(anScope) if anScope.scope.id == main.scope.id => continue,
                             _ => (),
                         }
 
                         // evaluate return expression with type of retval and add to stack
-                        match get_from_stack(&symStack, retval_id) {
+                        match get_from_stack(&sym_stack, retval_id) {
                             Some(SymbolicExpression::Int(_)) => {
-                                let ast = expression_to_int(&ctx, &symStack, &expr)?;
+                                let ast = expression_to_int(&ctx, &sym_stack, &expr)?;
                                 insert_into_stack(
-                                    &mut symStack,
+                                    &mut sym_stack,
                                     retval_id,
                                     SymbolicExpression::Int(ast),
                                 );
                             }
 
                             Some(SymbolicExpression::Bool(_)) => {
-                                let ast = expression_to_bool(&ctx, &symStack, &expr)?;
+                                let ast = expression_to_bool(&ctx, &sym_stack, &expr)?;
                                 insert_into_stack(
-                                    &mut symStack,
+                                    &mut sym_stack,
                                     retval_id,
                                     SymbolicExpression::Bool(ast),
                                 );
@@ -235,8 +235,8 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
 
         'q_nodes: for edge in cfg.edges(curr_node) {
             // clone new stack and heap for each edge we travel to
-            let mut sym_stack = symStack.clone();
-            let mut sym_heap = symHeap.clone();
+            let mut sym_stack = sym_stack.clone();
+            let mut sym_heap = sym_heap.clone();
 
             // perform all actions in an edge and enque the result
             for action in edge.weight() {
@@ -268,12 +268,30 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                             insert_into_stack(&mut sym_stack, id, var);
                         }
                     }
-                    Action::DeclareThis {
-                        class,
-                        reference: object,
-                    } => {
-                        todo!("Enter previous scope, retreive this_object and assign to this")
-                    }
+                    Action::DeclareThis { class, obj } => match obj {
+                        Lhs::Identifier(id) => match get_from_stack(&sym_stack, id) {
+                            Some(SymbolicExpression::Ref(r)) => insert_into_stack(
+                                &mut sym_stack,
+                                this_id,
+                                SymbolicExpression::Ref(r),
+                            ),
+                            Some(_) => {
+                                return Err(Error::Semantics(format!(
+                                    "{} is not of type {}",
+                                    id, class
+                                )))
+                            }
+                            None => {
+                                return Err(Error::Semantics(format!(
+                                    "Variable {} is undeclared",
+                                    id
+                                )))
+                            }
+                        },
+                        Lhs::Accessfield(_, _) => {
+                            todo!("assigning objects to accesfields not implemented")
+                        }
+                    },
                     Action::InitObj {
                         from: (class, members),
                         to: lhs,
@@ -288,22 +306,37 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                                     Type::Int => {
                                         fields.insert(
                                             field,
-                                            crate::z3::fresh_int(&ctx, field.to_string()),
+                                            (
+                                                Type::Int,
+                                                crate::z3::fresh_int(&ctx, field.to_string()),
+                                            ),
                                         );
                                     }
                                     Type::Bool => {
-                                        fields.insert(field, fresh_bool(&ctx, field.to_string()));
+                                        (
+                                            Type::Bool,
+                                            fields.insert(
+                                                field,
+                                                (Type::Bool, fresh_bool(&ctx, field.to_string())),
+                                            ),
+                                        );
                                     }
                                     Type::Classtype(class) => {
                                         // insert uninitialized object to heap
                                         let reference = Uuid::new_v4();
                                         sym_heap.insert(
                                             reference,
-                                            ReferenceValue::Uninitialized(Type::Classtype(
+                                            (ReferenceValue::Uninitialized(Type::Classtype(
                                                 class.to_string(),
-                                            )),
+                                            ))),
                                         );
-                                        fields.insert(field, SymbolicExpression::Ref(reference));
+                                        fields.insert(
+                                            field,
+                                            (
+                                                Type::Classtype(class.to_string()),
+                                                SymbolicExpression::Ref(reference),
+                                            ),
+                                        );
                                     }
                                     Type::Void => {
                                         return Err(Error::Semantics(format!(
@@ -315,12 +348,15 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                                 _ => (),
                             }
                         }
-                        
-                        // push object to heap and assign reference of object to lhs
-                        let reference = Uuid::new_v4();
-                        sym_heap.insert(reference, ReferenceValue::Object(fields));
+
+                        // get reference r and map r to initialized object on heap
                         match lhs {
-                            Lhs::Identifier(id) => insert_into_stack(&mut sym_stack, id, SymbolicExpression::Ref(reference)),
+                            Lhs::Identifier(id) =>{
+                                match get_from_stack(&sym_stack, id) {
+                                    Some(SymbolicExpression::Ref(r)) => sym_heap.insert(r, ReferenceValue::Object((Type::Classtype(class.to_string()), fields))),
+                                    _ => return Err(Error::Semantics(format!("Can't initialize '{} {}' because no reference is declared on the stack", class, id))),
+                                }
+                            },
                             Lhs::Accessfield(_, _) => todo!(),
                         };
                     }
@@ -364,26 +400,63 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
 }
 
 fn type_lhs<'ctx>(
-    ctx: &'ctx Context,
-    symStack: &SymStack<'ctx>,
-    symHeap: &SymHeap<'ctx>,
+    sym_stack: &SymStack<'ctx>,
+    sym_heap: &SymHeap<'ctx>,
     lhs: &'ctx Lhs,
 ) -> Result<Type, Error> {
-    let error = |id| Error::Semantics(format!("Can't type {} because variable is undeclared", id));
     match lhs {
-        Lhs::Accessfield(obj, field) => todo!(""),
-        Lhs::Identifier(id) => match get_from_stack(symStack, id) {
+        Lhs::Accessfield(obj, field) => match get_from_stack(&sym_stack, obj) {
+            Some(SymbolicExpression::Ref(r)) => match sym_heap.get(&r) {
+                Some(ReferenceValue::Object((_, fields))) => {
+                    let (ty, _) = fields.get(field).ok_or(Error::Semantics(format!(
+                        "Can't type field '{}.{}' because it does not exist",
+                        obj, field
+                    )))?;
+                    return Ok(ty.clone());
+                }
+                Some(ReferenceValue::Uninitialized(ty)) => {
+                    todo!("searching through program to get type of uninitialized fields")
+                }
+                Some(ReferenceValue::Array(_)) => {
+                    return Err(Error::Semantics(format!(
+                        "Can't type '{}.{}' because the reference of '{}' points to an array",
+                        obj, field, obj
+                    )))
+                }
+                None => {
+                    return Err(Error::Semantics(format!(
+                    "Can't type '{}.{}' because reference of '{}' points to nothing on the heap",
+                    obj, field, obj
+                )))
+                }
+            },
+            _ => {
+                return Err(Error::Semantics(format!(
+                    "Can't type '{}.{}' because {} is not a reference",
+                    obj, field, obj
+                )))
+            }
+        },
+        Lhs::Identifier(id) => match get_from_stack(sym_stack, id) {
             Some(SymbolicExpression::Bool(_)) => Ok(Type::Bool),
             Some(SymbolicExpression::Int(_)) => Ok(Type::Int),
-            Some(SymbolicExpression::Ref(r)) => {
-                let refValue = symHeap.get(&r).ok_or(error(id))?;
-                match refValue {
-                    ReferenceValue::Object(_) => todo!("Get class from heap"),
-                    ReferenceValue::Array(_) => todo!("Get arraytype from heap"),
-                    ReferenceValue::Uninitialized(_) => todo!("initialize object"),
+            Some(SymbolicExpression::Ref(r)) => match sym_heap.get(&r) {
+                Some(ReferenceValue::Object((ty, _))) => return Ok(ty.clone()),
+                Some(ReferenceValue::Array((ty, _))) => return Ok(ty.clone()),
+                Some(ReferenceValue::Uninitialized(ty)) => return Ok(ty.clone()),
+                None => {
+                    return Err(Error::Semantics(format!(
+                        "Can't type '{}' because its reference points to nothing on the heap",
+                        id
+                    )))
                 }
+            },
+            None => {
+                return Err(Error::Semantics(format!(
+                    "Can't type '{}' because it is undeclared on the stack",
+                    id
+                )))
             }
-            None => Err(error(id)),
         },
     }
 }
@@ -423,16 +496,16 @@ fn parse_rhs<'ctx>(
 /// assigns value from rhs to value from lhs
 fn lhs_from_rhs<'ctx>(
     ctx: &'ctx Context,
-    symStack: &mut SymStack<'ctx>,
-    symHeap: &mut SymHeap<'ctx>,
+    sym_stack: &mut SymStack<'ctx>,
+    sym_heap: &mut SymHeap<'ctx>,
     lhs: &'ctx Lhs,
     rhs: &'ctx Rhs,
 ) -> Result<(), Error> {
-    let ty = type_lhs(&ctx, &symStack, &symHeap, lhs)?;
-    let var = parse_rhs(&ctx, symStack, &ty, rhs)?;
+    let ty = type_lhs(&sym_stack, &sym_heap, lhs)?;
+    let var = parse_rhs(&ctx, sym_stack, &ty, rhs)?;
     match lhs {
         Lhs::Accessfield(obj, field) => todo!("write to field on the heap here"),
-        Lhs::Identifier(id) => Ok(insert_into_stack(symStack, id, var)),
+        Lhs::Identifier(id) => Ok(insert_into_stack(sym_stack, id, var)),
     }
 }
 

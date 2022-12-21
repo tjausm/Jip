@@ -67,7 +67,7 @@ pub enum Type {
     Void,
     Int,
     Bool,
-    Classtype(Identifier),
+    Classtype(Identifier)
 }
 
 pub type Assignment = (Lhs, Rhs);

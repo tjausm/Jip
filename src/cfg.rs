@@ -39,9 +39,9 @@ pub enum Action {
         params: Parameters,
         args: Vec<Expression>,
     },
-    /// assign ref_id's corresponding reference to 'this'
+    /// copy ref of object method is called on to 'this'
     DeclareThis {
-        reference: Lhs,
+        obj: Lhs,
         class: Identifier,
     },
     /// Initialise object of class on heap and make lhs a reference to object
@@ -264,7 +264,7 @@ fn stmts_to_cfg<'a>(
                 } else {
                     vec![Action::DeclareThis {
                         class: class.clone(),
-                        reference: Lhs::Identifier(class_or_obj),
+                        obj: Lhs::Identifier(class_or_obj),
                     }]
                 };
 
@@ -309,7 +309,7 @@ fn stmts_to_cfg<'a>(
                         Action::DeclareRetval { ty: ty.clone() },
                         Action::DeclareThis {
                             class: class.clone(),
-                            reference: Lhs::Identifier(class_or_obj.clone()),
+                            obj: Lhs::Identifier(class_or_obj.clone()),
                         },
                     ]
                 };
@@ -359,7 +359,7 @@ fn stmts_to_cfg<'a>(
                 let append_actions = vec![
                     Action::DeclareThis {
                         class: class_name.clone(),
-                        reference: lhs.clone(),
+                        obj: lhs.clone(),
                     },
                     Action::InitObj {
                         from: class.clone(),
@@ -595,7 +595,7 @@ impl fmt::Debug for Action {
             }
             Action::DeclareThis {
                 class: class,
-                reference: object,
+                obj: object,
             } => write!(f, "{} this := {:?}", class, object),
             Action::InitObj { from, to } => {
                 write!(f, "Init {} {:?} on heap", from.0, to)
