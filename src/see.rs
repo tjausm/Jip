@@ -461,23 +461,40 @@ fn type_lhs<'ctx>(
     }
 }
 
-/// Assigns an expression to an identifier in the passed environment
+/// returns the symbolic expression rhs refers to
 fn parse_rhs<'ctx>(
     ctx: &'ctx Context,
-    env: &SymStack<'ctx>,
+    sym_stack: &SymStack<'ctx>,
+    sym_heap: &SymHeap<'ctx>,
     ty: &Type,
     rhs: &'ctx Rhs,
 ) -> Result<SymbolicExpression<'ctx>, Error> {
     match rhs {
-        Rhs::Accessfield(obj, field) => todo!(),
+        Rhs::Accessfield(obj_name, field_name) => match get_from_stack(sym_stack, obj_name) {
+            Some(SymbolicExpression::Ref(r)) => match sym_heap.get(&r) {
+                Some(ReferenceValue::Object((_, fields))) => {
+                    let (_, value) = fields.get(field_name).ok_or(Error::Semantics(format!(
+                        "Field {} does not exist on {}",
+                        field_name, obj_name
+                    )))?;
+                    return Ok(value.clone());
+                }
+
+                _ => Err(Error::Semantics(format!(
+                    "Reference of {} does not exist on the heap",
+                    obj_name
+                ))),
+            },
+            _ => Err(Error::Semantics(format!("{} is not a reference", obj_name))),
+        },
         Rhs::Expression(expr) => match ty {
             Type::Int => {
-                let ast = expression_to_int(&ctx, &env, &expr)?;
+                let ast = expression_to_int(&ctx, &sym_stack, &expr)?;
                 Ok(SymbolicExpression::Int(ast))
             }
 
             Type::Bool => {
-                let ast = expression_to_bool(&ctx, &env, &expr)?;
+                let ast = expression_to_bool(&ctx, &sym_stack, &expr)?;
                 Ok(SymbolicExpression::Bool(ast))
             }
             Type::Classtype(_) => todo!(),
@@ -493,7 +510,7 @@ fn parse_rhs<'ctx>(
     }
 }
 
-/// assigns value from rhs to value from lhs
+/// assigns value from rhs to lhs
 fn lhs_from_rhs<'ctx>(
     ctx: &'ctx Context,
     sym_stack: &mut SymStack<'ctx>,
@@ -502,9 +519,29 @@ fn lhs_from_rhs<'ctx>(
     rhs: &'ctx Rhs,
 ) -> Result<(), Error> {
     let ty = type_lhs(&sym_stack, &sym_heap, lhs)?;
-    let var = parse_rhs(&ctx, sym_stack, &ty, rhs)?;
+    let var = parse_rhs(&ctx, sym_stack, sym_heap, &ty, rhs)?;
     match lhs {
-        Lhs::Accessfield(obj, field) => todo!("write to field on the heap here"),
+        Lhs::Accessfield(obj_name, field_name) => match get_from_stack(sym_stack, obj_name) {
+            Some(SymbolicExpression::Ref(r)) => match sym_heap.get_mut(&r) {
+                Some(ReferenceValue::Object((_, fields))) => {
+                    let ty = fields
+                        .get(field_name)
+                        .ok_or(Error::Semantics(format!(
+                            "Field {} does not exist on {}",
+                            field_name, obj_name
+                        )))?
+                        .0
+                        .clone();
+                    fields.insert(field_name, (ty.clone(), var));
+                    Ok(())
+                }
+                _ => Err(Error::Semantics(format!(
+                    "Reference of {} does not exist on the heap",
+                    obj_name
+                ))),
+            },
+            _ => Err(Error::Semantics(format!("{} is not a reference", obj_name))),
+        },
         Lhs::Identifier(id) => Ok(insert_into_stack(sym_stack, id, var)),
     }
 }

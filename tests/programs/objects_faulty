@@ -1,12 +1,12 @@
 class Main {
-    static void main(){
-        Counter c := new Counter(7);
+    static void main(int x){
+        Counter c := new Counter(x - 30);
         c.increment();
         c.increment();
         c.increment();
         c.decrement();
         int cvalue := c.count;
-        assert cvalue == 9;
+        assert cvalue == 10;
     }
 }
 
