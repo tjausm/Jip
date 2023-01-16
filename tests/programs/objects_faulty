@@ -1,12 +1,18 @@
 class Main {
+    
     static void main(int x){
-        Counter c := new Counter(x - 30);
-        c.increment();
-        c.increment();
-        c.increment();
-        c.decrement();
-        int cvalue := c.count;
+        Counter counter := new Counter(x);
+        counter.increment();
+        Counter refCounter;
+        refCounter := Main.increment(counter);
+        int cvalue := refCounter.count;
         assert cvalue == 10;
+    }
+
+    // peform some operations on passed reference and pass back
+    static Counter increment(Counter y){
+        y.increment();
+        return y;
     }
 }
 

@@ -1,4 +1,4 @@
-use std::{ops::Range, time::Instant};
+use std::{time::Instant};
 
 use crate::see::{print_verification, Depth, ExitCode};
 

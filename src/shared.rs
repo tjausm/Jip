@@ -25,7 +25,7 @@ pub struct Scope {
 
 
 /// Map identifier to clas, to know where to find invoked functions e.g. c.increment() can only be performed if we know where to find the increment function
-pub type TypeEnv = Vec<FxHashMap<Identifier, Class>>;
+pub type TypeStack = Vec<FxHashMap<Identifier, Class>>;
 
 /// Abstraction type over methods & constructors
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
@@ -51,7 +51,7 @@ pub fn print_short_id(scope: &Scope) -> String {
     }
 }
 
-pub fn insert_into_env<K: Eq + Hash, V>(env: &mut Vec<FxHashMap<K, V>>, key: K, value: V) -> () {
+pub fn insert_into_ty_stack<K: Eq + Hash, V>(env: &mut Vec<FxHashMap<K, V>>, key: K, value: V) -> () {
     match env.last_mut() {
         Some(env) => {
             env.insert(key, value);
@@ -60,7 +60,7 @@ pub fn insert_into_env<K: Eq + Hash, V>(env: &mut Vec<FxHashMap<K, V>>, key: K, 
     };
 }
 
-pub fn get_from_env<K: Eq + Hash + Display, V: Clone>(
+pub fn get_from_ty_stack<K: Eq + Hash + Display, V: Clone>(
     env_stack: &Vec<FxHashMap<K, V>>,
     id: &K,
 ) -> Option<V> {
@@ -75,8 +75,8 @@ pub fn get_from_env<K: Eq + Hash + Display, V: Clone>(
 
 /// given an object or class name, return class name
 /// e.g. if we call o.f(), where object o is of class O then get_class(o) = O 
-pub fn get_classname<'a>(object_or_class: &'a String, ty_env: &TypeEnv) -> String {
-    get_from_env(ty_env, &object_or_class)
+pub fn get_classname<'a>(object_or_class: &'a String, ty_env: &TypeStack) -> String {
+    get_from_ty_stack(ty_env, &object_or_class)
         .map(|t| t.0)
         .unwrap_or(object_or_class.clone())
 }
@@ -110,7 +110,6 @@ pub fn get_methodcontent<'a>(
                         return Ok(content);
                     }
                 }
-                _ => (),
             },
             _ => (),
         }

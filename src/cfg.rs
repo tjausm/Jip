@@ -5,8 +5,8 @@ lalrpop_mod!(pub parser); // synthesized by LALRPOP
 
 use crate::ast::*;
 use crate::shared::{
-    get_class, get_classname, get_from_env, get_methodcontent, get_routine_content,
-    insert_into_env, print_short_id, Error, Routine, Scope, TypeEnv,
+    get_class, get_classname,  get_methodcontent, get_routine_content,
+    insert_into_ty_stack, print_short_id, Error, Routine, Scope, TypeStack,
 };
 use petgraph::dot::Dot;
 use petgraph::graph::{Graph, NodeIndex};
@@ -100,7 +100,7 @@ pub fn generate_cfg(prog: Program) -> Result<(NodeIndex, CFG), Error> {
             let end = cfg.add_node(Node::End);
 
             //initiate environments
-            let mut ty_env: TypeEnv = vec![FxHashMap::default()];
+            let mut ty_env: TypeStack = vec![FxHashMap::default()];
             let mut f_env: FunEnv = FxHashMap::default();
 
             //generate the cfg
@@ -134,7 +134,7 @@ pub fn generate_cfg(prog: Program) -> Result<(NodeIndex, CFG), Error> {
 /// - **ty_env ->** map identifiers to classes, to know where to find invoked functions e.g. given object c, we can only perform c.increment() if we know the class of c
 /// - **f_env ->**  map methods to the start and end of a functions subgraph
 fn stmts_to_cfg<'a>(
-    ty_env: &mut TypeEnv,
+    ty_env: &mut TypeStack,
     f_env: &mut FunEnv,
     prog: &Program,
     mut stmts: VecDeque<Statement>,
@@ -302,6 +302,8 @@ fn stmts_to_cfg<'a>(
                 let is_static = class.clone() == class_or_obj;
 
                 let (ty, _, _, _) = get_methodcontent(prog, &class, &method_name)?;
+
+                // declare retval and if non-static declarethis
                 let append_actions = if is_static {
                     vec![Action::DeclareRetval { ty: ty.clone() }]
                 } else {
@@ -357,14 +359,14 @@ fn stmts_to_cfg<'a>(
 
                 // we pass actions InitObj and declareThis
                 let append_actions = vec![
-                    Action::DeclareThis {
-                        class: class_name.clone(),
-                        obj: lhs.clone(),
-                    },
                     Action::InitObj {
                         from: class.clone(),
                         to: lhs.clone(),
                     },
+                    Action::DeclareThis {
+                        class: class_name.clone(),
+                        obj: lhs.clone(),
+                    }
                 ];
 
                 let routine = Routine::Constructor {
@@ -429,7 +431,7 @@ fn stmts_to_cfg<'a>(
                 match &other {
                     Statement::Declaration((Type::Classtype(class_name), id)) => {
                         let class = get_class(prog, class_name)?;
-                        insert_into_env(ty_env, id.clone(), class.clone())
+                        insert_into_ty_stack(ty_env, id.clone(), class.clone())
                     }
                     _ => (),
                 }
@@ -463,7 +465,7 @@ fn routine_to_cfg<'a>(
     routine: Routine,
     append_incoming: Edge,
     args: Vec<Expression>,
-    ty_env: &mut TypeEnv,
+    ty_stack: &mut TypeStack,
     f_env: &mut FunEnv,
     prog: &Program,
     cfg: &mut CFG,
@@ -472,20 +474,33 @@ fn routine_to_cfg<'a>(
     // collect information for the actions on the cfg edge
     let (params, _) = get_routine_content(prog, &routine)?;
 
+    // put new frame on typeStack and keep track of the params accompanying classes
+    ty_stack.push(FxHashMap::default());
+    for (ty, id) in params {
+        match ty {
+            Type::Classtype(class_name) => {
+                let class = get_class(prog, class_name)?.clone();
+                insert_into_ty_stack(ty_stack, id.clone(), class)
+            }
+            _ => (),
+        }
+    }
+
     let fun_scope = Scope {
         id: Some(Uuid::new_v4()),
+    };
+    let enter_scope = Action::EnterScope {
+        to: fun_scope.clone(),
     };
     let assign_args = Action::AssignArgs {
         params: params.clone(),
         args: args.clone(),
     };
-    let enter_scope = Action::EnterScope {
-        to: fun_scope.clone(),
-    };
+
 
     // create subgraph for function if it does not exist yet
     let (f_start_node, f_end_node) =
-        routinebody_to_cfg(routine, ty_env, f_env, prog, cfg, &fun_scope)?;
+        routinebody_to_cfg(routine, ty_stack, f_env, prog, cfg, &fun_scope)?;
 
     // update incoming actions with actions passed from start struct, and appendable actions from append_incoming
     for start in starts {
@@ -501,6 +516,9 @@ fn routine_to_cfg<'a>(
         );
     }
 
+    // pop typeStack frame
+    ty_stack.pop();
+
     return Ok(Start {
         node: f_end_node,
         edge: vec![Action::LeaveScope {
@@ -512,7 +530,7 @@ fn routine_to_cfg<'a>(
 // returns (or builds) subgraph of a method/constructor
 fn routinebody_to_cfg<'a>(
     routine: Routine,
-    ty_env: &mut TypeEnv,
+    ty_env: &mut TypeStack,
     f_env: &mut FunEnv,
     prog: &Program,
     cfg: &mut CFG,
@@ -594,9 +612,9 @@ impl fmt::Debug for Action {
                 write!(f, "Leaving scope {}", print_short_id(from))
             }
             Action::DeclareThis {
-                class: class,
-                obj: object,
-            } => write!(f, "{} this := {:?}", class, object),
+                class, 
+                obj
+            } => write!(f, "{} this := {:?}", class, obj),
             Action::InitObj { from, to } => {
                 write!(f, "Init {} {:?} on heap", from.0, to)
             }

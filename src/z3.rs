@@ -21,7 +21,7 @@ pub type Reference = Uuid;
 pub enum SymbolicExpression<'a> {
     Int(Int<'a>),
     Bool(Bool<'a>),
-    Ref(Reference)
+    Ref((Type, Reference))
 }
 
 pub type Object<'a> = (Type, FxHashMap<&'a Identifier, (Type, SymbolicExpression<'a>)>);
