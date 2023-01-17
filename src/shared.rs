@@ -3,6 +3,7 @@
 //!
 
 use crate::ast::*;
+use crate::z3::{SymStack, SymHeap};
 
 use rustc_hash::FxHashMap;
 use std::fmt::Display;
@@ -18,9 +19,8 @@ pub enum Error {
 /// since main is unique we only have a scope.id outside of main
 #[derive(Debug, Clone, PartialEq)]
 pub struct Scope {
-    pub id: Option<Uuid>
+    pub id: Option<Uuid>,
 }
-
 
 /// Map identifier to clas, to know where to find invoked functions e.g. c.increment() can only be performed if we know where to find the increment function
 pub type TypeStack = Vec<FxHashMap<Identifier, Class>>;
@@ -49,7 +49,11 @@ pub fn print_short_id(scope: &Scope) -> String {
     }
 }
 
-pub fn insert_into_ty_stack<K: Eq + Hash, V>(env: &mut Vec<FxHashMap<K, V>>, key: K, value: V) -> () {
+pub fn insert_into_ty_stack<K: Eq + Hash, V>(
+    env: &mut Vec<FxHashMap<K, V>>,
+    key: K,
+    value: V,
+) -> () {
     match env.last_mut() {
         Some(env) => {
             env.insert(key, value);
@@ -72,79 +76,100 @@ pub fn get_from_ty_stack<K: Eq + Hash + Display, V: Clone>(
 }
 
 /// given an object or class name, return class name
-/// e.g. if we call o.f(), where object o is of class O then get_class(o) = O 
+/// e.g. if we call o.f(), where object o is of class O then get_class(o) = O
 pub fn get_classname<'a>(object_or_class: &'a String, ty_env: &TypeStack) -> String {
     get_from_ty_stack(ty_env, &object_or_class)
         .map(|t| t.0)
         .unwrap_or(object_or_class.clone())
 }
 
-pub fn get_class<'a>(prog: &'a Program, class_name: &str) -> Result<&'a Class, Error> {
-    prog.iter()
-        .find(|(id, _)| id == class_name)
-        .ok_or(Error::Semantics(format!(
-            "Class {} doesn't exist",
-            class_name
-        )))
+pub fn get_class<'a>(prog: &'a Program, class_name: &str) -> &'a Class {
+    match prog.iter()
+        .find(|(id, _)| id == class_name) {
+            Some(class) => return class,
+            None => custom_panic(&format!(
+                "Class {} doesn't exist",
+                class_name
+            ), None, None)
+        }
+
 }
 
 pub fn get_methodcontent<'a>(
     prog: &'a Program,
     class_name: &Identifier,
     method_name: &Identifier,
-) -> Result<&'a Methodcontent, Error> {
-    let class = get_class(prog, class_name)?;
+) -> &'a Methodcontent {
+    let class = get_class(prog, class_name);
 
     for member in class.1.iter() {
         match member {
             Member::Method(method) => match method {
                 Method::Static(content @ (_, id, _, _)) => {
                     if id == method_name {
-                        return Ok(content);
+                        return content;
                     }
                 }
                 Method::Nonstatic(content @ (_, id, _, _)) => {
                     if id == method_name {
-                        return Ok(content);
+                        return content;
                     }
                 }
             },
             _ => (),
         }
     }
-    return Err(Error::Semantics(format!(
+    custom_panic(&format!(
         "Static method {}.{} doesn't exist",
         class.0, method_name
-    )));
+    ), None, None);
 }
-    
-fn get_constructor<'a>(prog: &'a Program, class_name: &str) -> Result<&'a Constructor, Error> {
-    let class = get_class(prog, class_name)?;
+
+fn get_constructor<'a>(prog: &'a Program, class_name: &str) -> &'a Constructor {
+    let class = get_class(prog, class_name);
 
     for m in class.1.iter() {
         match m {
-            Member::Constructor(c) => return Ok(c),
+            Member::Constructor(c) => return c,
             _ => continue,
         }
     }
-    return Err(Error::Semantics(format!(
+    custom_panic(&format!(
         "Class {} does not have a constructor",
         class_name
-    )));
+    ), None, None);
 }
 
 pub fn get_routine_content<'a>(
     prog: &'a Program,
-    routine: &Routine
-) -> Result<(&'a Parameters, &'a Statements), Error> {
+    routine: &Routine,
+) -> (&'a Parameters, &'a Statements) {
     match routine {
         Routine::Constructor { class } => {
-            let (_, params, stmts) = get_constructor(prog, class)?;
-            Ok((params, stmts))
-        },
+            let (_, params, stmts) = get_constructor(prog, class);
+            (params, stmts)
+        }
         Routine::Method { class, method } => {
-            let (_, _, params, stmts) = get_methodcontent(prog, class, method)?;
-            Ok((params, stmts))
-        },
+            let (_, _, params, stmts) = get_methodcontent(prog, class, method);
+            (params, stmts)
+        }
     }
+}
+
+/// Panics with passed message and print diagnostic info
+pub fn custom_panic<'ctx>(msg: &str, sym_stack: Option<&SymStack<'ctx>>, sym_heap: Option<&SymHeap<'ctx>>) -> ! {
+    panic!(
+        "
+    {}
+
+    ENVIRONMENT
+    
+    Stack:
+    {:?}
+
+    Heap:
+    {:?}
+    ",
+        msg, sym_stack, sym_heap
+    )
 }
