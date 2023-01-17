@@ -42,7 +42,6 @@ struct Diagnostics {
 fn print_result(r: Result<Diagnostics, Error>) -> (ExitCode, String) {
     match r {
         Err(Error::Syntax(why)) => (ExitCode::Error, format!("Syntax error: {}", why)),
-        Err(Error::Semantics(why)) => (ExitCode::Error, format!("Semantics error: {}", why)),
         Err(Error::Other(why)) => (ExitCode::Error, format!("{}", why)),
         Err(Error::Verification(why)) => (ExitCode::CounterExample, format!("{}", why)),
         Ok(_) => (ExitCode::Valid, PROG_CORRECT.to_string()),
@@ -145,12 +144,11 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                         (Type::Bool, id) => {
                             insert_into_stack(&mut sym_stack, &id, fresh_bool(&ctx, id.clone()))
                         }
-                        (ty, id) => {
-                            return Err(Error::Semantics(format!(
-                                "Can't call main with parameter {} of type {:?}",
-                                id, ty
-                            )))
-                        }
+                        (ty, id) => custom_panic(
+                            &format!("Can't call main with parameter {} of type {:?}", id, ty),
+                            &sym_stack,
+                            &sym_heap,
+                        ),
                     }
                 }
             }
@@ -171,31 +169,30 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                         Type::Void => panic!("Panic should never trigger, parser doesn't accept void type in declaration"),
                     },
                     Statement::Assume(expr) => {
-                        let ast = expression_to_bool(&ctx, &sym_stack, &expr)?;
+                        let ast = expression_to_bool(&ctx, &sym_stack, &expr);
                         pc.push(PathConstraint::Assume(ast));
                     }
 
                     // return err if is invalid else continue
-                    Statement::Assert(expr) => match expression_to_bool(&ctx, &sym_stack, &expr) {
-                        Err(why) => return Err(why),
-                        Ok(ast) => {
-                            diagnostics.z3_invocations = diagnostics.z3_invocations + 1;
+                    Statement::Assert(expr) =>   {
+                        let ast = expression_to_bool(&ctx, &sym_stack, &expr);
 
-                            pc.push(PathConstraint::Assert(ast));
-                            match check_path(&ctx, &pc) {
-                                Err(why) => return Err(why),
-                                Ok(_) => (),
-                            }
+                        diagnostics.z3_invocations = diagnostics.z3_invocations + 1;
+
+                        pc.push(PathConstraint::Assert(ast));
+                        match check_path(&ctx, &pc) {
+                            Err(why) => return Err(why),
+                            Ok(_) => (),
+                            
                         }
                     },
                     Statement::Assignment((lhs, rhs)) => {
                         // get lhs type
                         // parse expression variable
                         // assign to id in stack
-                        lhs_from_rhs(&ctx, &mut sym_stack, &mut sym_heap, lhs, rhs)?;
+                        lhs_from_rhs(&ctx, &mut sym_stack, &mut sym_heap, lhs, rhs);
                     }
                     Statement::Return(expr) => {
-                        
                         // stop path if it returns from main function 
                         match sym_stack.last() {
                             Some(an_scope) if an_scope.scope.id == main.scope.id => continue,
@@ -205,7 +202,7 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                         // evaluate return expression with type of retval and add to stack
                         match get_from_stack(&sym_stack, retval_id) {
                             Some(SymbolicExpression::Int(_)) => {
-                                let ast = expression_to_int(&ctx, &sym_stack, &expr)?;
+                                let ast = expression_to_int(&ctx, &sym_stack, &expr);
                                 insert_into_stack(
                                     &mut sym_stack,
                                     retval_id,
@@ -214,7 +211,7 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                             }
 
                             Some(SymbolicExpression::Bool(_)) => {
-                                let ast = expression_to_bool(&ctx, &sym_stack, &expr)?;
+                                let ast = expression_to_bool(&ctx, &sym_stack, &expr);
                                 insert_into_stack(
                                     &mut sym_stack,
                                     retval_id,
@@ -225,16 +222,13 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                                 match expr {
                                     Expression::Identifier(id) => match get_from_stack(&sym_stack, id) {
                                         Some(SymbolicExpression::Ref(r)) => insert_into_stack(&mut sym_stack, retval_id, SymbolicExpression::Ref(r)),
-                                        Some(expr) => return Err(Error::Semantics(format!("Can't return '{:?}' as a referencevalue", expr))),
-                                        None => return Err(Error::Semantics(format!("{} is undeclared", id))),
+                                        Some(expr) => custom_panic(&format!("Can't return '{:?}' as a referencevalue", expr), &sym_stack, &sym_heap),
+                                        None => custom_panic(&format!("{} is undeclared", id), &sym_stack, &sym_heap),
                                     },
-                                    _ => return Err(Error::Semantics(format!("Can't return expression '{:?}'", expr))),
+                                    _ => custom_panic(&format!("Can't return expression '{:?}'", expr), &sym_stack, &sym_heap),
                                 }
                             },
-                            None => {
-                                print!("return {:?}", expr);
-                                return Err(Error::Semantics(format!("retval is undeclared")));
-                            }
+                            None => custom_panic(&format!("retval is undeclared in expression 'return {:?}'", expr), &sym_stack, &sym_heap),  
                         }
                     }
                     _ => (),
@@ -272,12 +266,14 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                             Type::Classtype(ty) => insert_into_stack(
                                 &mut sym_stack,
                                 retval_id,
-                                SymbolicExpression::Ref((Type::Classtype(ty.clone()), Uuid::nil()))),
+                                SymbolicExpression::Ref((Type::Classtype(ty.clone()), Uuid::nil())),
+                            ),
                             Type::Void => panic!("Cannot declare retval of type void"),
                         }
                     }
                     Action::AssignArgs { params, args } => {
-                        let variables = params_to_vars(&ctx, &mut sym_stack, params, &args)?;
+                        let variables =
+                            params_to_vars(&ctx, &mut sym_stack, &sym_heap, &params, &args);
 
                         for (id, var) in variables {
                             insert_into_stack(&mut sym_stack, id, var);
@@ -290,18 +286,16 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                                 this_id,
                                 SymbolicExpression::Ref(r),
                             ),
-                            Some(_) => {
-                                return Err(Error::Semantics(format!(
-                                    "{} is not of type {}",
-                                    id, class
-                                )))
-                            }
-                            None => {
-                                return Err(Error::Semantics(format!(
-                                    "Variable {} is undeclared",
-                                    id
-                                )))
-                            }
+                            Some(_) => custom_panic(
+                                &format!("{} is not of type {}", id, class),
+                                &sym_stack,
+                                &sym_heap,
+                            ),
+                            None => custom_panic(
+                                &format!("Variable {} is undeclared", id),
+                                &sym_stack,
+                                &sym_heap,
+                            ),
                         },
                         Lhs::Accessfield(_, _) => {
                             todo!("assigning objects to accesfields not implemented")
@@ -338,7 +332,8 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                                     }
                                     Type::Classtype(class) => {
                                         // insert uninitialized object to heap
-                                        let (ty, r) = (Type::Classtype(class.to_string()), Uuid::new_v4());
+                                        let (ty, r) =
+                                            (Type::Classtype(class.to_string()), Uuid::new_v4());
                                         sym_heap.insert(
                                             r,
                                             ReferenceValue::Uninitialized(Type::Classtype(
@@ -353,12 +348,11 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                                             ),
                                         );
                                     }
-                                    Type::Void => {
-                                        return Err(Error::Semantics(format!(
-                                            "Type of {}.{} can't be void",
-                                            class, field
-                                        )))
-                                    }
+                                    Type::Void => custom_panic(
+                                        &format!("Type of {}.{} can't be void", class, field),
+                                        &sym_stack,
+                                        &sym_heap,
+                                    ),
                                 },
                                 _ => (),
                             }
@@ -366,12 +360,12 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
 
                         // get reference r and map r to initialized object on heap
                         match lhs {
-                            Lhs::Identifier(id) =>{
+                            Lhs::Identifier(id) => {
                                 match get_from_stack(&sym_stack, id) {
-                                    Some(SymbolicExpression::Ref((_, r))) => sym_heap.insert(r, ReferenceValue::Object((Type::Classtype(class.to_string()), fields))),
-                                    _ => return Err(Error::Semantics(format!("Can't initialize '{} {}' because no reference is declared on the stack", class, id))),
-                                }
-                            },
+                                    Some(SymbolicExpression::Ref((_, r))) => {sym_heap.insert(r, ReferenceValue::Object((Type::Classtype(class.to_string()), fields)));},
+                                    _ => custom_panic(&format!("Can't initialize '{} {}' because no reference is declared on the stack", class, id), &sym_stack, &sym_heap),
+                                };
+                            }
                             Lhs::Accessfield(_, _) => todo!(),
                         };
                     }
@@ -384,18 +378,18 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                                     Some(frame) => {
                                         frame.env.insert(retval_id, retval);
                                     }
-                                    None => {
-                                        return Err(Error::Semantics(
-                                            "Can't return from main scope".to_owned(),
-                                        ));
-                                    }
+                                    None => custom_panic(
+                                        "Can't return from main scope",
+                                        &sym_stack,
+                                        &sym_heap,
+                                    ),
                                 }
                             }
-                            None => {
-                                return Err(Error::Semantics(
-                                    "Can't lift retval to a higher scope".to_owned(),
-                                ));
-                            }
+                            None => custom_panic(
+                                "Can't lift retval to a higher scope",
+                                &sym_stack,
+                                &sym_heap,
+                            ),
                         };
                     }
                     // if we can leave over this edge pop scope otherwise dismiss path pe
@@ -414,54 +408,62 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
     return Ok(diagnostics);
 }
 
-fn type_lhs<'ctx>(
-    sym_stack: &SymStack<'ctx>,
-    sym_heap: &SymHeap<'ctx>,
-    lhs: &'ctx Lhs,
-) -> Result<Type, Error> {
+fn type_lhs<'ctx>(sym_stack: &SymStack<'ctx>, sym_heap: &SymHeap<'ctx>, lhs: &'ctx Lhs) -> Type {
     match lhs {
         Lhs::Accessfield(obj, field) => match get_from_stack(&sym_stack, obj) {
             Some(SymbolicExpression::Ref((ty, r))) => match sym_heap.get(&r) {
                 Some(ReferenceValue::Object((_, fields))) => {
-                    let (ty, _) = fields.get(field).ok_or(Error::Semantics(format!(
-                        "Can't type field '{}.{}' because it does not exist",
-                        obj, field
-                    )))?;
-                    return Ok(ty.clone());
+                    let (ty, _) = match fields.get(field) {
+                        Some(field) => field,
+                        None => custom_panic(
+                            &format!(
+                                "Can't type field '{}.{}' because it does not exist",
+                                obj, field
+                            ),
+                            &sym_stack,
+                            &sym_heap,
+                        ),
+                    };
+                    return ty.clone();
                 }
                 Some(ReferenceValue::Uninitialized(ty)) => {
                     todo!("searching through program to get type of uninitialized fields")
                 }
-                Some(ReferenceValue::Array(_)) => {
-                    return Err(Error::Semantics(format!(
+                Some(ReferenceValue::Array(_)) => custom_panic(
+                    &format!(
                         "Can't type '{}.{}' because the reference of '{}' points to an array",
                         obj, field, obj
-                    )))
-                }
-                None => {
-                    return Err(Error::Semantics(format!(
+                    ),
+                    &sym_stack,
+                    &sym_heap,
+                ),
+                None => custom_panic(
+                    &format!(
                     "Can't type '{}.{}' because reference of '{}' points to nothing on the heap",
                     obj, field, obj
-                )))
-                }
+                ),
+                    &sym_stack,
+                    &sym_heap,
+                ),
             },
-            _ => {
-                return Err(Error::Semantics(format!(
+            _ => custom_panic(
+                &format!(
                     "Can't type '{}.{}' because {} is not a reference",
                     obj, field, obj
-                )))
-            }
+                ),
+                &sym_stack,
+                &sym_heap,
+            ),
         },
         Lhs::Identifier(id) => match get_from_stack(sym_stack, id) {
-            Some(SymbolicExpression::Bool(_)) => Ok(Type::Bool),
-            Some(SymbolicExpression::Int(_)) => Ok(Type::Int),
-            Some(SymbolicExpression::Ref((ty, _))) => Ok(ty),
-            None => {
-                return Err(Error::Semantics(format!(
-                    "Can't type '{}' because it is undeclared on the stack",
-                    id
-                )))
-            }
+            Some(SymbolicExpression::Bool(_)) => Type::Bool,
+            Some(SymbolicExpression::Int(_)) => Type::Int,
+            Some(SymbolicExpression::Ref((ty, _))) => ty,
+            None => custom_panic(
+                &format!("Can't type '{}' because it is undeclared on the stack", id),
+                &sym_stack,
+                &sym_heap,
+            ),
         },
     }
 }
@@ -473,55 +475,75 @@ fn parse_rhs<'ctx>(
     sym_heap: &SymHeap<'ctx>,
     ty: &Type,
     rhs: &'ctx Rhs,
-) -> Result<SymbolicExpression<'ctx>, Error> {
+) -> SymbolicExpression<'ctx> {
     match rhs {
         Rhs::Accessfield(obj_name, field_name) => match get_from_stack(sym_stack, obj_name) {
             Some(SymbolicExpression::Ref((_, r))) => match sym_heap.get(&r) {
                 Some(ReferenceValue::Object((_, fields))) => {
-                    let (_, value) = fields.get(field_name).ok_or(Error::Semantics(format!(
-                        "Field {} does not exist on {}",
-                        field_name, obj_name
-                    )))?;
-                    return Ok(value.clone());
+                    let (_, value) = match fields.get(field_name) {
+                        Some(field) => field,
+                        None => custom_panic(
+                            &format!("Field {} does not exist on {}", field_name, obj_name),
+                            &sym_stack,
+                            &sym_heap,
+                        ),
+                    };
+                    return value.clone();
                 }
 
-                _ => Err(Error::Semantics(format!(
-                    "Reference of {} does not exist on the heap",
-                    obj_name
-                ))),
+                _ => custom_panic(
+                    &format!(
+                        "Reference of {} not found on heap while parsing rhs {:?}",
+                        obj_name, rhs
+                    ),
+                    &sym_stack,
+                    &sym_heap,
+                ),
             },
-            _ => Err(Error::Semantics(format!("{} is not a reference", obj_name))),
+            _ => custom_panic(
+                &format!("{} is not a reference", obj_name),
+                &sym_stack,
+                &sym_heap,
+            ),
         },
         Rhs::Expression(expr) => match ty {
             Type::Int => {
-                let ast = expression_to_int(&ctx, &sym_stack, &expr)?;
-                Ok(SymbolicExpression::Int(ast))
+                let ast = expression_to_int(&ctx, &sym_stack, &expr);
+                SymbolicExpression::Int(ast)
             }
 
             Type::Bool => {
-                let ast = expression_to_bool(&ctx, &sym_stack, &expr)?;
-                Ok(SymbolicExpression::Bool(ast))
+                let ast = expression_to_bool(&ctx, &sym_stack, &expr);
+                SymbolicExpression::Bool(ast)
             }
-            Type::Classtype(class) => {
-                match expr {
-                    Expression::Identifier(id) => 
-                        match get_from_stack(sym_stack, id) {
-                            Some(SymbolicExpression::Ref((ty,r))) => Ok(SymbolicExpression::Ref((ty, r))),
-                            Some(_) => Err(Error::Semantics(format!("TODO: think of error"))),
-                            None => Err(Error::Semantics(format!("TODO: think of error"))),
-                        }
-                    _ => return Err(Error::Semantics(format!("Can't evaluate {:?} to type {}", rhs, class)))
-                }
+            Type::Classtype(class) => match expr {
+                Expression::Identifier(id) => match get_from_stack(sym_stack, id) {
+                    Some(SymbolicExpression::Ref((ty, r))) => SymbolicExpression::Ref((ty, r)),
+                    Some(_) => {
+                        custom_panic(&format!("TODO: think of error"), &sym_stack, &sym_heap)
+                    }
+                    None => custom_panic(&format!("TODO: think of error"), &sym_stack, &sym_heap),
+                },
+                _ => custom_panic(
+                    &format!("Can't evaluate {:?} to type {}", rhs, class),
+                    &sym_stack,
+                    &sym_heap,
+                ),
             },
-            Type::Void => Err(Error::Other(format!(
-                "Can't evaluate rhs expression of the form {:?} to type void",
-                rhs
-            ))),
+            Type::Void => custom_panic(
+                &format!(
+                    "Can't evaluate rhs expression of the form {:?} to type void",
+                    rhs
+                ),
+                &sym_stack,
+                &sym_heap,
+            ),
         },
-        _ => Err(Error::Other(format!(
-            "Rhs of the form {:?} should not be in the cfg",
-            rhs
-        ))),
+        _ => custom_panic(
+            &format!("Rhs of the form {:?} should not be in the cfg", rhs),
+            &sym_stack,
+            &sym_heap,
+        ),
     }
 }
 
@@ -533,29 +555,36 @@ fn lhs_from_rhs<'ctx>(
     lhs: &'ctx Lhs,
     rhs: &'ctx Rhs,
 ) -> Result<(), Error> {
-    let ty = type_lhs(&sym_stack, &sym_heap, lhs)?;
-    let var = parse_rhs(&ctx, sym_stack, sym_heap, &ty, rhs)?;
+    let ty = type_lhs(&sym_stack, &sym_heap, lhs);
+    let var = parse_rhs(&ctx, sym_stack, sym_heap, &ty, rhs);
     match lhs {
         Lhs::Accessfield(obj_name, field_name) => match get_from_stack(sym_stack, obj_name) {
             Some(SymbolicExpression::Ref((ty, r))) => match sym_heap.get_mut(&r) {
                 Some(ReferenceValue::Object((_, fields))) => {
-                    let ty = fields
-                        .get(field_name)
-                        .ok_or(Error::Semantics(format!(
+                    let (ty, _) = match fields.get(field_name) {
+                        Some(field) => field,
+                        None => custom_panic(&format!(
                             "Field {} does not exist on {}",
                             field_name, obj_name
-                        )))?
-                        .0
-                        .clone();
+                        ), &sym_stack, &sym_heap)
+                    };
                     fields.insert(field_name, (ty.clone(), var));
                     Ok(())
                 }
-                _ => Err(Error::Semantics(format!(
-                    "Reference of {} does not exist on the heap",
-                    obj_name
-                ))),
+                _ => custom_panic(
+                    &format!(
+                        "Reference of {} not found on heap while doing assignment {:?} := {:?}",
+                        obj_name, lhs, rhs
+                    ),
+                    &sym_stack,
+                    &sym_heap,
+                ),
             },
-            _ => Err(Error::Semantics(format!("{} is not a reference", obj_name))),
+            _ => custom_panic(
+                &format!("{} is not a reference", obj_name),
+                &sym_stack,
+                &sym_heap,
+            ),
         },
         Lhs::Identifier(id) => Ok(insert_into_stack(sym_stack, id, var)),
     }
@@ -565,9 +594,10 @@ fn lhs_from_rhs<'ctx>(
 fn params_to_vars<'ctx>(
     ctx: &'ctx Context,
     sym_stack: &mut SymStack<'ctx>,
+    sym_heap: &SymHeap<'ctx>,
     params: &'ctx Parameters,
     args: &'ctx Arguments,
-) -> Result<Vec<(&'ctx String, SymbolicExpression<'ctx>)>, Error> {
+) -> Vec<(&'ctx String, SymbolicExpression<'ctx>)> {
     let mut params_iter = params.iter();
     let mut args_iter = args.iter();
     let mut variables = vec![];
@@ -575,47 +605,77 @@ fn params_to_vars<'ctx>(
     loop {
         match (params_iter.next(), args_iter.next()) {
             (Some((Type::Int, arg_id)), Some(expr)) => {
-                let expr = expression_to_int(ctx, sym_stack, expr)?;
+                let expr = expression_to_int(ctx, sym_stack, expr);
                 variables.push((arg_id, SymbolicExpression::Int(expr)));
             }
             (Some((Type::Bool, arg_id)), Some(expr)) => {
-                let expr = expression_to_bool(ctx, sym_stack, expr)?;
+                let expr = expression_to_bool(ctx, sym_stack, expr);
                 variables.push((arg_id, SymbolicExpression::Bool(expr)));
             }
             (Some((Type::Classtype(class), arg_id)), Some(expr)) => {
-                let err = |class, arg_id, expr| Err(Error::Semantics(format!("Can't assign argument '{} {}' value '{:?}'", class, arg_id, expr)));
+                let err = |class, arg_id, expr| {
+                    custom_panic(
+                        &format!(
+                            "Can't assign argument '{} {}' value '{:?}'",
+                            class, arg_id, expr
+                        ),
+                        &sym_stack,
+                        &sym_heap,
+                    )
+                };
                 match expr {
-                    Expression::Identifier(param_id) => {
-                        match get_from_stack(sym_stack, param_id) {
-                            Some(SymbolicExpression::Ref(r)) => variables.push((arg_id, SymbolicExpression::Ref(r))),
-                            _ => return err(class,arg_id, expr),
+                    Expression::Identifier(param_id) => match get_from_stack(sym_stack, param_id) {
+                        Some(SymbolicExpression::Ref(r)) => {
+                            variables.push((arg_id, SymbolicExpression::Ref(r)))
                         }
+                        _ => return err(class, arg_id, expr),
                     },
-                    _ => return err(class,arg_id, expr)
+                    _ => return err(class, arg_id, expr),
                 }
             }
-            (Some((ty, _)), Some(_)) => {
-                return Err(Error::Semantics(format!(
-                    "Argument of type {:?} are not implemented",
-                    ty
-                )))
-            }
-            (Some((_, param)), None) => {
-                return Err(Error::Semantics(format!(
+            (Some((ty, _)), Some(_)) => custom_panic(
+                &format!("Argument of type {:?} are not implemented", ty),
+                &sym_stack,
+                &sym_heap,
+            ),
+            (Some((_, param)), None) => custom_panic(
+                &format!(
                     "Missing an argument for parameter {:?} in a method call",
                     param
-                )))
-            }
-            (None, Some(expr)) => {
-                return Err(Error::Semantics(format!(
+                ),
+                &sym_stack,
+                &sym_heap,
+            ),
+            (None, Some(expr)) => custom_panic(
+                &format!(
                     "Expression {:?} has no parameter it can be assigned to in a method call",
                     expr
-                )))
-            }
+                ),
+                &sym_stack,
+                &sym_heap,
+            ),
             (None, None) => break,
         }
     }
-    return Ok(variables);
+    return variables;
+}
+
+/// Panics with passed message and print diagnostic info
+fn custom_panic<'ctx>(msg: &str, sym_stack: &SymStack<'ctx>, sym_heap: &SymHeap<'ctx>) -> ! {
+    panic!(
+        "
+    {}
+
+    ENVIRONMENT
+    
+    Stack:
+    {:?}
+
+    Heap:
+    {:?}
+    ",
+        msg, sym_stack, sym_heap
+    )
 }
 
 /// Contains parser tests since parser mod is auto-generated

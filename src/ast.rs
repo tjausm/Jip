@@ -52,7 +52,7 @@ pub enum Statement {
     Block(Box<Statements>),
     Assert(Expression),
     Assume(Expression),
-    While(While)
+    While(While),
 }
 
 // Todo: add to syntax & semantics in thesis
@@ -67,7 +67,7 @@ pub enum Type {
     Void,
     Int,
     Bool,
-    Classtype(Identifier)
+    Classtype(Identifier),
 }
 
 pub type Assignment = (Lhs, Rhs);

@@ -5,8 +5,8 @@ lalrpop_mod!(pub parser); // synthesized by LALRPOP
 
 use crate::ast::*;
 use crate::shared::{
-    get_class, get_classname,  get_methodcontent, get_routine_content,
-    insert_into_ty_stack, print_short_id, Error, Routine, Scope, TypeStack,
+    get_class, get_classname, get_methodcontent, get_routine_content, insert_into_ty_stack,
+    print_short_id, Error, Routine, Scope, TypeStack, custom_panic,
 };
 use petgraph::dot::Dot;
 use petgraph::graph::{Graph, NodeIndex};
@@ -90,7 +90,7 @@ pub fn generate_dot_cfg(program: Program) -> Result<String, Error> {
 /// Returns cfg, and the start_node representing entry point of the program
 pub fn generate_cfg(prog: Program) -> Result<(NodeIndex, CFG), Error> {
     //extract main.main method from program
-    let main_method = get_methodcontent(&prog, &"Main".to_string(), &"main".to_string())?;
+    let main_method = get_methodcontent(&prog, &"Main".to_string(), &"main".to_string());
 
     match main_method {
         (Type::Void, _, args, body) => {
@@ -113,7 +113,7 @@ pub fn generate_cfg(prog: Program) -> Result<(NodeIndex, CFG), Error> {
                 vec![start.clone()],
                 &(Scope { id: None }),
                 None,
-            )?;
+            );
 
             //connect ending(s) of generated cfg to the 'end' node
             for p_end in program_endings {
@@ -123,9 +123,9 @@ pub fn generate_cfg(prog: Program) -> Result<(NodeIndex, CFG), Error> {
             return Ok((start.node, cfg));
         }
         _ => {
-            return Err(Error::Semantics(
-                "Couldn't find a 'static void main' method".to_string(),
-            ))
+            custom_panic(
+                "Couldn't find a 'static void main' method", None, None
+            )
         }
     }
 }
@@ -142,7 +142,7 @@ fn stmts_to_cfg<'a>(
     starts: Vec<Start>,
     curr_scope: &Scope,
     scope_end: Option<NodeIndex>,
-) -> Result<Vec<NodeIndex>, Error> {
+) -> Vec<NodeIndex> {
     match stmts.pop_front() {
         Some(stmt) => match stmt {
             Statement::Block(stmts) => {
@@ -180,7 +180,7 @@ fn stmts_to_cfg<'a>(
                     vec![assume_start],
                     curr_scope,
                     scope_end,
-                )?;
+                );
 
                 let else_ending = stmts_to_cfg(
                     ty_env,
@@ -191,7 +191,7 @@ fn stmts_to_cfg<'a>(
                     vec![assume_not_start],
                     curr_scope,
                     scope_end,
-                )?;
+                );
 
                 let all_endings: Vec<Start> = [if_ending, else_ending]
                     .concat()
@@ -232,7 +232,7 @@ fn stmts_to_cfg<'a>(
                     vec![to_start(assume_node)],
                     curr_scope,
                     scope_end,
-                )?;
+                );
                 let end_remainder = stmts_to_cfg(
                     ty_env,
                     f_env,
@@ -242,14 +242,14 @@ fn stmts_to_cfg<'a>(
                     vec![to_start(assume_not_node)],
                     curr_scope,
                     scope_end,
-                )?;
+                );
                 // add edges from end of while body to begin and edge from while body to rest of stmts
                 for node in body_ending {
                     cfg.add_edge(node, assume_node, vec![]);
                     cfg.add_edge(node, assume_not_node, vec![]);
                 }
 
-                return Ok(end_remainder);
+                return end_remainder;
             }
 
             // generate
@@ -282,7 +282,7 @@ fn stmts_to_cfg<'a>(
                     prog,
                     cfg,
                     starts,
-                )?;
+                );
 
                 return stmts_to_cfg(
                     ty_env,
@@ -301,7 +301,7 @@ fn stmts_to_cfg<'a>(
                 let class = get_classname(&class_or_obj, &ty_env);
                 let is_static = class.clone() == class_or_obj;
 
-                let (ty, _, _, _) = get_methodcontent(prog, &class, &method_name)?;
+                let (ty, _, _, _) = get_methodcontent(prog, &class, &method_name);
 
                 // declare retval and if non-static declarethis
                 let append_actions = if is_static {
@@ -330,7 +330,7 @@ fn stmts_to_cfg<'a>(
                     prog,
                     cfg,
                     starts,
-                )?;
+                );
 
                 let assign_retval = cfg.add_node(Node::Statement(Statement::Assignment((
                     lhs,
@@ -355,7 +355,7 @@ fn stmts_to_cfg<'a>(
                 );
             }
             Statement::Assignment((lhs, Rhs::Newobject(class_name, args))) => {
-                let class = get_class(prog, &class_name)?;
+                let class = get_class(prog, &class_name);
 
                 // we pass actions InitObj and declareThis
                 let append_actions = vec![
@@ -366,7 +366,7 @@ fn stmts_to_cfg<'a>(
                     Action::DeclareThis {
                         class: class_name.clone(),
                         obj: lhs.clone(),
-                    }
+                    },
                 ];
 
                 let routine = Routine::Constructor {
@@ -382,7 +382,7 @@ fn stmts_to_cfg<'a>(
                     prog,
                     cfg,
                     starts,
-                )?;
+                );
 
                 return stmts_to_cfg(
                     ty_env,
@@ -407,13 +407,13 @@ fn stmts_to_cfg<'a>(
                         cfg.add_edge(retval_assign, scope_end, vec![]);
                     }
                     None => {
-                        return Err(Error::Semantics(format!(
+                        custom_panic(&format!(
                             " '{:?}' has no scope to return to.",
                             &Statement::Return(expr)
-                        )))
+                        ), None, None)
                     }
                 }
-                return Ok(vec![]);
+                return vec![];
             }
             // split declareassign by prepending a declaration and assignment
             Statement::DeclareAssign((t, id, rhs)) => {
@@ -430,7 +430,7 @@ fn stmts_to_cfg<'a>(
                 // keep track of variable types, to know where to find nonstatic methods called on object
                 match &other {
                     Statement::Declaration((Type::Classtype(class_name), id)) => {
-                        let class = get_class(prog, class_name)?;
+                        let class = get_class(prog, class_name);
                         insert_into_ty_stack(ty_env, id.clone(), class.clone())
                     }
                     _ => (),
@@ -455,7 +455,7 @@ fn stmts_to_cfg<'a>(
         //if stmt stack is empty we return ending node(s)
         None => {
             let start_nodes: Vec<NodeIndex> = starts.iter().map(|n| n.node).collect();
-            return Ok(start_nodes);
+            return start_nodes;
         }
     }
 }
@@ -470,16 +470,16 @@ fn routine_to_cfg<'a>(
     prog: &Program,
     cfg: &mut CFG,
     starts: Vec<Start>,
-) -> Result<Start, Error> {
+) -> Start {
     // collect information for the actions on the cfg edge
-    let (params, _) = get_routine_content(prog, &routine)?;
+    let (params, _) = get_routine_content(prog, &routine);
 
     // put new frame on typeStack and keep track of the params accompanying classes
     ty_stack.push(FxHashMap::default());
     for (ty, id) in params {
         match ty {
             Type::Classtype(class_name) => {
-                let class = get_class(prog, class_name)?.clone();
+                let class = get_class(prog, class_name).clone();
                 insert_into_ty_stack(ty_stack, id.clone(), class)
             }
             _ => (),
@@ -497,10 +497,9 @@ fn routine_to_cfg<'a>(
         args: args.clone(),
     };
 
-
     // create subgraph for function if it does not exist yet
     let (f_start_node, f_end_node) =
-        routinebody_to_cfg(routine, ty_stack, f_env, prog, cfg, &fun_scope)?;
+        routinebody_to_cfg(routine, ty_stack, f_env, prog, cfg, &fun_scope);
 
     // update incoming actions with actions passed from start struct, and appendable actions from append_incoming
     for start in starts {
@@ -519,12 +518,12 @@ fn routine_to_cfg<'a>(
     // pop typeStack frame
     ty_stack.pop();
 
-    return Ok(Start {
+    return Start {
         node: f_end_node,
         edge: vec![Action::LeaveScope {
             from: fun_scope.clone(),
         }],
-    });
+    };
 }
 
 // returns (or builds) subgraph of a method/constructor
@@ -535,16 +534,16 @@ fn routinebody_to_cfg<'a>(
     prog: &Program,
     cfg: &mut CFG,
     curr_scope: &Scope,
-) -> Result<(NodeIndex, NodeIndex), Error> {
+) -> (NodeIndex, NodeIndex) {
     // return function if it cfg is already generated
     match f_env.get(&routine) {
-        Some(fun) => return Ok(*fun),
+        Some(fun) => return *fun,
         _ => (),
     }
 
     // Check whether method exists and get body
     // if constructor get_constructorbody
-    let (_, body) = get_routine_content(prog, &routine)?;
+    let (_, body) = get_routine_content(prog, &routine);
 
     let enter_function = cfg.add_node(Node::EnterRoutine(routine.clone()));
 
@@ -564,7 +563,7 @@ fn routinebody_to_cfg<'a>(
         vec![to_start(enter_function)],
         curr_scope,
         Some(leave_function),
-    )?;
+    );
     //leave ty_env scope after method body cfg is created
     ty_env.pop();
     //connect end of function to leave_function node
@@ -572,7 +571,7 @@ fn routinebody_to_cfg<'a>(
         cfg.add_edge(node, leave_function, vec![]);
     }
 
-    return Ok((enter_function, leave_function));
+    return (enter_function, leave_function);
 }
 
 impl fmt::Debug for Node {
@@ -611,10 +610,7 @@ impl fmt::Debug for Action {
             Action::LeaveScope { from } => {
                 write!(f, "Leaving scope {}", print_short_id(from))
             }
-            Action::DeclareThis {
-                class, 
-                obj
-            } => write!(f, "{} this := {:?}", class, obj),
+            Action::DeclareThis { class, obj } => write!(f, "{} this := {:?}", class, obj),
             Action::InitObj { from, to } => {
                 write!(f, "Init {} {:?} on heap", from.0, to)
             }
