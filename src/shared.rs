@@ -12,7 +12,6 @@ use uuid::Uuid;
 
 #[derive(Debug, Clone)]
 pub enum Error {
-    Syntax(String),
     Verification(String),
     Other(String),
 }

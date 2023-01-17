@@ -3,7 +3,7 @@
 
 use crate::ast::*;
 use crate::cfg::{generate_cfg, generate_dot_cfg, Action, Node};
-use crate::shared::{Error, Scope};
+use crate::shared::{Error, Scope, custom_panic};
 use crate::z3::{
     check_path, expression_to_bool, expression_to_int, fresh_bool, fresh_int, get_from_stack,
     insert_into_stack, Frame, PathConstraint, ReferenceValue, SymHeap, SymStack,
@@ -41,7 +41,6 @@ struct Diagnostics {
 
 fn print_result(r: Result<Diagnostics, Error>) -> (ExitCode, String) {
     match r {
-        Err(Error::Syntax(why)) => (ExitCode::Error, format!("Syntax error: {}", why)),
         Err(Error::Other(why)) => (ExitCode::Error, format!("{}", why)),
         Err(Error::Verification(why)) => (ExitCode::CounterExample, format!("{}", why)),
         Ok(_) => (ExitCode::Valid, PROG_CORRECT.to_string()),
@@ -55,20 +54,12 @@ pub fn load_program(program: String) -> Result<String, (ExitCode, String)> {
     }
 }
 
-fn parse_program(program: &str) -> Result<Program, Error> {
-    match parser::ProgramParser::new().parse(program) {
-        Err(parse_err) => return Err(Error::Syntax(format!("{}", parse_err))),
-        Ok(program) => return Ok(program),
-    }
-}
-
 pub fn print_cfg(program: &str) -> (ExitCode, String) {
-    match parse_program(program) {
-        Err(parse_err) => print_result(Err(parse_err)),
-        Ok(stmts) => match generate_dot_cfg(stmts) {
+        let program = parser::ProgramParser::new().parse(program).unwrap();
+         match generate_dot_cfg(program) {
             Ok(cfg) => (ExitCode::Valid, cfg),
             Err(sem_err) => print_result(Err(sem_err)),
-        },
+        
     }
 }
 
@@ -103,7 +94,7 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
     let retval_id = &"retval".to_string();
     let this_id = &"this".to_string();
 
-    let prog = parse_program(prog_string)?;
+    let prog = parser::ProgramParser::new().parse(prog_string).unwrap();
     let (start_node, cfg) = generate_cfg(prog.clone())?;
 
     let z3_cfg = Config::new();
@@ -146,8 +137,8 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                         }
                         (ty, id) => custom_panic(
                             &format!("Can't call main with parameter {} of type {:?}", id, ty),
-                            &sym_stack,
-                            &sym_heap,
+                            Some(&sym_stack),
+                            Some(&sym_heap),
                         ),
                     }
                 }
@@ -222,13 +213,13 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                                 match expr {
                                     Expression::Identifier(id) => match get_from_stack(&sym_stack, id) {
                                         Some(SymbolicExpression::Ref(r)) => insert_into_stack(&mut sym_stack, retval_id, SymbolicExpression::Ref(r)),
-                                        Some(expr) => custom_panic(&format!("Can't return '{:?}' as a referencevalue", expr), &sym_stack, &sym_heap),
-                                        None => custom_panic(&format!("{} is undeclared", id), &sym_stack, &sym_heap),
+                                        Some(expr) => custom_panic(&format!("Can't return '{:?}' as a referencevalue", expr), Some(&sym_stack), Some(&sym_heap)),
+                                        None => custom_panic(&format!("{} is undeclared", id), Some(&sym_stack), Some(&sym_heap)),
                                     },
-                                    _ => custom_panic(&format!("Can't return expression '{:?}'", expr), &sym_stack, &sym_heap),
+                                    _ => custom_panic(&format!("Can't return expression '{:?}'", expr), Some(&sym_stack), Some(&sym_heap)),
                                 }
                             },
-                            None => custom_panic(&format!("retval is undeclared in expression 'return {:?}'", expr), &sym_stack, &sym_heap),  
+                            None => custom_panic(&format!("retval is undeclared in expression 'return {:?}'", expr), Some(&sym_stack), Some(&sym_heap)),  
                         }
                     }
                     _ => (),
@@ -288,13 +279,13 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                             ),
                             Some(_) => custom_panic(
                                 &format!("{} is not of type {}", id, class),
-                                &sym_stack,
-                                &sym_heap,
+                                Some(&sym_stack),
+                                Some(&sym_heap),
                             ),
                             None => custom_panic(
                                 &format!("Variable {} is undeclared", id),
-                                &sym_stack,
-                                &sym_heap,
+                                Some(&sym_stack),
+                                Some(&sym_heap),
                             ),
                         },
                         Lhs::Accessfield(_, _) => {
@@ -350,8 +341,8 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                                     }
                                     Type::Void => custom_panic(
                                         &format!("Type of {}.{} can't be void", class, field),
-                                        &sym_stack,
-                                        &sym_heap,
+                                        Some(&sym_stack),
+                                        Some(&sym_heap),
                                     ),
                                 },
                                 _ => (),
@@ -363,7 +354,7 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                             Lhs::Identifier(id) => {
                                 match get_from_stack(&sym_stack, id) {
                                     Some(SymbolicExpression::Ref((_, r))) => {sym_heap.insert(r, ReferenceValue::Object((Type::Classtype(class.to_string()), fields)));},
-                                    _ => custom_panic(&format!("Can't initialize '{} {}' because no reference is declared on the stack", class, id), &sym_stack, &sym_heap),
+                                    _ => custom_panic(&format!("Can't initialize '{} {}' because no reference is declared on the stack", class, id), Some(&sym_stack), Some(&sym_heap)),
                                 };
                             }
                             Lhs::Accessfield(_, _) => todo!(),
@@ -380,15 +371,15 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                                     }
                                     None => custom_panic(
                                         "Can't return from main scope",
-                                        &sym_stack,
-                                        &sym_heap,
+                                        Some(&sym_stack),
+                                        Some(&sym_heap),
                                     ),
                                 }
                             }
                             None => custom_panic(
                                 "Can't lift retval to a higher scope",
-                                &sym_stack,
-                                &sym_heap,
+                                Some(&sym_stack),
+                                Some(&sym_heap),
                             ),
                         };
                     }
@@ -420,8 +411,8 @@ fn type_lhs<'ctx>(sym_stack: &SymStack<'ctx>, sym_heap: &SymHeap<'ctx>, lhs: &'c
                                 "Can't type field '{}.{}' because it does not exist",
                                 obj, field
                             ),
-                            &sym_stack,
-                            &sym_heap,
+                            Some(&sym_stack),
+                            Some(&sym_heap),
                         ),
                     };
                     return ty.clone();
@@ -434,16 +425,16 @@ fn type_lhs<'ctx>(sym_stack: &SymStack<'ctx>, sym_heap: &SymHeap<'ctx>, lhs: &'c
                         "Can't type '{}.{}' because the reference of '{}' points to an array",
                         obj, field, obj
                     ),
-                    &sym_stack,
-                    &sym_heap,
+                    Some(&sym_stack),
+                    Some(&sym_heap),
                 ),
                 None => custom_panic(
                     &format!(
                     "Can't type '{}.{}' because reference of '{}' points to nothing on the heap",
                     obj, field, obj
                 ),
-                    &sym_stack,
-                    &sym_heap,
+                    Some(&sym_stack),
+                    Some(&sym_heap),
                 ),
             },
             _ => custom_panic(
@@ -451,8 +442,8 @@ fn type_lhs<'ctx>(sym_stack: &SymStack<'ctx>, sym_heap: &SymHeap<'ctx>, lhs: &'c
                     "Can't type '{}.{}' because {} is not a reference",
                     obj, field, obj
                 ),
-                &sym_stack,
-                &sym_heap,
+                Some(&sym_stack),
+                Some(&sym_heap),
             ),
         },
         Lhs::Identifier(id) => match get_from_stack(sym_stack, id) {
@@ -461,8 +452,8 @@ fn type_lhs<'ctx>(sym_stack: &SymStack<'ctx>, sym_heap: &SymHeap<'ctx>, lhs: &'c
             Some(SymbolicExpression::Ref((ty, _))) => ty,
             None => custom_panic(
                 &format!("Can't type '{}' because it is undeclared on the stack", id),
-                &sym_stack,
-                &sym_heap,
+                Some(&sym_stack),
+                Some(&sym_heap),
             ),
         },
     }
@@ -484,8 +475,8 @@ fn parse_rhs<'ctx>(
                         Some(field) => field,
                         None => custom_panic(
                             &format!("Field {} does not exist on {}", field_name, obj_name),
-                            &sym_stack,
-                            &sym_heap,
+                            Some(&sym_stack),
+                            Some(&sym_heap),
                         ),
                     };
                     return value.clone();
@@ -496,14 +487,14 @@ fn parse_rhs<'ctx>(
                         "Reference of {} not found on heap while parsing rhs {:?}",
                         obj_name, rhs
                     ),
-                    &sym_stack,
-                    &sym_heap,
+                    Some(&sym_stack),
+                    Some(&sym_heap),
                 ),
             },
             _ => custom_panic(
                 &format!("{} is not a reference", obj_name),
-                &sym_stack,
-                &sym_heap,
+                Some(&sym_stack),
+                Some(&sym_heap),
             ),
         },
         Rhs::Expression(expr) => match ty {
@@ -520,14 +511,14 @@ fn parse_rhs<'ctx>(
                 Expression::Identifier(id) => match get_from_stack(sym_stack, id) {
                     Some(SymbolicExpression::Ref((ty, r))) => SymbolicExpression::Ref((ty, r)),
                     Some(_) => {
-                        custom_panic(&format!("TODO: think of error"), &sym_stack, &sym_heap)
+                        custom_panic(&format!("TODO: think of error"), Some(&sym_stack), Some(&sym_heap))
                     }
-                    None => custom_panic(&format!("TODO: think of error"), &sym_stack, &sym_heap),
+                    None => custom_panic(&format!("TODO: think of error"), Some(&sym_stack), Some(&sym_heap)),
                 },
                 _ => custom_panic(
                     &format!("Can't evaluate {:?} to type {}", rhs, class),
-                    &sym_stack,
-                    &sym_heap,
+                    Some(&sym_stack),
+                    Some(&sym_heap),
                 ),
             },
             Type::Void => custom_panic(
@@ -535,14 +526,14 @@ fn parse_rhs<'ctx>(
                     "Can't evaluate rhs expression of the form {:?} to type void",
                     rhs
                 ),
-                &sym_stack,
-                &sym_heap,
+                Some(&sym_stack),
+                Some(&sym_heap),
             ),
         },
         _ => custom_panic(
             &format!("Rhs of the form {:?} should not be in the cfg", rhs),
-            &sym_stack,
-            &sym_heap,
+            Some(&sym_stack),
+            Some(&sym_heap),
         ),
     }
 }
@@ -566,7 +557,7 @@ fn lhs_from_rhs<'ctx>(
                         None => custom_panic(&format!(
                             "Field {} does not exist on {}",
                             field_name, obj_name
-                        ), &sym_stack, &sym_heap)
+                        ), Some(&sym_stack), Some(&sym_heap))
                     };
                     fields.insert(field_name, (ty.clone(), var));
                     Ok(())
@@ -576,14 +567,14 @@ fn lhs_from_rhs<'ctx>(
                         "Reference of {} not found on heap while doing assignment {:?} := {:?}",
                         obj_name, lhs, rhs
                     ),
-                    &sym_stack,
-                    &sym_heap,
+                    Some(&sym_stack),
+                    Some(&sym_heap),
                 ),
             },
             _ => custom_panic(
                 &format!("{} is not a reference", obj_name),
-                &sym_stack,
-                &sym_heap,
+                Some(&sym_stack),
+                Some(&sym_heap),
             ),
         },
         Lhs::Identifier(id) => Ok(insert_into_stack(sym_stack, id, var)),
@@ -619,8 +610,8 @@ fn params_to_vars<'ctx>(
                             "Can't assign argument '{} {}' value '{:?}'",
                             class, arg_id, expr
                         ),
-                        &sym_stack,
-                        &sym_heap,
+                        Some(&sym_stack),
+                        Some(&sym_heap),
                     )
                 };
                 match expr {
@@ -635,47 +626,29 @@ fn params_to_vars<'ctx>(
             }
             (Some((ty, _)), Some(_)) => custom_panic(
                 &format!("Argument of type {:?} are not implemented", ty),
-                &sym_stack,
-                &sym_heap,
+                Some(&sym_stack),
+                Some(&sym_heap),
             ),
             (Some((_, param)), None) => custom_panic(
                 &format!(
                     "Missing an argument for parameter {:?} in a method call",
                     param
                 ),
-                &sym_stack,
-                &sym_heap,
+                Some(&sym_stack),
+                Some(&sym_heap),
             ),
             (None, Some(expr)) => custom_panic(
                 &format!(
                     "Expression {:?} has no parameter it can be assigned to in a method call",
                     expr
                 ),
-                &sym_stack,
-                &sym_heap,
+                Some(&sym_stack),
+                Some(&sym_heap),
             ),
             (None, None) => break,
         }
     }
     return variables;
-}
-
-/// Panics with passed message and print diagnostic info
-fn custom_panic<'ctx>(msg: &str, sym_stack: &SymStack<'ctx>, sym_heap: &SymHeap<'ctx>) -> ! {
-    panic!(
-        "
-    {}
-
-    ENVIRONMENT
-    
-    Stack:
-    {:?}
-
-    Heap:
-    {:?}
-    ",
-        msg, sym_stack, sym_heap
-    )
 }
 
 /// Contains parser tests since parser mod is auto-generated
