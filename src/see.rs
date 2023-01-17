@@ -41,8 +41,6 @@ struct Diagnostics {
 
 fn print_result(r: Result<Diagnostics, Error>) -> (ExitCode, String) {
     match r {
-        Err(Error::Syntax(why)) => (ExitCode::Error, format!("Syntax error: {}", why)),
-        Err(Error::Semantics(why)) => (ExitCode::Error, format!("Semantics error: {}", why)),
         Err(Error::Other(why)) => (ExitCode::Error, format!("{}", why)),
         Err(Error::Verification(why)) => (ExitCode::CounterExample, format!("{}", why)),
         Ok(_) => (ExitCode::Valid, PROG_CORRECT.to_string()),
@@ -56,20 +54,12 @@ pub fn load_program(program: String) -> Result<String, (ExitCode, String)> {
     }
 }
 
-fn parse_program(program: &str) -> Result<Program, Error> {
-    match parser::ProgramParser::new().parse(program) {
-        Err(parse_err) => return Err(Error::Syntax(format!("{}", parse_err))),
-        Ok(program) => return Ok(program),
-    }
-}
-
 pub fn print_cfg(program: &str) -> (ExitCode, String) {
-    match parse_program(program) {
-        Err(parse_err) => print_result(Err(parse_err)),
-        Ok(stmts) => match generate_dot_cfg(stmts) {
+        let program = parser::ProgramParser::new().parse(program).unwrap();
+         match generate_dot_cfg(program) {
             Ok(cfg) => (ExitCode::Valid, cfg),
             Err(sem_err) => print_result(Err(sem_err)),
-        },
+        
     }
 }
 
@@ -104,7 +94,7 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
     let retval_id = &"retval".to_string();
     let this_id = &"this".to_string();
 
-    let prog = parse_program(prog_string)?;
+    let prog = parser::ProgramParser::new().parse(prog_string).unwrap();
     let (start_node, cfg) = generate_cfg(prog.clone())?;
 
     let z3_cfg = Config::new();
