@@ -1,14 +1,14 @@
 use z3::Context;
 
 use crate::ast::*;
-use crate::shared::{panic_with_diagnostics, Error};
+use crate::shared::{panic_with_diagnostics};
 use crate::z3::{SymStack, SymHeap, SymbolicExpression, ReferenceValue, get_from_stack, expression_to_int, expression_to_bool, insert_into_stack};
 
 
 pub fn type_lhs<'ctx>(sym_stack: &SymStack<'ctx>, sym_heap: &SymHeap<'ctx>, lhs: &'ctx Lhs) -> Type {
     match lhs {
         Lhs::Accessfield(obj, field) => match get_from_stack(&sym_stack, obj) {
-            Some(SymbolicExpression::Ref((ty, r))) => match sym_heap.get(&r) {
+            Some(SymbolicExpression::Ref((_, r))) => match sym_heap.get(&r) {
                 Some(ReferenceValue::Object((_, fields))) => {
                     let (ty, _) = match fields.get(field) {
                         Some(field) => field,
@@ -23,7 +23,7 @@ pub fn type_lhs<'ctx>(sym_stack: &SymStack<'ctx>, sym_heap: &SymHeap<'ctx>, lhs:
                     };
                     return ty.clone();
                 }
-                Some(ReferenceValue::Uninitialized(ty)) => {
+                Some(ReferenceValue::Uninitialized(_)) => {
                     todo!("searching through program to get type of uninitialized fields")
                 }
                 Some(ReferenceValue::Array(_)) => panic_with_diagnostics(
@@ -151,12 +151,12 @@ pub fn lhs_from_rhs<'ctx>(
     sym_heap: &mut SymHeap<'ctx>,
     lhs: &'ctx Lhs,
     rhs: &'ctx Rhs,
-) -> Result<(), Error> {
+) -> () {
     let ty = type_lhs(&sym_stack, &sym_heap, lhs);
     let var = parse_rhs(&ctx, sym_stack, sym_heap, &ty, rhs);
     match lhs {
         Lhs::Accessfield(obj_name, field_name) => match get_from_stack(sym_stack, obj_name) {
-            Some(SymbolicExpression::Ref((ty, r))) => match sym_heap.get_mut(&r) {
+            Some(SymbolicExpression::Ref((_, r))) => match sym_heap.get_mut(&r) {
                 Some(ReferenceValue::Object((_, fields))) => {
                     let (ty, _) = match fields.get(field_name) {
                         Some(field) => field,
@@ -166,7 +166,6 @@ pub fn lhs_from_rhs<'ctx>(
                         ), Some(&sym_stack), Some(&sym_heap))
                     };
                     fields.insert(field_name, (ty.clone(), var));
-                    Ok(())
                 }
                 _ => panic_with_diagnostics(
                     &format!(
@@ -183,7 +182,7 @@ pub fn lhs_from_rhs<'ctx>(
                 Some(&sym_heap),
             ),
         },
-        Lhs::Identifier(id) => Ok(insert_into_stack(sym_stack, id, var)),
+        Lhs::Identifier(id) => insert_into_stack(sym_stack, id, var),
     }
 }
 

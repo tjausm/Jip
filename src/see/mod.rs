@@ -463,7 +463,7 @@ mod tests {
             .is_ok());
     }
     #[test]
-    fn Program() {
+    fn program() {
         assert!(parser::ProgramParser::new()
             .parse("class Main {static void main(){int x := 2;}}")
             .is_ok());

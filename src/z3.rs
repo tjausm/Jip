@@ -92,19 +92,6 @@ pub fn get_from_stack<'a>(
     return None;
 }
 
-/// Insert either object, object field, array or array item
-pub fn insert_into_heap<'a>(
-    env: &mut SymStack<'a>,
-    id: &'a Identifier,
-    var: SymbolicExpression<'a>,
-) -> () {
-    todo!("");
-}
-
-pub fn get_from_heap<'a>(env: &SymStack<'a>, id: &'a Identifier) -> Option<SymbolicExpression<'a>> {
-    todo!("")
-}
-
 /// casts identifier directly to dynamic z3 ast value from stack
 pub fn get_dyn_from_stack<'a>(
     ctx: &'a Context,
@@ -324,7 +311,7 @@ fn unwrap_as_int<'ctx>(d: Dynamic<'ctx>) -> Int<'ctx> {
 mod tests {
 
     use super::*;
-    use z3::{Config, FuncDecl};
+    use z3::{Config};
 
     #[test]
     fn test_solving() {
