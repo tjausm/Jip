@@ -5,7 +5,7 @@
 extern crate lalrpop_util;
 
 use clap::{ArgEnum, Parser, Subcommand};
-use see::ExitCode;
+use see::types::{ExitCode, Depth};
 use std::process::exit;
 
 // module declarations
@@ -38,7 +38,7 @@ enum Mode {
     Verify {
         /// Up to which depth program is evaluated
         #[clap(default_value_t = 40)]
-        depth: see::Depth,
+        depth: Depth,
         /// Report diagnostic information after succesful program verification
         #[clap(short, long)]
         verbose: bool,
@@ -48,12 +48,12 @@ enum Mode {
     /// Measure time to verify a program.
     Bench {
         /// Given start depth s we measure verification time for depth s
-        start: see::Depth,
+        start: Depth,
         /// Gven end depth e we measure verification time for each depth between s and e with intervals of 5
-        end: Option<see::Depth>,
+        end: Option<Depth>,
         /// Given interval i we measure verification time for each depth between s and e with intervals of i
         #[clap(default_value_t = 5)]
-        interval: see::Depth,
+        interval: Depth,
     },
 }
 

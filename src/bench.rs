@@ -1,6 +1,7 @@
 use std::time::Instant;
 
-use crate::see::{print_verification, Depth, ExitCode};
+use crate::see::{print_verification};
+use crate::see::types::{ExitCode, Depth};
 
 pub fn bench(program: &str, start: Depth, end: Option<Depth>, step: i32) -> (ExitCode, String) {
     let end = end.unwrap_or(start) + 1;

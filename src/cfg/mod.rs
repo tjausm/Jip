@@ -1,74 +1,21 @@
 //! Transforms object of the `Program` type to a Control Flow Graph (CFG)
 //!
 //! TODO: change cfg into mutable reference, instead of passing it around all the time
-lalrpop_mod!(pub parser); // synthesized by LALRPOP
+
+pub(crate) mod types;
+mod utils;
 
 use crate::ast::*;
-use crate::shared::{
-    get_class, get_classname, get_methodcontent, get_routine_content, insert_into_ty_stack,
-    print_short_id, Error, Routine, Scope, TypeStack, custom_panic,
+use crate::cfg::utils::{
+    get_class, get_classname, get_methodcontent, get_routine_content, insert_into_ty_stack
 };
+use crate::cfg::types::*;
+use crate::shared::{custom_panic, Error, Scope};
 use petgraph::dot::Dot;
 use petgraph::graph::{Graph, NodeIndex};
 use rustc_hash::FxHashMap;
 use std::collections::VecDeque;
-use std::fmt;
 use uuid::Uuid;
-
-pub enum Node {
-    EnteringMain(Parameters),
-    Statement(Statement),
-    /// classname, methodname and list of expressions we assign to parameters
-    EnterRoutine(Routine),
-    /// classname, methodname and variable name we assign retval to
-    LeaveRoutine(Routine),
-    End,
-}
-
-/// describes the actions we have to perform upon traversing edge
-#[derive(Clone)]
-pub enum Action {
-    EnterScope {
-        to: Scope,
-    },
-    // declare retval with correct type in current scope
-    DeclareRetval {
-        ty: Type,
-    },
-    AssignArgs {
-        params: Parameters,
-        args: Vec<Expression>,
-    },
-    /// copy ref of object method is called on to 'this'
-    DeclareThis {
-        obj: Lhs,
-        class: Identifier,
-    },
-    /// Initialise object of class on heap and make lhs a reference to object
-    InitObj {
-        from: Class,
-        to: Lhs,
-    },
-    /// lifts value of retval 1 scope higher
-    LiftRetval,
-    LeaveScope {
-        from: Scope,
-    },
-}
-
-type Edge = Vec<Action>;
-
-pub type CFG = Graph<Node, Edge>;
-
-/// Maps the collection type routine (covering all methods & constructors) to a tuple of start- and endnode for the subgraph of that routine
-type FunEnv = FxHashMap<Routine, (NodeIndex, NodeIndex)>;
-
-/// Given a generated subgraph, this struct denotes the last node & which edge comes from it should we want to extend it
-#[derive(Clone)]
-struct Start {
-    node: NodeIndex,
-    edge: Edge,
-}
 
 /// Transform node to unannotated start
 fn to_start(node: NodeIndex) -> Start {
@@ -122,11 +69,7 @@ pub fn generate_cfg(prog: Program) -> Result<(NodeIndex, CFG), Error> {
 
             return Ok((start.node, cfg));
         }
-        _ => {
-            custom_panic(
-                "Couldn't find a 'static void main' method", None, None
-            )
-        }
+        _ => custom_panic("Couldn't find a 'static void main' method", None, None),
     }
 }
 
@@ -406,12 +349,14 @@ fn stmts_to_cfg<'a>(
                     Some(scope_end) => {
                         cfg.add_edge(retval_assign, scope_end, vec![]);
                     }
-                    None => {
-                        custom_panic(&format!(
+                    None => custom_panic(
+                        &format!(
                             " '{:?}' has no scope to return to.",
                             &Statement::Return(expr)
-                        ), None, None)
-                    }
+                        ),
+                        None,
+                        None,
+                    ),
                 }
                 return vec![];
             }
@@ -572,52 +517,6 @@ fn routinebody_to_cfg<'a>(
     }
 
     return (enter_function, leave_function);
-}
-
-impl fmt::Debug for Node {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Node::EnteringMain(_) => write!(f, "Entering Main.main"),
-            Node::Statement(stmt) => write!(f, "{:?}", stmt),
-            Node::EnterRoutine(r) => {
-                write!(f, "Entering {:?}", r)
-            }
-            Node::LeaveRoutine(r) => {
-                write!(f, "Leaving {:?}", r)
-            }
-            Node::End => {
-                write!(f, "End")
-            }
-        }
-    }
-}
-
-impl fmt::Debug for Action {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Action::EnterScope { to: scope } => {
-                write!(f, "Entering scope {}", print_short_id(scope))
-            }
-            Action::AssignArgs { params, args } => {
-                let ap_str = params
-                    .iter()
-                    .zip(args.iter())
-                    .map(|((_, arg), param)| format!("{} := {:?}", arg, param))
-                    .collect::<Vec<String>>()
-                    .join(", ");
-                write!(f, "{}", ap_str)
-            }
-            Action::LeaveScope { from } => {
-                write!(f, "Leaving scope {}", print_short_id(from))
-            }
-            Action::DeclareThis { class, obj } => write!(f, "{} this := {:?}", class, obj),
-            Action::InitObj { from, to } => {
-                write!(f, "Init {} {:?} on heap", from.0, to)
-            }
-            Action::LiftRetval => write!(f, "Lifting retval"),
-            Action::DeclareRetval { ty } => write!(f, "Declaring '{:?} retval'", ty),
-        }
-    }
 }
 
 #[cfg(test)]

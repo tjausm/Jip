@@ -12,7 +12,6 @@ use z3::{ast, Context, SatResult, Solver};
 
 use crate::ast::*;
 use crate::shared::{custom_panic, Error, Scope};
-pub type Identifier = String;
 
 pub type Reference = Uuid;
 
