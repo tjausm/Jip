@@ -11,7 +11,7 @@ use z3::ast::{Ast, Bool, Dynamic, Int};
 use z3::{ast, Context, SatResult, Solver};
 
 use crate::ast::*;
-use crate::shared::{custom_panic, Error, Scope};
+use crate::shared::{panic_with_diagnostics, Error, Scope};
 
 pub type Reference = Uuid;
 
@@ -117,7 +117,7 @@ pub fn get_dyn_from_stack<'a>(
         Some(SymbolicExpression::Ref((_, r))) => {
             Dynamic::from(Int::from_u64(ctx, r.as_u64_pair().0))
         }
-        None => custom_panic(
+        None => panic_with_diagnostics(
             &format!("Variable {} is undeclared", id),
             Some(sym_stack),
             None,
@@ -294,7 +294,7 @@ fn expression_to_dynamic<'ctx, 'b>(
         Expression::Literal(Literal::Integer(n)) => Dynamic::from(ast::Int::from_i64(ctx, *n)),
         Expression::Literal(Literal::Boolean(b)) => Dynamic::from(ast::Bool::from_bool(ctx, *b)),
         otherwise => {
-            custom_panic(
+            panic_with_diagnostics(
                 &format!(
                     "Expressions of the form {:?} are not parseable to a z3 ast",
                     otherwise
@@ -309,14 +309,14 @@ fn expression_to_dynamic<'ctx, 'b>(
 fn unwrap_as_bool<'ctx>(d: Dynamic<'ctx>) -> Bool<'ctx> {
     match d.as_bool() {
         Some(b) => b,
-        None => custom_panic(&format!("{} is not of type Bool", d), None, None),
+        None => panic_with_diagnostics(&format!("{} is not of type Bool", d), None, None),
     }
 }
 
 fn unwrap_as_int<'ctx>(d: Dynamic<'ctx>) -> Int<'ctx> {
     match d.as_int() {
         Some(b) => b,
-        None => custom_panic(&format!("{} is not of type Int", d), None, None),
+        None => panic_with_diagnostics(&format!("{} is not of type Int", d), None, None),
     }
 }
 

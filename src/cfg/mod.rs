@@ -10,7 +10,7 @@ use crate::cfg::utils::{
     get_class, get_classname, get_methodcontent, get_routine_content, insert_into_ty_stack
 };
 use crate::cfg::types::*;
-use crate::shared::{custom_panic, Error, Scope};
+use crate::shared::{panic_with_diagnostics, Error, Scope};
 use petgraph::dot::Dot;
 use petgraph::graph::{Graph, NodeIndex};
 use rustc_hash::FxHashMap;
@@ -69,7 +69,7 @@ pub fn generate_cfg(prog: Program) -> Result<(NodeIndex, CFG), Error> {
 
             return Ok((start.node, cfg));
         }
-        _ => custom_panic("Couldn't find a 'static void main' method", None, None),
+        _ => panic_with_diagnostics("Couldn't find a 'static void main' method", None, None),
     }
 }
 
@@ -349,7 +349,7 @@ fn stmts_to_cfg<'a>(
                     Some(scope_end) => {
                         cfg.add_edge(retval_assign, scope_end, vec![]);
                     }
-                    None => custom_panic(
+                    None => panic_with_diagnostics(
                         &format!(
                             " '{:?}' has no scope to return to.",
                             &Statement::Return(expr)

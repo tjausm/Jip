@@ -12,7 +12,8 @@ use crate::see::utils::*;
 use crate::ast::*;
 use crate::cfg::{generate_cfg, generate_dot_cfg};
 use crate::cfg::types::{Action, Node};
-use crate::shared::{Error, Scope, custom_panic};
+use crate::shared::ExitCode;
+use crate::shared::{Error, Scope, panic_with_diagnostics};
 use crate::z3::{
     check_path, expression_to_bool, expression_to_int, fresh_bool, fresh_int, get_from_stack,
     insert_into_stack, Frame, PathConstraint, ReferenceValue, SymHeap, SymStack,
@@ -128,7 +129,7 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                         (Type::Bool, id) => {
                             insert_into_stack(&mut sym_stack, &id, fresh_bool(&ctx, id.clone()))
                         }
-                        (ty, id) => custom_panic(
+                        (ty, id) => panic_with_diagnostics(
                             &format!("Can't call main with parameter {} of type {:?}", id, ty),
                             Some(&sym_stack),
                             Some(&sym_heap),
@@ -206,13 +207,13 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                                 match expr {
                                     Expression::Identifier(id) => match get_from_stack(&sym_stack, id) {
                                         Some(SymbolicExpression::Ref(r)) => insert_into_stack(&mut sym_stack, retval_id, SymbolicExpression::Ref(r)),
-                                        Some(expr) => custom_panic(&format!("Can't return '{:?}' as a referencevalue", expr), Some(&sym_stack), Some(&sym_heap)),
-                                        None => custom_panic(&format!("{} is undeclared", id), Some(&sym_stack), Some(&sym_heap)),
+                                        Some(expr) => panic_with_diagnostics(&format!("Can't return '{:?}' as a referencevalue", expr), Some(&sym_stack), Some(&sym_heap)),
+                                        None => panic_with_diagnostics(&format!("{} is undeclared", id), Some(&sym_stack), Some(&sym_heap)),
                                     },
-                                    _ => custom_panic(&format!("Can't return expression '{:?}'", expr), Some(&sym_stack), Some(&sym_heap)),
+                                    _ => panic_with_diagnostics(&format!("Can't return expression '{:?}'", expr), Some(&sym_stack), Some(&sym_heap)),
                                 }
                             },
-                            None => custom_panic(&format!("retval is undeclared in expression 'return {:?}'", expr), Some(&sym_stack), Some(&sym_heap)),  
+                            None => panic_with_diagnostics(&format!("retval is undeclared in expression 'return {:?}'", expr), Some(&sym_stack), Some(&sym_heap)),  
                         }
                     }
                     _ => (),
@@ -270,12 +271,12 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                                 this_id,
                                 SymbolicExpression::Ref(r),
                             ),
-                            Some(_) => custom_panic(
+                            Some(_) => panic_with_diagnostics(
                                 &format!("{} is not of type {}", id, class),
                                 Some(&sym_stack),
                                 Some(&sym_heap),
                             ),
-                            None => custom_panic(
+                            None => panic_with_diagnostics(
                                 &format!("Variable {} is undeclared", id),
                                 Some(&sym_stack),
                                 Some(&sym_heap),
@@ -332,7 +333,7 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                                             ),
                                         );
                                     }
-                                    Type::Void => custom_panic(
+                                    Type::Void => panic_with_diagnostics(
                                         &format!("Type of {}.{} can't be void", class, field),
                                         Some(&sym_stack),
                                         Some(&sym_heap),
@@ -347,7 +348,7 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                             Lhs::Identifier(id) => {
                                 match get_from_stack(&sym_stack, id) {
                                     Some(SymbolicExpression::Ref((_, r))) => {sym_heap.insert(r, ReferenceValue::Object((Type::Classtype(class.to_string()), fields)));},
-                                    _ => custom_panic(&format!("Can't initialize '{} {}' because no reference is declared on the stack", class, id), Some(&sym_stack), Some(&sym_heap)),
+                                    _ => panic_with_diagnostics(&format!("Can't initialize '{} {}' because no reference is declared on the stack", class, id), Some(&sym_stack), Some(&sym_heap)),
                                 };
                             }
                             Lhs::Accessfield(_, _) => todo!(),
@@ -362,14 +363,14 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                                     Some(frame) => {
                                         frame.env.insert(retval_id, retval);
                                     }
-                                    None => custom_panic(
+                                    None => panic_with_diagnostics(
                                         "Can't return from main scope",
                                         Some(&sym_stack),
                                         Some(&sym_heap),
                                     ),
                                 }
                             }
-                            None => custom_panic(
+                            None => panic_with_diagnostics(
                                 "Can't lift retval to a higher scope",
                                 Some(&sym_stack),
                                 Some(&sym_heap),

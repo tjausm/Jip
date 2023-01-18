@@ -5,9 +5,9 @@
 extern crate lalrpop_util;
 
 use clap::{ArgEnum, Parser, Subcommand};
-use see::types::{ExitCode, Depth};
+use see::types::{Depth};
+use shared::ExitCode;
 use std::process::exit;
-
 // module declarations
 mod ast;
 mod bench;

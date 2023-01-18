@@ -1,4 +1,4 @@
-use crate::shared::{Scope, custom_panic};
+use crate::shared::{Scope, panic_with_diagnostics};
 use crate::ast::*;
 use crate::cfg::types::*;
 
@@ -57,7 +57,7 @@ pub fn get_class<'a>(prog: &'a Program, class_name: &str) -> &'a Class {
     match prog.iter()
         .find(|(id, _)| id == class_name) {
             Some(class) => return class,
-            None => custom_panic(&format!(
+            None => panic_with_diagnostics(&format!(
                 "Class {} doesn't exist",
                 class_name
             ), None, None)
@@ -89,7 +89,7 @@ pub fn get_methodcontent<'a>(
             _ => (),
         }
     }
-    custom_panic(&format!(
+    panic_with_diagnostics(&format!(
         "Static method {}.{} doesn't exist",
         class.0, method_name
     ), None, None);
@@ -105,7 +105,7 @@ fn get_constructor<'a>(prog: &'a Program, class_name: &str) -> &'a Constructor {
             _ => continue,
         }
     }
-    custom_panic(&format!(
+    panic_with_diagnostics(&format!(
         "Class {} does not have a constructor",
         class_name
     ), None, None);

@@ -1,7 +1,7 @@
 use z3::Context;
 
 use crate::ast::*;
-use crate::shared::{custom_panic, Error};
+use crate::shared::{panic_with_diagnostics, Error};
 use crate::z3::{SymStack, SymHeap, SymbolicExpression, ReferenceValue, get_from_stack, expression_to_int, expression_to_bool, insert_into_stack};
 
 
@@ -12,7 +12,7 @@ pub fn type_lhs<'ctx>(sym_stack: &SymStack<'ctx>, sym_heap: &SymHeap<'ctx>, lhs:
                 Some(ReferenceValue::Object((_, fields))) => {
                     let (ty, _) = match fields.get(field) {
                         Some(field) => field,
-                        None => custom_panic(
+                        None => panic_with_diagnostics(
                             &format!(
                                 "Can't type field '{}.{}' because it does not exist",
                                 obj, field
@@ -26,7 +26,7 @@ pub fn type_lhs<'ctx>(sym_stack: &SymStack<'ctx>, sym_heap: &SymHeap<'ctx>, lhs:
                 Some(ReferenceValue::Uninitialized(ty)) => {
                     todo!("searching through program to get type of uninitialized fields")
                 }
-                Some(ReferenceValue::Array(_)) => custom_panic(
+                Some(ReferenceValue::Array(_)) => panic_with_diagnostics(
                     &format!(
                         "Can't type '{}.{}' because the reference of '{}' points to an array",
                         obj, field, obj
@@ -34,7 +34,7 @@ pub fn type_lhs<'ctx>(sym_stack: &SymStack<'ctx>, sym_heap: &SymHeap<'ctx>, lhs:
                     Some(&sym_stack),
                     Some(&sym_heap),
                 ),
-                None => custom_panic(
+                None => panic_with_diagnostics(
                     &format!(
                     "Can't type '{}.{}' because reference of '{}' points to nothing on the heap",
                     obj, field, obj
@@ -43,7 +43,7 @@ pub fn type_lhs<'ctx>(sym_stack: &SymStack<'ctx>, sym_heap: &SymHeap<'ctx>, lhs:
                     Some(&sym_heap),
                 ),
             },
-            _ => custom_panic(
+            _ => panic_with_diagnostics(
                 &format!(
                     "Can't type '{}.{}' because {} is not a reference",
                     obj, field, obj
@@ -56,7 +56,7 @@ pub fn type_lhs<'ctx>(sym_stack: &SymStack<'ctx>, sym_heap: &SymHeap<'ctx>, lhs:
             Some(SymbolicExpression::Bool(_)) => Type::Bool,
             Some(SymbolicExpression::Int(_)) => Type::Int,
             Some(SymbolicExpression::Ref((ty, _))) => ty,
-            None => custom_panic(
+            None => panic_with_diagnostics(
                 &format!("Can't type '{}' because it is undeclared on the stack", id),
                 Some(&sym_stack),
                 Some(&sym_heap),
@@ -79,7 +79,7 @@ pub fn parse_rhs<'ctx>(
                 Some(ReferenceValue::Object((_, fields))) => {
                     let (_, value) = match fields.get(field_name) {
                         Some(field) => field,
-                        None => custom_panic(
+                        None => panic_with_diagnostics(
                             &format!("Field {} does not exist on {}", field_name, obj_name),
                             Some(&sym_stack),
                             Some(&sym_heap),
@@ -88,7 +88,7 @@ pub fn parse_rhs<'ctx>(
                     return value.clone();
                 }
 
-                _ => custom_panic(
+                _ => panic_with_diagnostics(
                     &format!(
                         "Reference of {} not found on heap while parsing rhs {:?}",
                         obj_name, rhs
@@ -97,7 +97,7 @@ pub fn parse_rhs<'ctx>(
                     Some(&sym_heap),
                 ),
             },
-            _ => custom_panic(
+            _ => panic_with_diagnostics(
                 &format!("{} is not a reference", obj_name),
                 Some(&sym_stack),
                 Some(&sym_heap),
@@ -117,17 +117,17 @@ pub fn parse_rhs<'ctx>(
                 Expression::Identifier(id) => match get_from_stack(sym_stack, id) {
                     Some(SymbolicExpression::Ref((ty, r))) => SymbolicExpression::Ref((ty, r)),
                     Some(_) => {
-                        custom_panic(&format!("TODO: think of error"), Some(&sym_stack), Some(&sym_heap))
+                        panic_with_diagnostics(&format!("TODO: think of error"), Some(&sym_stack), Some(&sym_heap))
                     }
-                    None => custom_panic(&format!("TODO: think of error"), Some(&sym_stack), Some(&sym_heap)),
+                    None => panic_with_diagnostics(&format!("TODO: think of error"), Some(&sym_stack), Some(&sym_heap)),
                 },
-                _ => custom_panic(
+                _ => panic_with_diagnostics(
                     &format!("Can't evaluate {:?} to type {}", rhs, class),
                     Some(&sym_stack),
                     Some(&sym_heap),
                 ),
             },
-            Type::Void => custom_panic(
+            Type::Void => panic_with_diagnostics(
                 &format!(
                     "Can't evaluate rhs expression of the form {:?} to type void",
                     rhs
@@ -136,7 +136,7 @@ pub fn parse_rhs<'ctx>(
                 Some(&sym_heap),
             ),
         },
-        _ => custom_panic(
+        _ => panic_with_diagnostics(
             &format!("Rhs of the form {:?} should not be in the cfg", rhs),
             Some(&sym_stack),
             Some(&sym_heap),
@@ -160,7 +160,7 @@ pub fn lhs_from_rhs<'ctx>(
                 Some(ReferenceValue::Object((_, fields))) => {
                     let (ty, _) = match fields.get(field_name) {
                         Some(field) => field,
-                        None => custom_panic(&format!(
+                        None => panic_with_diagnostics(&format!(
                             "Field {} does not exist on {}",
                             field_name, obj_name
                         ), Some(&sym_stack), Some(&sym_heap))
@@ -168,7 +168,7 @@ pub fn lhs_from_rhs<'ctx>(
                     fields.insert(field_name, (ty.clone(), var));
                     Ok(())
                 }
-                _ => custom_panic(
+                _ => panic_with_diagnostics(
                     &format!(
                         "Reference of {} not found on heap while doing assignment {:?} := {:?}",
                         obj_name, lhs, rhs
@@ -177,7 +177,7 @@ pub fn lhs_from_rhs<'ctx>(
                     Some(&sym_heap),
                 ),
             },
-            _ => custom_panic(
+            _ => panic_with_diagnostics(
                 &format!("{} is not a reference", obj_name),
                 Some(&sym_stack),
                 Some(&sym_heap),
@@ -211,7 +211,7 @@ pub fn params_to_vars<'ctx>(
             }
             (Some((Type::Classtype(class), arg_id)), Some(expr)) => {
                 let err = |class, arg_id, expr| {
-                    custom_panic(
+                    panic_with_diagnostics(
                         &format!(
                             "Can't assign argument '{} {}' value '{:?}'",
                             class, arg_id, expr
@@ -230,12 +230,12 @@ pub fn params_to_vars<'ctx>(
                     _ => return err(class, arg_id, expr),
                 }
             }
-            (Some((ty, _)), Some(_)) => custom_panic(
+            (Some((ty, _)), Some(_)) => panic_with_diagnostics(
                 &format!("Argument of type {:?} are not implemented", ty),
                 Some(&sym_stack),
                 Some(&sym_heap),
             ),
-            (Some((_, param)), None) => custom_panic(
+            (Some((_, param)), None) => panic_with_diagnostics(
                 &format!(
                     "Missing an argument for parameter {:?} in a method call",
                     param
@@ -243,7 +243,7 @@ pub fn params_to_vars<'ctx>(
                 Some(&sym_stack),
                 Some(&sym_heap),
             ),
-            (None, Some(expr)) => custom_panic(
+            (None, Some(expr)) => panic_with_diagnostics(
                 &format!(
                     "Expression {:?} has no parameter it can be assigned to in a method call",
                     expr

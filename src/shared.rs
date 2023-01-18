@@ -5,6 +5,15 @@
 use crate::z3::{SymStack, SymHeap};
 
 use uuid::Uuid;
+use std::panic;
+use std::process::exit;
+
+/// Indicates if program is valid, counterexample was found or other error occured
+pub enum ExitCode {
+    Valid = 0,
+    CounterExample = 1,
+    Error = 2,
+}
 
 #[derive(Debug, Clone)]
 pub enum Error {
@@ -19,19 +28,24 @@ pub struct Scope {
 }
 
 /// Panics with passed message and print diagnostic info
-pub fn custom_panic<'ctx>(msg: &str, sym_stack: Option<&SymStack<'ctx>>, sym_heap: Option<&SymHeap<'ctx>>) -> ! {
-    panic!(
-        "
-    {}
-
-    ENVIRONMENT
+pub fn panic_with_diagnostics<'ctx>(msg: &str, sym_stack: Option<&SymStack<'ctx>>, sym_heap: Option<&SymHeap<'ctx>>) -> ! {
+    //get location of panic call
+    let panic_loc = panic::Location::caller();
     
-    Stack:
-    {:?}
+    //print diagnostics
+    print!(       
+"Program panicked at {}:{}
 
-    Heap:
-    {:?}
-    ",
-        msg, sym_stack, sym_heap
-    )
+With error:
+{}
+
+State of Sym-Stack:
+{:?}
+
+State of Sym-Heap:
+{:?}",
+        panic_loc.line(), panic_loc.column(), msg, sym_stack, sym_heap
+    );
+    
+    exit(ExitCode::Error as i32);
 }
