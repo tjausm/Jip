@@ -49,12 +49,11 @@ pub fn load_program(program: String) -> Result<String, (ExitCode, String)> {
 }
 
 pub fn print_cfg(program: &str) -> (ExitCode, String) {
-        let program = parser::ProgramParser::new().parse(program).unwrap();
-         match generate_dot_cfg(program) {
-            Ok(cfg) => (ExitCode::Valid, cfg),
-            Err(sem_err) => print_result(Err(sem_err)),
-        
-    }
+        let program = match parser::ProgramParser::new().parse(program){
+            Ok(prog) => prog,
+            Err(err) => panic_with_diagnostics(&format!("{}", err), None, None)
+        };
+        (ExitCode::Valid, generate_dot_cfg(program))
 }
 
 pub fn print_verification(program: &str, d: Depth, verbose: bool) -> (ExitCode, String) {
@@ -89,7 +88,7 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
     let this_id = &"this".to_string();
 
     let prog = parser::ProgramParser::new().parse(prog_string).unwrap();
-    let (start_node, cfg) = generate_cfg(prog.clone())?;
+    let (start_node, cfg) = generate_cfg(prog.clone());
 
     let z3_cfg = Config::new();
     let ctx = Context::new(&z3_cfg);

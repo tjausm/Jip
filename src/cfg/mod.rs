@@ -6,11 +6,11 @@ pub(crate) mod types;
 mod utils;
 
 use crate::ast::*;
-use crate::cfg::utils::{
-    get_class, get_classname, get_methodcontent, get_routine_content, insert_into_ty_stack
-};
 use crate::cfg::types::*;
-use crate::shared::{panic_with_diagnostics, Error, Scope};
+use crate::cfg::utils::{
+    get_class, get_classname, get_methodcontent, get_routine_content, insert_into_ty_stack,
+};
+use crate::shared::{panic_with_diagnostics, Scope};
 use petgraph::dot::Dot;
 use petgraph::graph::{Graph, NodeIndex};
 use rustc_hash::FxHashMap;
@@ -26,16 +26,13 @@ fn to_start(node: NodeIndex) -> Start {
 }
 
 /// Generates cfg in vizualizable Dot format (visualizable at http://viz-js.com/)
-pub fn generate_dot_cfg(program: Program) -> Result<String, Error> {
-    match generate_cfg(program) {
-        Ok((_, cfg)) => Ok(format!("{:?}", Dot::new(&cfg))),
-        Err(why) => Err(why),
-    }
+pub fn generate_dot_cfg(program: Program) -> String {
+    format!("{:?}", Dot::new(&generate_cfg(program).1))
 }
 
 // fuctions as the set-up for the recursive  stmts_to_cfg function
 /// Returns cfg, and the start_node representing entry point of the program
-pub fn generate_cfg(prog: Program) -> Result<(NodeIndex, CFG), Error> {
+pub fn generate_cfg(prog: Program) -> (NodeIndex, CFG) {
     //extract main.main method from program
     let main_method = get_methodcontent(&prog, &"Main".to_string(), &"main".to_string());
 
@@ -67,7 +64,7 @@ pub fn generate_cfg(prog: Program) -> Result<(NodeIndex, CFG), Error> {
                 cfg.add_edge(p_end, end, vec![]);
             }
 
-            return Ok((start.node, cfg));
+            return (start.node, cfg);
         }
         _ => panic_with_diagnostics("Couldn't find a 'static void main' method", None, None),
     }
@@ -534,7 +531,7 @@ mod tests {
     fn build_test(input: &str, correct_cfg: CFG) {
         let program_str = ["class Main { static void main () {", input, "} }"].join("");
         let program = parser::ProgramParser::new().parse(&program_str).unwrap();
-        let (_, generated_cfg) = generate_cfg(program).unwrap();
+        let (_, generated_cfg) = generate_cfg(program);
         println!("Generated cfg: \n{:?}", Dot::new(&generated_cfg));
         println!("Correct cfg: \n{:?}", Dot::new(&correct_cfg));
         assert!(is_isomorphic(&generated_cfg, &correct_cfg));
