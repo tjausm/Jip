@@ -131,7 +131,12 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                         }
                         (Type::Bool, id) => {
                             insert_into_stack(&mut sym_stack, &id, fresh_bool(&ctx, id.clone()))
-                        }
+                        },
+                        (Type::Classtype(ty), id) => {
+                            let r = Uuid::new_v4();
+                            insert_into_stack(&mut sym_stack, id, SymbolicExpression::Ref((Type::Classtype(ty.clone()), r)));
+                            sym_heap.insert(r, ReferenceValue::Uninitialized(Type::Classtype(ty.clone())));
+                        },
                         (ty, id) => panic_with_diagnostics(
                             &format!("Can't call main with parameter {} of type {:?}", id, ty),
                             Some(&sym_stack),
