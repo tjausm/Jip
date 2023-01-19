@@ -13,7 +13,6 @@ mod cfg;
 mod see;
 mod ast;
 mod bench;
-mod symModel;
 mod shared;
 mod z3;
 

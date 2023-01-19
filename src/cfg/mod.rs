@@ -66,7 +66,7 @@ pub fn generate_cfg(prog: Program) -> (NodeIndex, CFG) {
 
             return (start.node, cfg);
         }
-        _ => panic_with_diagnostics("Couldn't find a 'static void main' method", None, None),
+        _ => panic_with_diagnostics("Couldn't find a 'static void main' method", None),
     }
 }
 
@@ -351,7 +351,6 @@ fn stmts_to_cfg<'a>(
                             " '{:?}' has no scope to return to.",
                             &Statement::Return(expr)
                         ),
-                        None,
                         None,
                     ),
                 }
