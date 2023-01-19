@@ -311,7 +311,7 @@ fn unwrap_as_int<'ctx>(d: Dynamic<'ctx>) -> Int<'ctx> {
 mod tests {
 
     use super::*;
-    use z3::{Config};
+    use z3::{Config, FuncDecl};
 
     #[test]
     fn test_solving() {
