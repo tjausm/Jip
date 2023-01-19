@@ -3,7 +3,6 @@
 //!
 
 use crate::z3::{SymStack, SymHeap};
-
 use uuid::Uuid;
 use std::panic;
 use std::process::exit;
@@ -31,7 +30,7 @@ pub struct Scope {
 #[track_caller]
 pub fn panic_with_diagnostics<'ctx>(msg: &str, sym_stack: Option<&SymStack<'ctx>>, sym_heap: Option<&SymHeap<'ctx>>) -> ! {
     //get location of panic call
-    let panic_loc = std::panic::Location::caller();
+    let panic_loc = panic::Location::caller();
     
     //print diagnostics
     print!(       
