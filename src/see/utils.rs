@@ -2,7 +2,7 @@ use z3::Context;
 
 use crate::ast::*;
 use crate::shared::{panic_with_diagnostics};
-use crate::z3::{SymStack, SymHeap, SymbolicExpression, ReferenceValue, get_from_stack, expression_to_int, expression_to_bool, insert_into_stack};
+use crate::z3::{SymStack, SymHeap, SymbolicExpression, ReferenceValue, get_from_stack, expression_to_int, expression_to_bool, insert_into_stack, Reference};
 
 
 pub fn type_lhs<'ctx>(sym_stack: &SymStack<'ctx>, sym_heap: &SymHeap<'ctx>, lhs: &'ctx Lhs) -> Type {
@@ -87,7 +87,9 @@ pub fn parse_rhs<'ctx>(
                     };
                     return value.clone();
                 }
-
+                Some(ReferenceValue::Uninitialized(ty)) => {
+                    todo!("")
+                }
                 _ => panic_with_diagnostics(
                     &format!(
                         "Reference of {} not found on heap while parsing rhs {:?}",
@@ -184,6 +186,11 @@ pub fn lhs_from_rhs<'ctx>(
         },
         Lhs::Identifier(id) => insert_into_stack(sym_stack, id, var),
     }
+}
+
+/// move function into memory module
+fn initialize_referencevalue(r: Reference, ty: Type, sym_heap: &mut SymHeap) {
+    todo!("Initialize fields and return reference to new object on the heap")
 }
 
 /// evaluates the parameters & arguments to a mapping id -> variable that can be added to a function scope
