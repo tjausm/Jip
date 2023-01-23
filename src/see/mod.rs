@@ -16,7 +16,7 @@ use crate::shared::ExitCode;
 use crate::shared::ReferenceValue;
 use crate::shared::SymMemory;
 use crate::shared::SymbolicExpression;
-use crate::shared::{Error, Scope, panic_with_diagnostics};
+use crate::shared::{Error, panic_with_diagnostics};
 use crate::z3::{
     check_path, expr_to_bool, expr_to_int, fresh_bool, fresh_int, PathConstraint};
 
@@ -102,7 +102,7 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
         VecDeque::new();
 
     q.push_back((
-        SymMemory::default(),
+        SymMemory::new(prog.clone()),
         vec![],
         d,
         start_node,
@@ -131,7 +131,7 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                         (Type::Classtype(ty), id) => {
                             let r = Uuid::new_v4();
                             sym_memory.stack_insert(id, SymbolicExpression::Ref((Type::Classtype(ty.clone()), r)));
-                            sym_memory.heap_insert(r, ReferenceValue::Uninitialized(Type::Classtype(ty.clone())));
+                            sym_memory.heap_insert(r, ReferenceValue::UninitializedObj(ty.clone()));
                         },
                         (ty, id) => panic_with_diagnostics(
                             &format!("Can't call main with parameter {} of type {:?}", id, ty),
@@ -314,9 +314,9 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                                             (Type::Classtype(class.to_string()), Uuid::new_v4());
                                         sym_memory.heap_insert(
                                             r,
-                                            ReferenceValue::Uninitialized(Type::Classtype(
+                                            ReferenceValue::UninitializedObj(
                                                 class.to_string(),
-                                            )),
+                                            ),
                                         );
                                         fields.insert(
                                             field,
@@ -339,7 +339,7 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                         match lhs {
                             Lhs::Identifier(id) => {
                                 match sym_memory.stack_get( id) {
-                                    Some(SymbolicExpression::Ref((_, r))) => {sym_memory.heap_insert(r, ReferenceValue::Object((Type::Classtype(class.to_string()), fields)));},
+                                    Some(SymbolicExpression::Ref((_, r))) => {sym_memory.heap_insert(r, ReferenceValue::Object((class.to_string(), fields)));},
                                     _ => panic_with_diagnostics(&format!("Can't initialize '{} {}' because no reference is declared on the stack", class, id), Some(&sym_memory)),
                                 };
                             }

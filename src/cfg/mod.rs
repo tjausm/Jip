@@ -7,9 +7,7 @@ mod utils;
 
 use crate::ast::*;
 use crate::cfg::types::*;
-use crate::cfg::utils::{
-    get_class, get_classname, get_methodcontent, get_routine_content,
-};
+use crate::cfg::utils::{get_classname, get_routine_content};
 use crate::shared::{panic_with_diagnostics, Scope};
 use petgraph::dot::Dot;
 use petgraph::graph::{Graph, NodeIndex};
@@ -34,7 +32,7 @@ pub fn generate_dot_cfg(program: Program) -> String {
 /// Returns cfg, and the start_node representing entry point of the program
 pub fn generate_cfg(prog: Program) -> (NodeIndex, CFG) {
     //extract main.main method from program
-    let main_method = get_methodcontent(&prog, &"Main".to_string(), &"main".to_string());
+    let main_method = prog.get_methodcontent( &"Main".to_string(), &"main".to_string());
 
     match main_method {
         (Type::Void, _, args, body) => {
@@ -44,12 +42,20 @@ pub fn generate_cfg(prog: Program) -> (NodeIndex, CFG) {
             let end = cfg.add_node(Node::End);
 
             //initiate environments
-            let mut ty_env: TypeStack = TypeStack::default();
+            let mut ty_stack: TypeStack = TypeStack::default();
             let mut f_env: FunEnv = FxHashMap::default();
+
+            //insert objects passed to main in TypeStack
+            for (ty, obj_name) in args {
+                if let Type::Classtype(class_name) = ty {
+                    let class = prog.get_class( &class_name).clone();
+                    ty_stack.insert(obj_name.clone(), class)
+                }
+            }
 
             //generate the cfg
             let program_endings = stmts_to_cfg(
-                &mut ty_env,
+                &mut ty_stack,
                 &mut f_env,
                 &prog,
                 VecDeque::from(body.clone()),
@@ -241,7 +247,7 @@ fn stmts_to_cfg<'a>(
                 let class = get_classname(&class_or_obj, &ty_stack);
                 let is_static = class.clone() == class_or_obj;
 
-                let (ty, _, _, _) = get_methodcontent(prog, &class, &method_name);
+                let (ty, _, _, _) = prog.get_methodcontent(&class, &method_name);
 
                 // declare retval and if non-static declarethis
                 let append_actions = if is_static {
@@ -295,7 +301,7 @@ fn stmts_to_cfg<'a>(
                 );
             }
             Statement::Assignment((lhs, Rhs::Newobject(class_name, args))) => {
-                let class = get_class(prog, &class_name);
+                let class = prog.get_class( &class_name);
 
                 // we pass actions InitObj and declareThis
                 let append_actions = vec![
@@ -371,7 +377,7 @@ fn stmts_to_cfg<'a>(
                 // keep track of variable types, to know where to find nonstatic methods called on object
                 match &other {
                     Statement::Declaration((Type::Classtype(class_name), id)) => {
-                        let class = get_class(prog, class_name);
+                        let class = prog.get_class( class_name);
                         ty_stack.insert(id.clone(), class.clone())
                     }
                     _ => (),
@@ -420,7 +426,7 @@ fn routine_to_cfg<'a>(
     for (ty, id) in params {
         match ty {
             Type::Classtype(class_name) => {
-                let class = get_class(prog, class_name).clone();
+                let class = prog.get_class( class_name).clone();
                 ty_stack.insert(id.clone(), class)
             }
             _ => (),

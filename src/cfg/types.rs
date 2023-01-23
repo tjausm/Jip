@@ -75,12 +75,12 @@ impl Default for TypeStack {
 impl TypeStack {
     pub fn insert(
         &mut self,
-        id: Identifier,
+        obj_name: Identifier,
         value: Class,
     ) -> () {
         match self.0.last_mut() {
             Some(env) => {
-                env.insert(id, value);
+                env.insert(obj_name, value);
             }
             None => (),
         };

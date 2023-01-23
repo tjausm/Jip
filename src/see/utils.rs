@@ -2,11 +2,11 @@ use z3::Context;
 
 use crate::ast::*;
 use crate::shared::{
-    panic_with_diagnostics, Reference, ReferenceValue, SymMemory, SymbolicExpression,
+    panic_with_diagnostics, Reference, SymMemory, SymbolicExpression,
 };
 use crate::z3::{expr_to_bool, expr_to_int};
 
-pub fn type_lhs<'ctx>(sym_memory: &SymMemory<'ctx>, lhs: &'ctx Lhs) -> Type {
+pub fn type_lhs<'ctx>(sym_memory: &mut SymMemory<'ctx>, lhs: &'ctx Lhs) -> Type {
     match lhs {
         Lhs::Accessfield(obj, field) => match sym_memory.heap_get_field(obj, field) {
             SymbolicExpression::Bool(_) => Type::Bool,
@@ -28,7 +28,7 @@ pub fn type_lhs<'ctx>(sym_memory: &SymMemory<'ctx>, lhs: &'ctx Lhs) -> Type {
 /// returns the symbolic expression rhs refers to
 pub fn parse_rhs<'a, 'b>(
     ctx: &'a Context,
-    sym_memory: &SymMemory<'a>,
+    sym_memory: &mut SymMemory<'a>,
     ty: &Type,
     rhs: &'a Rhs,
 ) -> SymbolicExpression<'a> {
@@ -81,7 +81,7 @@ pub fn lhs_from_rhs<'a>(
     lhs: &'a Lhs,
     rhs: &'a Rhs,
 ) -> () {
-    let ty = type_lhs(&sym_memory, lhs);
+    let ty = type_lhs(sym_memory, lhs);
     let var = parse_rhs(&ctx, sym_memory, &ty, rhs);
     match lhs {
         Lhs::Accessfield(obj_name, field_name) => sym_memory.heap_update_field(obj_name, field_name, var),

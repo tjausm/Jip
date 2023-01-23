@@ -67,8 +67,9 @@ pub enum SymbolicExpression<'a> {
     Ref((Type, Reference)),
 }
 
+/// Consists of `identifier` (= classname) and a hashmap describing it's fields
 pub type Object<'a> = (
-    Type,
+    Identifier,
     FxHashMap<&'a Identifier, (Type, SymbolicExpression<'a>)>,
 );
 
@@ -78,7 +79,9 @@ pub type Array<'a> = (Type, Vec<SymbolicExpression<'a>>);
 pub enum ReferenceValue<'a> {
     Object(Object<'a>),
     Array(Array<'a>),
-    Uninitialized(Type),
+    /// Takes classname as input
+    UninitializedObj(Identifier),
+    UninitializedArr,
 }
 
 //-----------------//
@@ -96,13 +99,15 @@ type SymHeap<'a> = FxHashMap<Reference, ReferenceValue<'a>>;
 
 #[derive(Clone)]
 pub struct SymMemory<'a> {
+    program: Program,
     stack: SymStack<'a>,
     heap: SymHeap<'a>,
 }
 
-impl Default for SymMemory<'_> {
-    fn default() -> Self {
+impl  SymMemory<'_> {
+    pub fn new(p: Program) -> Self {
         SymMemory {
+            program: p,
             stack: vec![Frame {
                 scope: Scope { id: None },
                 env: FxHashMap::default(),
@@ -113,6 +118,7 @@ impl Default for SymMemory<'_> {
 }
 
 impl<'a> SymMemory<'a> {
+    
     /// Insert mapping `Identifier |-> SymbolicExpression` in top most frame of stack
     pub fn stack_insert(&mut self, id: &'a Identifier, var: SymbolicExpression<'a>) -> () {
         match self.stack.last_mut() {
@@ -174,9 +180,11 @@ impl<'a> SymMemory<'a> {
     }
 
     /// Get symbolic value of the object's field, panics if something goes wrong
-    pub fn heap_get_field(&self, obj_name: &String, field_name: &String) -> SymbolicExpression<'a> {
-        match self.stack_get(obj_name) {
-            Some(SymbolicExpression::Ref((_, r))) => match self.heap.get(&r) {
+    pub fn heap_get_field(&mut self, obj_name: &String, field_name: &String) -> SymbolicExpression<'a> {
+        match self.stack_get(obj_name) { 
+            Some(SymbolicExpression::Ref((_, r))) => {
+                let ref_val = self.heap.get(&r).map(|s| s.clone());
+                match ref_val {
                 Some(ReferenceValue::Object((_, fields))) => match fields.get(field_name) {
                     Some((ty, expr)) => expr.clone(),
                     None => panic_with_diagnostics(
@@ -185,14 +193,37 @@ impl<'a> SymMemory<'a> {
                     ),
                 },
 
-                Some(ReferenceValue::Uninitialized(ty)) => {
-                    todo!("");
-                }
+                Some(ReferenceValue::UninitializedObj(class_name)) => {
+                            let mut new_obj =
+                                ReferenceValue::Object((class_name.clone(), FxHashMap::default()));
+                    
+                            // initialize newObj lazily
+                            let (_, members) = self.program.get_class(&class_name);
+                            for member in members  {
+                                if let Member::Field((ty, field_name)) = member {
+                                    match ty {
+                                        Type::Int => todo!(),
+                                        Type::Bool => todo!(),
+                                        Type::Classtype(_) => todo!(),
+                                        Type::Void => panic_with_diagnostics(
+                                            "Panic should never trigger",
+                                            Some(&self),
+                                        ),
+                                    }
+                                }
+                            }
+
+                            // push new object under original reference to heap
+                            self.heap_insert(r, new_obj);
+                            SymbolicExpression::Ref((Type::Classtype(class_name.clone()), r))
+
+                    }
+                
                 _ => panic_with_diagnostics(
                     &format!("Reference of {} not found on heap", obj_name),
                     Some(&self),
                 ),
-            },
+            }},
             _ => panic_with_diagnostics(&format!("{} is not a reference", obj_name), Some(&self)),
         }
     }
