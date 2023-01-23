@@ -13,12 +13,12 @@ use crate::ast::*;
 use crate::cfg::{generate_cfg, generate_dot_cfg};
 use crate::cfg::types::{Action, Node};
 use crate::shared::ExitCode;
+use crate::shared::ReferenceValue;
+use crate::shared::SymMemory;
+use crate::shared::SymbolicExpression;
 use crate::shared::{Error, Scope, panic_with_diagnostics};
 use crate::z3::{
-    check_path, expression_to_bool, expression_to_int, fresh_bool, fresh_int, get_from_stack,
-    insert_into_stack, Frame, PathConstraint, ReferenceValue, SymHeap, SymStack,
-    SymbolicExpression,
-};
+    check_path, expr_to_bool, expr_to_int, fresh_bool, fresh_int, PathConstraint};
 
 
 
@@ -51,7 +51,7 @@ pub fn load_program(file_name: String) -> Result<String, (ExitCode, String)> {
 fn parse_program(program: &str) -> Program {
     match parser::ProgramParser::new().parse(program) {
         Ok(prog) => prog,
-        Err(err) => panic_with_diagnostics(&format!("{}", err), None, None) 
+        Err(err) => panic_with_diagnostics(&format!("{}", err), None) 
     }
 }
 
@@ -98,15 +98,11 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
     let ctx = Context::new(&z3_cfg);
 
     //init our bfs through the cfg
-    let mut q: VecDeque<(SymStack, SymHeap, Vec<PathConstraint>, Depth, NodeIndex)> =
+    let mut q: VecDeque<(SymMemory, Vec<PathConstraint>, Depth, NodeIndex)> =
         VecDeque::new();
-    let main = Frame {
-        scope: Scope { id: None },
-        env: FxHashMap::default(),
-    };
+
     q.push_back((
-        vec![main.clone()],
-        FxHashMap::default(),
+        SymMemory::default(),
         vec![],
         d,
         start_node,
@@ -116,7 +112,7 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
     // Assume -> build & verify z3 formula, stop evaluating pad if disproven
     // assignment -> evaluate rhs and update env
     // then we enque all connected nodes, till d=0 or we reach end of cfg
-    while let Some((mut sym_stack, mut sym_heap, mut pc, d, curr_node)) = q.pop_front() {
+    while let Some((mut sym_memory, mut pc, d, curr_node)) = q.pop_front() {
         if d == 0 {
             continue;
         }
@@ -127,20 +123,19 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                 for p in parameters {
                     match p {
                         (Type::Int, id) => {
-                            insert_into_stack(&mut sym_stack, &id, fresh_int(&ctx, id.clone()))
+                            sym_memory.stack_insert(&id, fresh_int(&ctx, id.clone()))
                         }
                         (Type::Bool, id) => {
-                            insert_into_stack(&mut sym_stack, &id, fresh_bool(&ctx, id.clone()))
+                            sym_memory.stack_insert(&id,  fresh_bool(&ctx, id.clone()))
                         },
                         (Type::Classtype(ty), id) => {
                             let r = Uuid::new_v4();
-                            insert_into_stack(&mut sym_stack, id, SymbolicExpression::Ref((Type::Classtype(ty.clone()), r)));
-                            sym_heap.insert(r, ReferenceValue::Uninitialized(Type::Classtype(ty.clone())));
+                            sym_memory.stack_insert(id, SymbolicExpression::Ref((Type::Classtype(ty.clone()), r)));
+                            sym_memory.heap_insert(r, ReferenceValue::Uninitialized(Type::Classtype(ty.clone())));
                         },
                         (ty, id) => panic_with_diagnostics(
                             &format!("Can't call main with parameter {} of type {:?}", id, ty),
-                            Some(&sym_stack),
-                            Some(&sym_heap),
+                            Some(&sym_memory)
                         ),
                     }
                 }
@@ -150,25 +145,25 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                 match stmt {
                     Statement::Declaration((ty, id)) => match ty {
                         Type::Int => {
-                            insert_into_stack(&mut sym_stack, &id, fresh_int(&ctx, id.clone()));
+                            sym_memory.stack_insert(&id, fresh_int(&ctx, id.clone()));
                         }
                         Type::Bool => {
-                            insert_into_stack(&mut sym_stack, &id, fresh_bool(&ctx, id.clone()));
+                            sym_memory.stack_insert(&id,  fresh_bool(&ctx, id.clone()));
                         },
                         Type::Classtype(ty) => {
                             let r = Uuid::new_v4();
-                            insert_into_stack(&mut sym_stack, id, SymbolicExpression::Ref((Type::Classtype(ty.clone()), r)))
+                            sym_memory.stack_insert(&id,  SymbolicExpression::Ref((Type::Classtype(ty.clone()), r)))
                         },
                         Type::Void => panic!("Panic should never trigger, parser doesn't accept void type in declaration"),
                     },
                     Statement::Assume(expr) => {
-                        let ast = expression_to_bool(&ctx, &sym_stack, &expr);
+                        let ast = expr_to_bool(&ctx, &sym_memory, &expr);
                         pc.push(PathConstraint::Assume(ast));
                     }
 
                     // return err if is invalid else continue
                     Statement::Assert(expr) =>   {
-                        let ast = expression_to_bool(&ctx, &sym_stack, &expr);
+                        let ast = expr_to_bool(&ctx, &sym_memory, &expr);
 
                         diagnostics.z3_invocations = diagnostics.z3_invocations + 1;
 
@@ -183,45 +178,41 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                         // get lhs type
                         // parse expression variable
                         // assign to id in stack
-                        lhs_from_rhs(&ctx, &mut sym_stack, &mut sym_heap, lhs, rhs);
+                        lhs_from_rhs(&ctx, &mut sym_memory, lhs, rhs);
                     }
                     Statement::Return(expr) => {
-                        // stop path if it returns from main function 
-                        match sym_stack.last() {
-                            Some(an_scope) if an_scope.scope.id == main.scope.id => continue,
-                            _ => (),
-                        }
+
+                        // stop path if current scope `id == None`, indicating we are in main scope
+                        if sym_memory.current_scope().id == None {continue};
 
                         // evaluate return expression with type of retval and add to stack
-                        match get_from_stack(&sym_stack, retval_id) {
+                        match sym_memory.stack_get(retval_id) {
                             Some(SymbolicExpression::Int(_)) => {
-                                let ast = expression_to_int(&ctx, &sym_stack, &expr);
-                                insert_into_stack(
-                                    &mut sym_stack,
+                                let ast = expr_to_int(&ctx, &sym_memory, &expr);
+                                sym_memory.stack_insert(
                                     retval_id,
                                     SymbolicExpression::Int(ast),
                                 );
                             }
 
                             Some(SymbolicExpression::Bool(_)) => {
-                                let ast = expression_to_bool(&ctx, &sym_stack, &expr);
-                                insert_into_stack(
-                                    &mut sym_stack,
+                                let ast = expr_to_bool(&ctx, &sym_memory, &expr);
+                                sym_memory.stack_insert(
                                     retval_id,
                                     SymbolicExpression::Bool(ast),
                                 );
                             }
                             Some(SymbolicExpression::Ref(_)) => {
                                 match expr {
-                                    Expression::Identifier(id) => match get_from_stack(&sym_stack, id) {
-                                        Some(SymbolicExpression::Ref(r)) => insert_into_stack(&mut sym_stack, retval_id, SymbolicExpression::Ref(r)),
-                                        Some(expr) => panic_with_diagnostics(&format!("Can't return '{:?}' as a referencevalue", expr), Some(&sym_stack), Some(&sym_heap)),
-                                        None => panic_with_diagnostics(&format!("{} is undeclared", id), Some(&sym_stack), Some(&sym_heap)),
+                                    Expression::Identifier(id) => match sym_memory.stack_get( id) {
+                                        Some(SymbolicExpression::Ref(r)) => sym_memory.stack_insert(retval_id, SymbolicExpression::Ref(r)),
+                                        Some(expr) => panic_with_diagnostics(&format!("Can't return '{:?}' as a referencevalue", expr), Some(&sym_memory)),
+                                        None => panic_with_diagnostics(&format!("{} is undeclared", id), Some(&sym_memory)),
                                     },
-                                    _ => panic_with_diagnostics(&format!("Can't return expression '{:?}'", expr), Some(&sym_stack), Some(&sym_heap)),
+                                    _ => panic_with_diagnostics(&format!("Can't return expression '{:?}'", expr), Some(&sym_memory)),
                                 }
                             },
-                            None => panic_with_diagnostics(&format!("retval is undeclared in expression 'return {:?}'", expr), Some(&sym_stack), Some(&sym_heap)),  
+                            None => panic_with_diagnostics(&format!("retval is undeclared in expression 'return {:?}'", expr), Some(&sym_memory)),  
                         }
                     }
                     _ => (),
@@ -233,31 +224,27 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
 
         'q_nodes: for edge in cfg.edges(curr_node) {
             // clone new stack and heap for each edge we travel to
-            let mut sym_stack = sym_stack.clone();
-            let mut sym_heap = sym_heap.clone();
+            let mut sym_memory= sym_memory.clone();
 
             // perform all actions in an edge and enque the result
             for action in edge.weight() {
                 match action {
-                    Action::EnterScope { to: scope } => sym_stack.push(Frame {
-                        scope: scope.clone(),
-                        env: FxHashMap::default(),
-                    }),
+                    Action::EnterScope { to: scope } => sym_memory.stack_push(scope.clone()),
                     Action::DeclareRetval { ty } => {
                         // declare retval with correct type in new scope
                         match ty {
-                            Type::Int => insert_into_stack(
-                                &mut sym_stack,
+                            Type::Int => sym_memory.stack_insert(
+                                
                                 retval_id,
                                 fresh_int(&ctx, "retval".to_string()),
                             ),
-                            Type::Bool => insert_into_stack(
-                                &mut sym_stack,
+                            Type::Bool => sym_memory.stack_insert(
+                                
                                 retval_id,
                                 fresh_bool(&ctx, "retval".to_string()),
                             ),
-                            Type::Classtype(ty) => insert_into_stack(
-                                &mut sym_stack,
+                            Type::Classtype(ty) => sym_memory.stack_insert(
+                                
                                 retval_id,
                                 SymbolicExpression::Ref((Type::Classtype(ty.clone()), Uuid::nil())),
                             ),
@@ -266,28 +253,26 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                     }
                     Action::AssignArgs { params, args } => {
                         let variables =
-                            params_to_vars(&ctx, &mut sym_stack, &sym_heap, &params, &args);
+                            params_to_vars(&ctx,  &mut sym_memory, &params, &args);
 
                         for (id, var) in variables {
-                            insert_into_stack(&mut sym_stack, id, var);
+                            sym_memory.stack_insert( id, var);
                         }
                     }
                     Action::DeclareThis { class, obj } => match obj {
-                        Lhs::Identifier(id) => match get_from_stack(&sym_stack, id) {
-                            Some(SymbolicExpression::Ref(r)) => insert_into_stack(
-                                &mut sym_stack,
+                        Lhs::Identifier(id) => match sym_memory.stack_get( id) {
+                            Some(SymbolicExpression::Ref(r)) => sym_memory.stack_insert(
+                                
                                 this_id,
                                 SymbolicExpression::Ref(r),
                             ),
                             Some(_) => panic_with_diagnostics(
                                 &format!("{} is not of type {}", id, class),
-                                Some(&sym_stack),
-                                Some(&sym_heap),
+                                Some(&sym_memory)
                             ),
                             None => panic_with_diagnostics(
                                 &format!("Variable {} is undeclared", id),
-                                Some(&sym_stack),
-                                Some(&sym_heap),
+                                Some(&sym_memory),
                             ),
                         },
                         Lhs::Accessfield(_, _) => {
@@ -327,7 +312,7 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                                         // insert uninitialized object to heap
                                         let (ty, r) =
                                             (Type::Classtype(class.to_string()), Uuid::new_v4());
-                                        sym_heap.insert(
+                                        sym_memory.heap_insert(
                                             r,
                                             ReferenceValue::Uninitialized(Type::Classtype(
                                                 class.to_string(),
@@ -343,8 +328,7 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                                     }
                                     Type::Void => panic_with_diagnostics(
                                         &format!("Type of {}.{} can't be void", class, field),
-                                        Some(&sym_stack),
-                                        Some(&sym_heap),
+                                        Some(&sym_memory),
                                     ),
                                 },
                                 _ => (),
@@ -354,9 +338,9 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                         // get reference r and map r to initialized object on heap
                         match lhs {
                             Lhs::Identifier(id) => {
-                                match get_from_stack(&sym_stack, id) {
-                                    Some(SymbolicExpression::Ref((_, r))) => {sym_heap.insert(r, ReferenceValue::Object((Type::Classtype(class.to_string()), fields)));},
-                                    _ => panic_with_diagnostics(&format!("Can't initialize '{} {}' because no reference is declared on the stack", class, id), Some(&sym_stack), Some(&sym_heap)),
+                                match sym_memory.stack_get( id) {
+                                    Some(SymbolicExpression::Ref((_, r))) => {sym_memory.heap_insert(r, ReferenceValue::Object((Type::Classtype(class.to_string()), fields)));},
+                                    _ => panic_with_diagnostics(&format!("Can't initialize '{} {}' because no reference is declared on the stack", class, id), Some(&sym_memory)),
                                 };
                             }
                             Lhs::Accessfield(_, _) => todo!(),
@@ -364,38 +348,21 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                     }
                     // lift retval 1 scope up
                     Action::LiftRetval => {
-                        match get_from_stack(&sym_stack, retval_id) {
-                            Some(retval) => {
-                                let higher_frame = sym_stack.len() - 2;
-                                match sym_stack.get_mut(higher_frame) {
-                                    Some(frame) => {
-                                        frame.env.insert(retval_id, retval);
-                                    }
-                                    None => panic_with_diagnostics(
-                                        "Can't return from main scope",
-                                        Some(&sym_stack),
-                                        Some(&sym_heap),
-                                    ),
-                                }
-                            }
+                        match sym_memory.stack_get( retval_id) {
+                            Some(retval) => sym_memory.stack_insert_below(retval_id, retval),
                             None => panic_with_diagnostics(
                                 "Can't lift retval to a higher scope",
-                                Some(&sym_stack),
-                                Some(&sym_heap),
+                                Some(&sym_memory),
                             ),
                         };
                     }
-                    // if we can leave over this edge pop scope otherwise dismiss path pe
-                    Action::LeaveScope { from: to_scope } => match sym_stack.last() {
-                        Some(env) if env.scope == *to_scope => {
-                            sym_stack.pop();
-                        }
-                        _ => continue 'q_nodes,
-                    },
+                    // if we can leave over this edge pop scope otherwise dismiss path 
+                    Action::LeaveScope { from: to_scope } => 
+                    if *sym_memory.current_scope() == *to_scope {sym_memory.stack_pop()} else {continue 'q_nodes},
                 }
             }
             let next = edge.target();
-            q.push_back((sym_stack, sym_heap, pc.clone(), d - 1, next));
+            q.push_back((sym_memory, pc.clone(), d - 1, next));
         }
     }
     return Ok(diagnostics);

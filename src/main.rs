@@ -9,10 +9,10 @@ use see::types::{Depth};
 use shared::ExitCode;
 use std::process::exit;
 // module declarations
-mod ast;
-mod bench;
 mod cfg;
 mod see;
+mod ast;
+mod bench;
 mod shared;
 mod z3;
 
@@ -69,6 +69,7 @@ fn main() {
         println!("{}", result);
         exit(exit_code as i32);
     };
+
 
     // attempt to load program, and exit with exitcode and error if fails
     let program = match cli.load_mode {

@@ -60,7 +60,7 @@ pub fn get_class<'a>(prog: &'a Program, class_name: &str) -> &'a Class {
             None => panic_with_diagnostics(&format!(
                 "Class {} doesn't exist",
                 class_name
-            ), None, None)
+            ), None)
         }
 
 }
@@ -92,7 +92,7 @@ pub fn get_methodcontent<'a>(
     panic_with_diagnostics(&format!(
         "Static method {}.{} doesn't exist",
         class.0, method_name
-    ), None, None);
+    ), None);
     
 }
 
@@ -108,7 +108,7 @@ fn get_constructor<'a>(prog: &'a Program, class_name: &str) -> &'a Constructor {
     panic_with_diagnostics(&format!(
         "Class {} does not have a constructor",
         class_name
-    ), None, None);
+    ), None);
 }
 
 pub fn get_routine_content<'a>(

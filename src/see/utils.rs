@@ -1,132 +1,62 @@
 use z3::Context;
 
 use crate::ast::*;
-use crate::shared::{panic_with_diagnostics};
-use crate::z3::{SymStack, SymHeap, SymbolicExpression, ReferenceValue, get_from_stack, expression_to_int, expression_to_bool, insert_into_stack, Reference};
+use crate::shared::{
+    panic_with_diagnostics, Reference, ReferenceValue, SymMemory, SymbolicExpression,
+};
+use crate::z3::{expr_to_bool, expr_to_int};
 
-
-pub fn type_lhs<'ctx>(sym_stack: &SymStack<'ctx>, sym_heap: &SymHeap<'ctx>, lhs: &'ctx Lhs) -> Type {
+pub fn type_lhs<'ctx>(sym_memory: &SymMemory<'ctx>, lhs: &'ctx Lhs) -> Type {
     match lhs {
-        Lhs::Accessfield(obj, field) => match get_from_stack(&sym_stack, obj) {
-            Some(SymbolicExpression::Ref((_, r))) => match sym_heap.get(&r) {
-                Some(ReferenceValue::Object((_, fields))) => {
-                    let (ty, _) = match fields.get(field) {
-                        Some(field) => field,
-                        None => panic_with_diagnostics(
-                            &format!(
-                                "Can't type field '{}.{}' because it does not exist",
-                                obj, field
-                            ),
-                            Some(&sym_stack),
-                            Some(&sym_heap),
-                        ),
-                    };
-                    return ty.clone();
-                }
-                Some(ReferenceValue::Uninitialized(_)) => {
-                    todo!("searching through program to get type of uninitialized fields")
-                }
-                Some(ReferenceValue::Array(_)) => panic_with_diagnostics(
-                    &format!(
-                        "Can't type '{}.{}' because the reference of '{}' points to an array",
-                        obj, field, obj
-                    ),
-                    Some(&sym_stack),
-                    Some(&sym_heap),
-                ),
-                None => panic_with_diagnostics(
-                    &format!(
-                    "Can't type '{}.{}' because reference of '{}' points to nothing on the heap",
-                    obj, field, obj
-                ),
-                    Some(&sym_stack),
-                    Some(&sym_heap),
-                ),
-            },
-            _ => panic_with_diagnostics(
-                &format!(
-                    "Can't type '{}.{}' because {} is not a reference",
-                    obj, field, obj
-                ),
-                Some(&sym_stack),
-                Some(&sym_heap),
-            ),
+        Lhs::Accessfield(obj, field) => match sym_memory.heap_get_field(obj, field) {
+            SymbolicExpression::Bool(_) => Type::Bool,
+            SymbolicExpression::Int(_) => Type::Int,
+            SymbolicExpression::Ref((ty, _)) => ty
         },
-        Lhs::Identifier(id) => match get_from_stack(sym_stack, id) {
+        Lhs::Identifier(id) => match sym_memory.stack_get(id) {
             Some(SymbolicExpression::Bool(_)) => Type::Bool,
             Some(SymbolicExpression::Int(_)) => Type::Int,
             Some(SymbolicExpression::Ref((ty, _))) => ty,
             None => panic_with_diagnostics(
                 &format!("Can't type '{}' because it is undeclared on the stack", id),
-                Some(&sym_stack),
-                Some(&sym_heap),
+                Some(&sym_memory),
             ),
         },
     }
 }
 
 /// returns the symbolic expression rhs refers to
-pub fn parse_rhs<'ctx>(
-    ctx: &'ctx Context,
-    sym_stack: &SymStack<'ctx>,
-    sym_heap: &SymHeap<'ctx>,
+pub fn parse_rhs<'a, 'b>(
+    ctx: &'a Context,
+    sym_memory: &SymMemory<'a>,
     ty: &Type,
-    rhs: &'ctx Rhs,
-) -> SymbolicExpression<'ctx> {
+    rhs: &'a Rhs,
+) -> SymbolicExpression<'a> {
     match rhs {
-        Rhs::Accessfield(obj_name, field_name) => match get_from_stack(sym_stack, obj_name) {
-            Some(SymbolicExpression::Ref((_, r))) => match sym_heap.get(&r) {
-                Some(ReferenceValue::Object((_, fields))) => {
-                    let (_, value) = match fields.get(field_name) {
-                        Some(field) => field,
-                        None => panic_with_diagnostics(
-                            &format!("Field {} does not exist on {}", field_name, obj_name),
-                            Some(&sym_stack),
-                            Some(&sym_heap),
-                        ),
-                    };
-                    return value.clone();
-                }
-                Some(ReferenceValue::Uninitialized(ty)) => {
-                    todo!("")
-                }
-                _ => panic_with_diagnostics(
-                    &format!(
-                        "Reference of {} not found on heap while parsing rhs {:?}",
-                        obj_name, rhs
-                    ),
-                    Some(&sym_stack),
-                    Some(&sym_heap),
-                ),
-            },
-            _ => panic_with_diagnostics(
-                &format!("{} is not a reference", obj_name),
-                Some(&sym_stack),
-                Some(&sym_heap),
-            ),
-        },
+        Rhs::Accessfield(obj_name, field_name) => sym_memory.heap_get_field(obj_name, field_name).clone(),
         Rhs::Expression(expr) => match ty {
             Type::Int => {
-                let ast = expression_to_int(&ctx, &sym_stack, &expr);
+                let ast = expr_to_int(&ctx, &sym_memory, &expr);
                 SymbolicExpression::Int(ast)
             }
 
             Type::Bool => {
-                let ast = expression_to_bool(&ctx, &sym_stack, &expr);
+                let ast = expr_to_bool(&ctx, &sym_memory, &expr);
                 SymbolicExpression::Bool(ast)
             }
             Type::Classtype(class) => match expr {
-                Expression::Identifier(id) => match get_from_stack(sym_stack, id) {
+                Expression::Identifier(id) => match sym_memory.stack_get(id) {
                     Some(SymbolicExpression::Ref((ty, r))) => SymbolicExpression::Ref((ty, r)),
                     Some(_) => {
-                        panic_with_diagnostics(&format!("TODO: think of error"), Some(&sym_stack), Some(&sym_heap))
+                        panic_with_diagnostics(&format!("TODO: think of error"), Some(&sym_memory))
                     }
-                    None => panic_with_diagnostics(&format!("TODO: think of error"), Some(&sym_stack), Some(&sym_heap)),
+                    None => {
+                        panic_with_diagnostics(&format!("TODO: think of error"), Some(&sym_memory))
+                    }
                 },
                 _ => panic_with_diagnostics(
                     &format!("Can't evaluate {:?} to type {}", rhs, class),
-                    Some(&sym_stack),
-                    Some(&sym_heap),
+                    Some(&sym_memory),
                 ),
             },
             Type::Void => panic_with_diagnostics(
@@ -134,70 +64,40 @@ pub fn parse_rhs<'ctx>(
                     "Can't evaluate rhs expression of the form {:?} to type void",
                     rhs
                 ),
-                Some(&sym_stack),
-                Some(&sym_heap),
+                Some(&sym_memory),
             ),
         },
         _ => panic_with_diagnostics(
             &format!("Rhs of the form {:?} should not be in the cfg", rhs),
-            Some(&sym_stack),
-            Some(&sym_heap),
+            Some(&sym_memory),
         ),
     }
 }
 
 /// assigns value from rhs to lhs
-pub fn lhs_from_rhs<'ctx>(
-    ctx: &'ctx Context,
-    sym_stack: &mut SymStack<'ctx>,
-    sym_heap: &mut SymHeap<'ctx>,
-    lhs: &'ctx Lhs,
-    rhs: &'ctx Rhs,
+pub fn lhs_from_rhs<'a>(
+    ctx: &'a Context,
+    sym_memory: &mut SymMemory<'a>,
+    lhs: &'a Lhs,
+    rhs: &'a Rhs,
 ) -> () {
-    let ty = type_lhs(&sym_stack, &sym_heap, lhs);
-    let var = parse_rhs(&ctx, sym_stack, sym_heap, &ty, rhs);
+    let ty = type_lhs(&sym_memory, lhs);
+    let var = parse_rhs(&ctx, sym_memory, &ty, rhs);
     match lhs {
-        Lhs::Accessfield(obj_name, field_name) => match get_from_stack(sym_stack, obj_name) {
-            Some(SymbolicExpression::Ref((_, r))) => match sym_heap.get_mut(&r) {
-                Some(ReferenceValue::Object((_, fields))) => {
-                    let (ty, _) = match fields.get(field_name) {
-                        Some(field) => field,
-                        None => panic_with_diagnostics(&format!(
-                            "Field {} does not exist on {}",
-                            field_name, obj_name
-                        ), Some(&sym_stack), Some(&sym_heap))
-                    };
-                    fields.insert(field_name, (ty.clone(), var));
-                }
-                _ => panic_with_diagnostics(
-                    &format!(
-                        "Reference of {} not found on heap while doing assignment {:?} := {:?}",
-                        obj_name, lhs, rhs
-                    ),
-                    Some(&sym_stack),
-                    Some(&sym_heap),
-                ),
-            },
-            _ => panic_with_diagnostics(
-                &format!("{} is not a reference", obj_name),
-                Some(&sym_stack),
-                Some(&sym_heap),
-            ),
-        },
-        Lhs::Identifier(id) => insert_into_stack(sym_stack, id, var),
+        Lhs::Accessfield(obj_name, field_name) => sym_memory.heap_update_field(obj_name, field_name, var),
+        Lhs::Identifier(id) => sym_memory.stack_insert(id, var),
     }
 }
 
 /// move function into memory module
-fn initialize_referencevalue(r: Reference, ty: Type, sym_heap: &mut SymHeap) {
+fn initialize_referencevalue(r: Reference, ty: Type, sym_heap: &mut SymMemory) {
     todo!("Initialize fields and return reference to new object on the heap")
 }
 
 /// evaluates the parameters & arguments to a mapping id -> variable that can be added to a function scope
 pub fn params_to_vars<'ctx>(
     ctx: &'ctx Context,
-    sym_stack: &mut SymStack<'ctx>,
-    sym_heap: &SymHeap<'ctx>,
+    sym_memory: &mut SymMemory<'ctx>,
     params: &'ctx Parameters,
     args: &'ctx Arguments,
 ) -> Vec<(&'ctx String, SymbolicExpression<'ctx>)> {
@@ -208,11 +108,11 @@ pub fn params_to_vars<'ctx>(
     loop {
         match (params_iter.next(), args_iter.next()) {
             (Some((Type::Int, arg_id)), Some(expr)) => {
-                let expr = expression_to_int(ctx, sym_stack, expr);
+                let expr = expr_to_int(ctx, sym_memory, expr);
                 variables.push((arg_id, SymbolicExpression::Int(expr)));
             }
             (Some((Type::Bool, arg_id)), Some(expr)) => {
-                let expr = expression_to_bool(ctx, sym_stack, expr);
+                let expr = expr_to_bool(ctx, sym_memory, expr);
                 variables.push((arg_id, SymbolicExpression::Bool(expr)));
             }
             (Some((Type::Classtype(class), arg_id)), Some(expr)) => {
@@ -222,12 +122,11 @@ pub fn params_to_vars<'ctx>(
                             "Can't assign argument '{} {}' value '{:?}'",
                             class, arg_id, expr
                         ),
-                        Some(&sym_stack),
-                        Some(&sym_heap),
+                        Some(&sym_memory),
                     )
                 };
                 match expr {
-                    Expression::Identifier(param_id) => match get_from_stack(sym_stack, param_id) {
+                    Expression::Identifier(param_id) => match sym_memory.stack_get(param_id) {
                         Some(SymbolicExpression::Ref(r)) => {
                             variables.push((arg_id, SymbolicExpression::Ref(r)))
                         }
@@ -238,24 +137,21 @@ pub fn params_to_vars<'ctx>(
             }
             (Some((ty, _)), Some(_)) => panic_with_diagnostics(
                 &format!("Argument of type {:?} are not implemented", ty),
-                Some(&sym_stack),
-                Some(&sym_heap),
+                Some(&sym_memory),
             ),
             (Some((_, param)), None) => panic_with_diagnostics(
                 &format!(
                     "Missing an argument for parameter {:?} in a method call",
                     param
                 ),
-                Some(&sym_stack),
-                Some(&sym_heap),
+                Some(&sym_memory),
             ),
             (None, Some(expr)) => panic_with_diagnostics(
                 &format!(
                     "Expression {:?} has no parameter it can be assigned to in a method call",
                     expr
                 ),
-                Some(&sym_stack),
-                Some(&sym_heap),
+                Some(&sym_memory),
             ),
             (None, None) => break,
         }
