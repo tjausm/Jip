@@ -12,15 +12,9 @@ use crate::see::utils::*;
 use crate::ast::*;
 use crate::cfg::{generate_cfg, generate_dot_cfg};
 use crate::cfg::types::{Action, Node};
-use crate::shared::ExitCode;
-use crate::shared::ReferenceValue;
-use crate::shared::SymMemory;
-use crate::shared::SymbolicExpression;
-use crate::shared::{Error, Scope, panic_with_diagnostics};
+use crate::shared::{ExitCode, ReferenceValue, SymMemory, SymbolicExpression, Error, panic_with_diagnostics};
 use crate::z3::{
     check_path, expr_to_bool, expr_to_int, fresh_bool, fresh_int, PathConstraint};
-
-
 
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
@@ -30,8 +24,31 @@ use z3::{Config, Context};
 use rustc_hash::FxHashMap;
 use std::collections::VecDeque;
 use std::fs;
+use std::time::Instant;
 
 const PROG_CORRECT: &'static str = "Program is correct";
+
+
+pub fn bench(program: &str, start: Depth, end: Option<Depth>, step: i32) -> (ExitCode, String) {
+    let end = end.unwrap_or(start) + 1;
+    let depths = (start..end).step_by(step.try_into().unwrap());
+
+    println!("d        time");
+
+    for d in depths {
+        let now = Instant::now();
+
+        // Code block to measure.
+        {
+            match print_verification(program, d, false) {
+                (ExitCode::Error, e) => return (ExitCode::Error, e),
+                _ => (),
+            }
+        }
+        println!("{}       {:?}", d, now.elapsed());
+    }
+    return (ExitCode::Valid, "Benchmark done!".to_owned());
+}
 
 fn print_result(r: Result<Diagnostics, Error>) -> (ExitCode, String) {
     match r {
