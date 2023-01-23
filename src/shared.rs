@@ -174,36 +174,34 @@ impl<'a> SymMemory<'a> {
     }
 
     /// Get symbolic value of the object's field, panics if something goes wrong
-    pub fn heap_get_field(
-        &self,
-        obj_name: &String,
-        field_name: &String,
-    ) -> SymbolicExpression {
+    pub fn heap_get_field(&self, obj_name: &String, field_name: &String) -> SymbolicExpression<'a> {
         match self.stack_get(obj_name) {
             Some(SymbolicExpression::Ref((_, r))) => match self.heap.get(&r) {
                 Some(ReferenceValue::Object((_, fields))) => match fields.get(field_name) {
                     Some((ty, expr)) => expr.clone(),
-                    None => panic_with_diagnostics(&format!(
-                        "Field {} does not exist on {}",
-                        field_name, obj_name
-                    ), Some(&self)),
+                    None => panic_with_diagnostics(
+                        &format!("Field {} does not exist on {}", field_name, obj_name),
+                        Some(&self),
+                    ),
                 },
 
                 Some(ReferenceValue::Uninitialized(ty)) => {
                     todo!("");
                 }
-                _ => panic_with_diagnostics(&format!("Reference of {} not found on heap", obj_name), Some(&self)),
+                _ => panic_with_diagnostics(
+                    &format!("Reference of {} not found on heap", obj_name),
+                    Some(&self),
+                ),
             },
             _ => panic_with_diagnostics(&format!("{} is not a reference", obj_name), Some(&self)),
         }
     }
-
     /// Update symbolic value of the object's field, panics if something goes wrong
     pub fn heap_update_field(
         &mut self,
         obj_name: &String,
         field_name: &'a String,
-        var: SymbolicExpression<'a>
+        var: SymbolicExpression<'a>,
     ) -> () {
         match self.stack_get(obj_name) {
             Some(SymbolicExpression::Ref((_, r))) => match self.heap.get_mut(&r) {
@@ -212,7 +210,7 @@ impl<'a> SymMemory<'a> {
                         Some(field) => field,
                         None => panic_with_diagnostics(
                             &format!("Field {} does not exist on {}", field_name, obj_name),
-                            Some(&self)
+                            Some(&self),
                         ),
                     };
                     fields.insert(field_name, (ty.clone(), var));
@@ -225,13 +223,9 @@ impl<'a> SymMemory<'a> {
                     Some(&self),
                 ),
             },
-            _ => panic_with_diagnostics(
-                &format!("{} is not a reference", obj_name),
-                Some(&self),
-            ),
+            _ => panic_with_diagnostics(&format!("{} is not a reference", obj_name), Some(&self)),
         }
     }
-
 }
 
 impl fmt::Debug for SymMemory<'_> {

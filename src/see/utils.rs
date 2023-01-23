@@ -33,7 +33,7 @@ pub fn parse_rhs<'a, 'b>(
     rhs: &'a Rhs,
 ) -> SymbolicExpression<'a> {
     match rhs {
-        Rhs::Accessfield(obj_name, field_name) => todo!(),//sym_memory.heap_get_field(obj_name, field_name).clone(),
+        Rhs::Accessfield(obj_name, field_name) => sym_memory.heap_get_field(obj_name, field_name).clone(),
         Rhs::Expression(expr) => match ty {
             Type::Int => {
                 let ast = expr_to_int(&ctx, &sym_memory, &expr);
