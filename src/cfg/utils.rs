@@ -19,36 +19,12 @@ pub fn print_short_id(scope: &Scope) -> String {
     }
 }
 
-pub fn insert_into_ty_stack<K: Eq + Hash, V>(
-    env: &mut Vec<FxHashMap<K, V>>,
-    key: K,
-    value: V,
-) -> () {
-    match env.last_mut() {
-        Some(env) => {
-            env.insert(key, value);
-        }
-        None => (),
-    };
-}
 
-pub fn get_from_ty_stack<K: Eq + Hash + Display, V: Clone>(
-    env_stack: &Vec<FxHashMap<K, V>>,
-    id: &K,
-) -> Option<V> {
-    for env in env_stack.iter().rev() {
-        match env.get(id) {
-            Some(class) => return Some(class.clone()),
-            None => (),
-        }
-    }
-    return None;
-}
 
 /// given an object or class name, return class name
 /// e.g. if we call o.f(), where object o is of class O then get_class(o) = O
-pub fn get_classname<'a>(object_or_class: &'a String, ty_env: &TypeStack) -> String {
-    get_from_ty_stack(ty_env, &object_or_class)
+pub fn get_classname<'a>(object_or_class: &'a String, ty_stack: &TypeStack) -> String {
+    ty_stack.get(&object_or_class)
         .map(|t| t.0)
         .unwrap_or(object_or_class.clone())
 }

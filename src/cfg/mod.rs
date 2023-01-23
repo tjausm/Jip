@@ -8,7 +8,7 @@ mod utils;
 use crate::ast::*;
 use crate::cfg::types::*;
 use crate::cfg::utils::{
-    get_class, get_classname, get_methodcontent, get_routine_content, insert_into_ty_stack,
+    get_class, get_classname, get_methodcontent, get_routine_content,
 };
 use crate::shared::{panic_with_diagnostics, Scope};
 use petgraph::dot::Dot;
@@ -44,7 +44,7 @@ pub fn generate_cfg(prog: Program) -> (NodeIndex, CFG) {
             let end = cfg.add_node(Node::End);
 
             //initiate environments
-            let mut ty_env: TypeStack = vec![FxHashMap::default()];
+            let mut ty_env: TypeStack = TypeStack::default();
             let mut f_env: FunEnv = FxHashMap::default();
 
             //generate the cfg
@@ -74,7 +74,7 @@ pub fn generate_cfg(prog: Program) -> (NodeIndex, CFG) {
 /// - **ty_env ->** map identifiers to classes, to know where to find invoked functions e.g. given object c, we can only perform c.increment() if we know the class of c
 /// - **f_env ->**  map methods to the start and end of a functions subgraph
 fn stmts_to_cfg<'a>(
-    ty_env: &mut TypeStack,
+    ty_stack: &mut TypeStack,
     f_env: &mut FunEnv,
     prog: &Program,
     mut stmts: VecDeque<Statement>,
@@ -87,7 +87,7 @@ fn stmts_to_cfg<'a>(
         Some(stmt) => match stmt {
             Statement::Block(stmts) => {
                 return stmts_to_cfg(
-                    ty_env,
+                    ty_stack,
                     f_env,
                     prog,
                     VecDeque::from(*stmts),
@@ -112,7 +112,7 @@ fn stmts_to_cfg<'a>(
 
                 // add the if and else branch to the cfg
                 let if_ending = stmts_to_cfg(
-                    ty_env,
+                    ty_stack,
                     f_env,
                     prog,
                     VecDeque::from(vec![*s1]),
@@ -123,7 +123,7 @@ fn stmts_to_cfg<'a>(
                 );
 
                 let else_ending = stmts_to_cfg(
-                    ty_env,
+                    ty_stack,
                     f_env,
                     prog,
                     VecDeque::from(vec![*s2]),
@@ -140,7 +140,7 @@ fn stmts_to_cfg<'a>(
                     .collect();
 
                 return stmts_to_cfg(
-                    ty_env,
+                    ty_stack,
                     f_env,
                     prog,
                     stmts,
@@ -164,7 +164,7 @@ fn stmts_to_cfg<'a>(
                 }
                 // calculate cfg for body of while and cfg for the remainder of the stmts
                 let body_ending = stmts_to_cfg(
-                    ty_env,
+                    ty_stack,
                     f_env,
                     prog,
                     VecDeque::from(vec![*body]),
@@ -174,7 +174,7 @@ fn stmts_to_cfg<'a>(
                     scope_end,
                 );
                 let end_remainder = stmts_to_cfg(
-                    ty_env,
+                    ty_stack,
                     f_env,
                     prog,
                     stmts,
@@ -195,7 +195,7 @@ fn stmts_to_cfg<'a>(
             // generate
             Statement::Call((class_or_obj, method, args)) => {
                 // get class_name if call is not-static and keep track of staticness
-                let class = get_classname(&class_or_obj, &ty_env);
+                let class = get_classname(&class_or_obj, &ty_stack);
                 let is_static = class.clone() == class_or_obj;
 
                 // // if nonstatic we pass action declareThis
@@ -217,7 +217,7 @@ fn stmts_to_cfg<'a>(
                     routine,
                     append_actions,
                     args,
-                    ty_env,
+                    ty_stack,
                     f_env,
                     prog,
                     cfg,
@@ -225,7 +225,7 @@ fn stmts_to_cfg<'a>(
                 );
 
                 return stmts_to_cfg(
-                    ty_env,
+                    ty_stack,
                     f_env,
                     prog,
                     stmts,
@@ -238,7 +238,7 @@ fn stmts_to_cfg<'a>(
 
             Statement::Assignment((lhs, Rhs::Invocation((class_or_obj, method_name, args)))) => {
                 // get class_name if call is not-static and keep track of staticness
-                let class = get_classname(&class_or_obj, &ty_env);
+                let class = get_classname(&class_or_obj, &ty_stack);
                 let is_static = class.clone() == class_or_obj;
 
                 let (ty, _, _, _) = get_methodcontent(prog, &class, &method_name);
@@ -265,7 +265,7 @@ fn stmts_to_cfg<'a>(
                     routine,
                     append_actions,
                     args,
-                    ty_env,
+                    ty_stack,
                     f_env,
                     prog,
                     cfg,
@@ -284,7 +284,7 @@ fn stmts_to_cfg<'a>(
                 );
 
                 return stmts_to_cfg(
-                    ty_env,
+                    ty_stack,
                     f_env,
                     prog,
                     stmts,
@@ -317,7 +317,7 @@ fn stmts_to_cfg<'a>(
                     routine,
                     append_actions,
                     args,
-                    ty_env,
+                    ty_stack,
                     f_env,
                     prog,
                     cfg,
@@ -325,7 +325,7 @@ fn stmts_to_cfg<'a>(
                 );
 
                 return stmts_to_cfg(
-                    ty_env,
+                    ty_stack,
                     f_env,
                     prog,
                     stmts,
@@ -362,7 +362,7 @@ fn stmts_to_cfg<'a>(
                 stmts.push_front(Statement::Declaration((t, (&id).to_string())));
 
                 return stmts_to_cfg(
-                    ty_env, f_env, prog, stmts, cfg, starts, curr_scope, scope_end,
+                    ty_stack, f_env, prog, stmts, cfg, starts, curr_scope, scope_end,
                 );
             }
 
@@ -372,7 +372,7 @@ fn stmts_to_cfg<'a>(
                 match &other {
                     Statement::Declaration((Type::Classtype(class_name), id)) => {
                         let class = get_class(prog, class_name);
-                        insert_into_ty_stack(ty_env, id.clone(), class.clone())
+                        ty_stack.insert(id.clone(), class.clone())
                     }
                     _ => (),
                 }
@@ -382,7 +382,7 @@ fn stmts_to_cfg<'a>(
                     cfg.add_edge(start.node, stmt_node, start.edge);
                 }
                 return stmts_to_cfg(
-                    ty_env,
+                    ty_stack,
                     f_env,
                     prog,
                     stmts,
@@ -416,12 +416,12 @@ fn routine_to_cfg<'a>(
     let (params, _) = get_routine_content(prog, &routine);
 
     // put new frame on typeStack and keep track of the params accompanying classes
-    ty_stack.push(FxHashMap::default());
+    ty_stack.push();
     for (ty, id) in params {
         match ty {
             Type::Classtype(class_name) => {
                 let class = get_class(prog, class_name).clone();
-                insert_into_ty_stack(ty_stack, id.clone(), class)
+                ty_stack.insert(id.clone(), class)
             }
             _ => (),
         }
@@ -491,7 +491,7 @@ fn routinebody_to_cfg<'a>(
     let leave_function = cfg.add_node(Node::LeaveRoutine(routine.clone()));
 
     //update environments
-    ty_env.push(FxHashMap::default());
+    ty_env.push();
     f_env.insert(routine, (enter_function, leave_function));
 
     //generate subgraph from function body starting from enter_function and ending at leave_function node
