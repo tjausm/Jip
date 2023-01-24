@@ -12,7 +12,6 @@ use std::process::exit;
 mod cfg;
 mod see;
 mod ast;
-mod bench;
 mod shared;
 mod z3;
 
@@ -88,6 +87,6 @@ fn main() {
             start,
             end,
             interval,
-        } => exit(bench::bench(&program, start, end, interval)),
+        } => exit(see::bench(&program, start, end, interval)),
     };
 }
