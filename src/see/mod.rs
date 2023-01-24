@@ -125,9 +125,9 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                         (Type::Bool, id) => {
                             sym_memory.stack_insert(&id,  fresh_bool(&ctx, id.clone()))
                         },
-                        (Type::Classtype(ty), id) => {
+                        (Type::ClassType(ty), id) => {
                             let r = Uuid::new_v4();
-                            sym_memory.stack_insert(id, SymbolicExpression::Ref((Type::Classtype(ty.clone()), r)));
+                            sym_memory.stack_insert(id, SymbolicExpression::Ref((Type::ClassType(ty.clone()), r)));
                             sym_memory.heap_insert(r, ReferenceValue::UninitializedObj(ty.clone()));
                         },
                         (ty, id) => panic_with_diagnostics(
@@ -147,11 +147,12 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                         Type::Bool => {
                             sym_memory.stack_insert(&id,  fresh_bool(&ctx, id.clone()));
                         },
-                        Type::Classtype(ty) => {
+                        Type::ClassType(ty) => {
                             let r = Uuid::new_v4();
-                            sym_memory.stack_insert(&id,  SymbolicExpression::Ref((Type::Classtype(ty.clone()), r)))
+                            sym_memory.stack_insert(&id,  SymbolicExpression::Ref((Type::ClassType(ty.clone()), r)))
                         },
                         Type::Void => panic!("Panic should never trigger, parser doesn't accept void type in declaration"),
+                        Type::ArrayType(_) => todo!(),
                     },
                     Statement::Assume(expr) => {
                         let ast = expr_to_bool(&ctx, &sym_memory, &expr);
@@ -240,12 +241,13 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                                 retval_id,
                                 fresh_bool(&ctx, "retval".to_string()),
                             ),
-                            Type::Classtype(ty) => sym_memory.stack_insert(
+                            Type::ClassType(ty) => sym_memory.stack_insert(
                                 
                                 retval_id,
-                                SymbolicExpression::Ref((Type::Classtype(ty.clone()), Uuid::nil())),
+                                SymbolicExpression::Ref((Type::ClassType(ty.clone()), Uuid::nil())),
                             ),
                             Type::Void => panic!("Cannot declare retval of type void"),
+                            Type::ArrayType(_) => todo!(),
                         }
                     }
                     Action::AssignArgs { params, args } => {
@@ -272,9 +274,10 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                                 &sym_memory,
                             ),
                         },
-                        Lhs::Accessfield(_, _) => {
+                        Lhs::AccessField(_, _) => {
                             todo!("assigning objects to accesfields not implemented")
                         }
+                        Lhs::AccessArray(_, _) => todo!(),
                     },
                     Action::InitObj {
                         from: (class, members),
@@ -305,10 +308,10 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                                             ),
                                         );
                                     }
-                                    Type::Classtype(class) => {
+                                    Type::ClassType(class) => {
                                         // insert uninitialized object to heap
                                         let (ty, r) =
-                                            (Type::Classtype(class.to_string()), Uuid::new_v4());
+                                            (Type::ClassType(class.to_string()), Uuid::new_v4());
                                         sym_memory.heap_insert(
                                             r,
                                             ReferenceValue::UninitializedObj(
@@ -318,7 +321,7 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                                         fields.insert(
                                             field.clone(),
                                             (
-                                                Type::Classtype(class.to_string()),
+                                                Type::ClassType(class.to_string()),
                                                 SymbolicExpression::Ref((ty, r)),
                                             ),
                                         );
@@ -327,6 +330,7 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                                         &format!("Type of {}.{} can't be void", class, field),
                                         &sym_memory,
                                     ),
+                                    Type::ArrayType(_) => todo!(),
                                 },
                                 _ => (),
                             }
@@ -340,7 +344,8 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                                     _ => panic_with_diagnostics(&format!("Can't initialize '{} {}' because no reference is declared on the stack", class, id), &sym_memory),
                                 };
                             }
-                            Lhs::Accessfield(_, _) => todo!(),
+                            Lhs::AccessField(_, _) => todo!(),
+                            Lhs::AccessArray(_, _) => todo!(),
                         };
                     }
                     // lift retval 1 scope up

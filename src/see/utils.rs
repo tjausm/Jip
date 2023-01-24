@@ -6,7 +6,7 @@ use crate::z3::{expr_to_bool, expr_to_int, Reference, SymMemory, SymbolicExpress
 
 pub fn type_lhs<'ctx>(sym_memory: &mut SymMemory<'ctx>, lhs: &'ctx Lhs) -> Type {
     match lhs {
-        Lhs::Accessfield(obj, field) => match sym_memory.heap_get_field(obj, field) {
+        Lhs::AccessField(obj, field) => match sym_memory.heap_get_field(obj, field) {
             SymbolicExpression::Bool(_) => Type::Bool,
             SymbolicExpression::Int(_) => Type::Int,
             SymbolicExpression::Ref((ty, _)) => ty,
@@ -20,6 +20,7 @@ pub fn type_lhs<'ctx>(sym_memory: &mut SymMemory<'ctx>, lhs: &'ctx Lhs) -> Type 
                 &sym_memory,
             ),
         },
+        Lhs::AccessArray(_, _) => todo!(),
     }
 }
 
@@ -31,7 +32,7 @@ pub fn parse_rhs<'a, 'b>(
     rhs: &'a Rhs,
 ) -> SymbolicExpression<'a> {
     match rhs {
-        Rhs::Accessfield(obj_name, field_name) => {
+        Rhs::AccessField(obj_name, field_name) => {
             sym_memory.heap_get_field(obj_name, field_name).clone()
         }
 
@@ -45,7 +46,7 @@ pub fn parse_rhs<'a, 'b>(
                 let ast = expr_to_bool(&ctx, &sym_memory, &expr);
                 SymbolicExpression::Bool(ast)
             }
-            Type::Classtype(class) => match expr {
+            Type::ClassType(class) => match expr {
                 Expression::Identifier(id) => match sym_memory.stack_get(id) {
                     Some(SymbolicExpression::Ref((ty, r))) => SymbolicExpression::Ref((ty, r)),
                     Some(se) => panic_with_diagnostics(
@@ -59,6 +60,7 @@ pub fn parse_rhs<'a, 'b>(
                     &sym_memory,
                 ),
             },
+            Type::ArrayType(_) => todo!(),
             Type::Void => panic_with_diagnostics(
                 &format!(
                     "Can't evaluate rhs expression of the form {:?} to type void",
@@ -68,7 +70,7 @@ pub fn parse_rhs<'a, 'b>(
             ),
         },
         _ => panic_with_diagnostics(
-            &format!("Rhs of the form {:?} should not be in the cfg", rhs),
+            &format!("Rhs of the form {:?} with type {:?} should not be in the cfg", rhs, ty),
             &sym_memory,
         ),
     }
@@ -84,10 +86,11 @@ pub fn lhs_from_rhs<'a>(
     let ty = type_lhs(sym_memory, lhs);
     let var = parse_rhs(&ctx, sym_memory, &ty, rhs);
     match lhs {
-        Lhs::Accessfield(obj_name, field_name) => {
+        Lhs::AccessField(obj_name, field_name) => {
             sym_memory.heap_update_field(obj_name, field_name, var)
         }
         Lhs::Identifier(id) => sym_memory.stack_insert(id, var),
+        Lhs::AccessArray(_, _) => todo!(),
     }
 }
 
@@ -117,7 +120,7 @@ pub fn params_to_vars<'ctx>(
                 let expr = expr_to_bool(ctx, sym_memory, expr);
                 variables.push((arg_id, SymbolicExpression::Bool(expr)));
             }
-            (Some((Type::Classtype(class), arg_id)), Some(expr)) => {
+            (Some((Type::ClassType(class), arg_id)), Some(expr)) => {
                 let err = |class, arg_id, expr| {
                     panic_with_diagnostics(
                         &format!(

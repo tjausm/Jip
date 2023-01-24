@@ -130,7 +130,8 @@ pub enum Type {
     Void,
     Int,
     Bool,
-    Classtype(Identifier),
+    ClassType(Identifier),
+    ArrayType(Box<Type>)
 }
 
 pub type Assignment = (Lhs, Rhs);
@@ -138,13 +139,15 @@ pub type Assignment = (Lhs, Rhs);
 #[derive(Clone)]
 pub enum Lhs {
     Identifier(String),
-    Accessfield(Identifier, Identifier),
+    AccessField(Identifier, Identifier),
+    AccessArray(Identifier, Expression)
 }
 
 #[derive(Clone)]
 pub enum Rhs {
     Expression(Expression),
-    Accessfield(Identifier, Identifier),
+    AccessField(Identifier, Identifier),
+    AccessArray(Identifier, Expression),
     Invocation(Invocation),
     Newobject(Identifier, Arguments),
     NewArray(Type, i64)
@@ -263,7 +266,8 @@ impl fmt::Debug for Expression {
 impl fmt::Debug for Lhs {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Lhs::Accessfield(class, field) => write!(f, "{}.{}", class, field),
+            Lhs::AccessField(class, field) => write!(f, "{}.{}", class, field),
+            Lhs::AccessArray(id, index) => write!(f, "{}[{:?}]", id, index),
             Lhs::Identifier(id) => write!(f, "{}", id),
         }
     }
@@ -272,7 +276,8 @@ impl fmt::Debug for Rhs {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Rhs::Expression(expr) => write!(f, "{:?};", expr),
-            Rhs::Accessfield(class, field) => write!(f, "{}.{};", class, field),
+            Rhs::AccessField(class, field) => write!(f, "{}.{};", class, field),
+            Rhs::AccessArray(class, index) => write!(f, "{}.[{:?}];", class, index),
             Rhs::Invocation((class, fun, args)) => write!(f, " {}.{}({:?});", class, fun, args),
             Rhs::Newobject(class, args) => write!(f, "{}({:?});", class, args),
             Rhs::NewArray(ty, size) => write!(f, "{:?}[{}]", ty, size),
@@ -285,7 +290,8 @@ impl fmt::Debug for Type {
             Type::Void => write!(f, "void"),
             Type::Bool => write!(f, "bool"),
             Type::Int => write!(f, "int"),
-            Type::Classtype(name) => write!(f, "{}", name),
+            Type::ClassType(name) => write!(f, "{}", name),
+            Type::ArrayType(ty) => write!(f, "{:?}[]", ty),
         }
     }
 }

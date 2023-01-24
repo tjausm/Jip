@@ -47,7 +47,7 @@ pub fn generate_cfg(prog: Program) -> (NodeIndex, CFG) {
 
             //insert objects passed to main in TypeStack
             for (ty, obj_name) in args {
-                if let Type::Classtype(class_name) = ty {
+                if let Type::ClassType(class_name) = ty {
                     let class = prog.get_class( &class_name).clone();
                     ty_stack.insert(obj_name.clone(), class)
                 }
@@ -376,7 +376,7 @@ fn stmts_to_cfg<'a>(
             other => {
                 // keep track of variable types, to know where to find nonstatic methods called on object
                 match &other {
-                    Statement::Declaration((Type::Classtype(class_name), id)) => {
+                    Statement::Declaration((Type::ClassType(class_name), id)) => {
                         let class = prog.get_class( class_name);
                         ty_stack.insert(id.clone(), class.clone())
                     }
@@ -425,7 +425,7 @@ fn routine_to_cfg<'a>(
     ty_stack.push();
     for (ty, id) in params {
         match ty {
-            Type::Classtype(class_name) => {
+            Type::ClassType(class_name) => {
                 let class = prog.get_class( class_name).clone();
                 ty_stack.insert(id.clone(), class)
             }

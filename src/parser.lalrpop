@@ -2,6 +2,7 @@ use std::str::FromStr;
 use crate::ast::*;
 grammar;
 
+// parses comma seperated list to a vector
 Comma<T>: Vec<T> = { // (1)
     <mut v:(<T> ",")*> <e:T?> => match e { // (2)
         None => v,
@@ -53,13 +54,16 @@ Primitivetype : Type = {
 }
 
 Referencetype : Type = {
-    Classtype
+    ClassType
 }
 
-Classtype : Type = {
-    <Identifier> => Type::Classtype(<>),
+ClassType : Type = {
+    <Identifier> => Type::ClassType(<>),
 }
 
+Arraytype : Type = {
+    <Nonvoidtype> "[]" => Type::ArrayType(Box::new(<>))
+}
 
 
 pub Statements  = Statement*;
@@ -92,15 +96,17 @@ Assignment : Assignment = {
 
 Lhs : Lhs = {
     Identifier => Lhs::Identifier(<>),
-    <Identifier> "." <Identifier> => Lhs::Accessfield(<>)
+    <Identifier> "." <Identifier> => Lhs::AccessField(<>),
+    <Identifier> "[" <Expression> "]" => Lhs::AccessArray(<>)
 }
 
 Rhs : Rhs= {
     Expression => Rhs::Expression(<>),
-    <Identifier> "." <Identifier> => Rhs::Accessfield(<>),
+    <Identifier> "." <Identifier> => Rhs::AccessField(<>),
+    <Identifier> "[" <Expression> "]" => Rhs::AccessArray(<>),
     Invocation => Rhs::Invocation(<>),
     "new" <Identifier> "(" <Arguments> ")" => Rhs::Newobject(<>),
-    "new" <Classtype> "[" <Integer> "]" => Rhs::NewArray(<>),
+    "new" <ClassType> "[" <Integer> "]" => Rhs::NewArray(<>),
     "new" <Primitivetype> "[" <Integer> "]" => Rhs::NewArray(<>)
 }
 

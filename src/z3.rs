@@ -177,7 +177,7 @@ impl<'a> SymMemory<'a> {
                                             (Type::Bool, fresh_bool(self.ctx, field_name.clone())),
                                         );
                                     }
-                                    Type::Classtype(n) => {
+                                    Type::ClassType(n) => {
                                         // add new unitializedObject to the heap
                                         let next_r = Uuid::new_v4();
                                         self.heap_insert(
@@ -189,14 +189,15 @@ impl<'a> SymMemory<'a> {
                                         new_fields.insert(
                                             field_name.clone(),
                                             (
-                                                Type::Classtype(n.clone()),
+                                                Type::ClassType(n.clone()),
                                                 SymbolicExpression::Ref((
-                                                    Type::Classtype(n.clone()),
+                                                    Type::ClassType(n.clone()),
                                                     next_r,
                                                 )),
                                             ),
                                         );
-                                    }
+                                    },
+                                    Type::ArrayType(ty) => todo!(),
                                     Type::Void => {
                                         panic_with_diagnostics("Panic should never trigger", &self)
                                     }
