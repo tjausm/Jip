@@ -21,7 +21,7 @@ impl Program {
                 None => panic_with_diagnostics(&format!(
                     "Class {} doesn't exist",
                     class_name
-                ), None)
+                ), &())
             }
     
     }
@@ -53,7 +53,7 @@ impl Program {
         panic_with_diagnostics(&format!(
             "Static method {}.{} doesn't exist",
             class.0, method_name
-        ), None);
+        ), &());
         
     }
     
@@ -69,7 +69,7 @@ impl Program {
         panic_with_diagnostics(&format!(
             "Class {} does not have a constructor",
             class_name
-        ), None);
+        ), &());
     }
 }
 

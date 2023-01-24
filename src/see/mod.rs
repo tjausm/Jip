@@ -13,12 +13,9 @@ use crate::ast::*;
 use crate::cfg::{generate_cfg, generate_dot_cfg};
 use crate::cfg::types::{Action, Node};
 use crate::shared::ExitCode;
-use crate::shared::ReferenceValue;
-use crate::shared::SymMemory;
-use crate::shared::SymbolicExpression;
 use crate::shared::{Error, panic_with_diagnostics};
 use crate::z3::{
-    check_path, expr_to_bool, expr_to_int, fresh_bool, fresh_int, PathConstraint};
+    check_path, expr_to_bool, expr_to_int, fresh_bool, fresh_int, PathConstraint, ReferenceValue, SymbolicExpression, SymMemory};
 
 
 
@@ -51,7 +48,7 @@ pub fn load_program(file_name: String) -> Result<String, (ExitCode, String)> {
 fn parse_program(program: &str) -> Program {
     match parser::ProgramParser::new().parse(program) {
         Ok(prog) => prog,
-        Err(err) => panic_with_diagnostics(&format!("{}", err), None) 
+        Err(err) => panic_with_diagnostics(&format!("{}", err), &()) 
     }
 }
 
@@ -102,7 +99,7 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
         VecDeque::new();
 
     q.push_back((
-        SymMemory::new(prog.clone()),
+        SymMemory::new(prog.clone(), &ctx),
         vec![],
         d,
         start_node,
@@ -135,7 +132,7 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                         },
                         (ty, id) => panic_with_diagnostics(
                             &format!("Can't call main with parameter {} of type {:?}", id, ty),
-                            Some(&sym_memory)
+                            &sym_memory
                         ),
                     }
                 }
@@ -206,13 +203,13 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                                 match expr {
                                     Expression::Identifier(id) => match sym_memory.stack_get( id) {
                                         Some(SymbolicExpression::Ref(r)) => sym_memory.stack_insert(retval_id, SymbolicExpression::Ref(r)),
-                                        Some(expr) => panic_with_diagnostics(&format!("Can't return '{:?}' as a referencevalue", expr), Some(&sym_memory)),
-                                        None => panic_with_diagnostics(&format!("{} is undeclared", id), Some(&sym_memory)),
+                                        Some(expr) => panic_with_diagnostics(&format!("Can't return '{:?}' as a referencevalue", expr), &sym_memory),
+                                        None => panic_with_diagnostics(&format!("{} is undeclared", id), &sym_memory),
                                     },
-                                    _ => panic_with_diagnostics(&format!("Can't return expression '{:?}'", expr), Some(&sym_memory)),
+                                    _ => panic_with_diagnostics(&format!("Can't return expression '{:?}'", expr), &sym_memory),
                                 }
                             },
-                            None => panic_with_diagnostics(&format!("retval is undeclared in expression 'return {:?}'", expr), Some(&sym_memory)),  
+                            None => panic_with_diagnostics(&format!("retval is undeclared in expression 'return {:?}'", expr), &sym_memory),  
                         }
                     }
                     _ => (),
@@ -268,11 +265,11 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                             ),
                             Some(_) => panic_with_diagnostics(
                                 &format!("{} is not of type {}", id, class),
-                                Some(&sym_memory)
+                                &sym_memory
                             ),
                             None => panic_with_diagnostics(
                                 &format!("Variable {} is undeclared", id),
-                                Some(&sym_memory),
+                                &sym_memory,
                             ),
                         },
                         Lhs::Accessfield(_, _) => {
@@ -292,7 +289,7 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                                 Member::Field((ty, field)) => match ty {
                                     Type::Int => {
                                         fields.insert(
-                                            field,
+                                            field.clone(),
                                             (
                                                 Type::Int,
                                                 crate::z3::fresh_int(&ctx, field.to_string()),
@@ -303,7 +300,7 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                                         (
                                             Type::Bool,
                                             fields.insert(
-                                                field,
+                                                field.clone(),
                                                 (Type::Bool, fresh_bool(&ctx, field.to_string())),
                                             ),
                                         );
@@ -319,7 +316,7 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                                             ),
                                         );
                                         fields.insert(
-                                            field,
+                                            field.clone(),
                                             (
                                                 Type::Classtype(class.to_string()),
                                                 SymbolicExpression::Ref((ty, r)),
@@ -328,7 +325,7 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                                     }
                                     Type::Void => panic_with_diagnostics(
                                         &format!("Type of {}.{} can't be void", class, field),
-                                        Some(&sym_memory),
+                                        &sym_memory,
                                     ),
                                 },
                                 _ => (),
@@ -340,7 +337,7 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                             Lhs::Identifier(id) => {
                                 match sym_memory.stack_get( id) {
                                     Some(SymbolicExpression::Ref((_, r))) => {sym_memory.heap_insert(r, ReferenceValue::Object((class.to_string(), fields)));},
-                                    _ => panic_with_diagnostics(&format!("Can't initialize '{} {}' because no reference is declared on the stack", class, id), Some(&sym_memory)),
+                                    _ => panic_with_diagnostics(&format!("Can't initialize '{} {}' because no reference is declared on the stack", class, id), &sym_memory),
                                 };
                             }
                             Lhs::Accessfield(_, _) => todo!(),
@@ -352,7 +349,7 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                             Some(retval) => sym_memory.stack_insert_below(retval_id, retval),
                             None => panic_with_diagnostics(
                                 "Can't lift retval to a higher scope",
-                                Some(&sym_memory),
+                                &sym_memory,
                             ),
                         };
                     }
