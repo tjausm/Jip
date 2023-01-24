@@ -341,6 +341,47 @@ fn stmts_to_cfg<'a>(
                     scope_end,
                 );
             }
+            Statement::Assignment((lhs, Rhs::Newobject(class_name, args))) => {
+                let class = prog.get_class( &class_name);
+
+                // we pass actions InitObj and declareThis
+                let append_actions = vec![
+                    Action::InitObj {
+                        from: class.clone(),
+                        to: lhs.clone(),
+                    },
+                    Action::DeclareThis {
+                        class: class_name.clone(),
+                        obj: lhs.clone(),
+                    },
+                ];
+
+                let routine = Routine::Constructor {
+                    class: class_name.to_string(),
+                };
+
+                let f_end = routine_to_cfg(
+                    routine,
+                    append_actions,
+                    args,
+                    ty_stack,
+                    f_env,
+                    prog,
+                    cfg,
+                    starts,
+                );
+
+                return stmts_to_cfg(
+                    ty_stack,
+                    f_env,
+                    prog,
+                    stmts,
+                    cfg,
+                    vec![f_end],
+                    curr_scope,
+                    scope_end,
+                );
+            }
 
             // for 'return x' we assign 'retval := x', add edge to scope_end and stop recursing
             Statement::Return(expr) => {

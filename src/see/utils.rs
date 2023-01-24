@@ -2,19 +2,21 @@ use z3::Context;
 
 use crate::ast::*;
 use crate::shared::panic_with_diagnostics;
-use crate::z3::{expr_to_bool, expr_to_int, Reference, SymMemory, SymbolicExpression};
+use crate::z3::SymMemory;
+use crate::z3::bindings::{expr_to_bool, expr_to_int };
+use crate::z3::symModel::{SymExpression, Reference};
 
 pub fn type_lhs<'ctx>(sym_memory: &mut SymMemory<'ctx>, lhs: &'ctx Lhs) -> Type {
     match lhs {
         Lhs::AccessField(obj, field) => match sym_memory.heap_get_field(obj, field) {
-            SymbolicExpression::Bool(_) => Type::Bool,
-            SymbolicExpression::Int(_) => Type::Int,
-            SymbolicExpression::Ref((ty, _)) => ty,
+            SymExpression::Bool(_) => Type::Bool,
+            SymExpression::Int(_) => Type::Int,
+            SymExpression::Ref((ty, _)) => ty,
         },
         Lhs::Identifier(id) => match sym_memory.stack_get(id) {
-            Some(SymbolicExpression::Bool(_)) => Type::Bool,
-            Some(SymbolicExpression::Int(_)) => Type::Int,
-            Some(SymbolicExpression::Ref((ty, _))) => ty,
+            Some(SymExpression::Bool(_)) => Type::Bool,
+            Some(SymExpression::Int(_)) => Type::Int,
+            Some(SymExpression::Ref((ty, _))) => ty,
             None => panic_with_diagnostics(
                 &format!("Can't type '{}' because it is undeclared on the stack", id),
                 &sym_memory,
@@ -30,25 +32,27 @@ pub fn parse_rhs<'a, 'b>(
     sym_memory: &mut SymMemory<'a>,
     ty: &Type,
     rhs: &'a Rhs,
-) -> SymbolicExpression<'a> {
+) -> SymExpression<'a> {
     match rhs {
         Rhs::AccessField(obj_name, field_name) => {
             sym_memory.heap_get_field(obj_name, field_name).clone()
-        }
+        },
+        Rhs::AccessArray(_,_ ) => todo!(),
+
 
         Rhs::Expression(expr) => match ty {
             Type::Int => {
                 let ast = expr_to_int(&ctx, &sym_memory, &expr);
-                SymbolicExpression::Int(ast)
+                SymExpression::Int(ast)
             }
 
             Type::Bool => {
                 let ast = expr_to_bool(&ctx, &sym_memory, &expr);
-                SymbolicExpression::Bool(ast)
+                SymExpression::Bool(ast)
             }
             Type::ClassType(class) => match expr {
                 Expression::Identifier(id) => match sym_memory.stack_get(id) {
-                    Some(SymbolicExpression::Ref((ty, r))) => SymbolicExpression::Ref((ty, r)),
+                    Some(SymExpression::Ref((ty, r))) => SymExpression::Ref((ty, r)),
                     Some(se) => panic_with_diagnostics(
                         &format!("Trying to parse '{:?}' of type {:?}", rhs, ty),
                         &sym_memory,
@@ -105,7 +109,7 @@ pub fn params_to_vars<'ctx>(
     sym_memory: &mut SymMemory<'ctx>,
     params: &'ctx Parameters,
     args: &'ctx Arguments,
-) -> Vec<(&'ctx String, SymbolicExpression<'ctx>)> {
+) -> Vec<(&'ctx String, SymExpression<'ctx>)> {
     let mut params_iter = params.iter();
     let mut args_iter = args.iter();
     let mut variables = vec![];
@@ -114,11 +118,11 @@ pub fn params_to_vars<'ctx>(
         match (params_iter.next(), args_iter.next()) {
             (Some((Type::Int, arg_id)), Some(expr)) => {
                 let expr = expr_to_int(ctx, sym_memory, expr);
-                variables.push((arg_id, SymbolicExpression::Int(expr)));
+                variables.push((arg_id, SymExpression::Int(expr)));
             }
             (Some((Type::Bool, arg_id)), Some(expr)) => {
                 let expr = expr_to_bool(ctx, sym_memory, expr);
-                variables.push((arg_id, SymbolicExpression::Bool(expr)));
+                variables.push((arg_id, SymExpression::Bool(expr)));
             }
             (Some((Type::ClassType(class), arg_id)), Some(expr)) => {
                 let err = |class, arg_id, expr| {
@@ -132,8 +136,8 @@ pub fn params_to_vars<'ctx>(
                 };
                 match expr {
                     Expression::Identifier(param_id) => match sym_memory.stack_get(param_id) {
-                        Some(SymbolicExpression::Ref(r)) => {
-                            variables.push((arg_id, SymbolicExpression::Ref(r)))
+                        Some(SymExpression::Ref(r)) => {
+                            variables.push((arg_id, SymExpression::Ref(r)))
                         }
                         _ => return err(class, arg_id, expr),
                     },
