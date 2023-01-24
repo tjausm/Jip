@@ -73,6 +73,7 @@ impl Program {
     }
 }
 
+/// `(class_name, members)`
 pub type Class = (Identifier, Members);
 
 pub type Members = Vec<Member>;

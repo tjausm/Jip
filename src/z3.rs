@@ -15,10 +15,10 @@ use z3::{ast, Context, SatResult, Solver};
 use crate::ast::*;
 use crate::shared::{panic_with_diagnostics, Error, Scope};
 
-use self::bindings::{fresh_int, fresh_bool};
+use self::bindings::{fresh_bool, fresh_int};
 use self::symModel::{Reference, ReferenceValue, SymExpression};
 
-/// Contains all models of symbolic expressions, objects etc.
+/// Contains the models for symbolic expressions, objects and arrays and accompanying helper functions.
 pub mod symModel {
 
     use super::*;
@@ -42,22 +42,10 @@ pub mod symModel {
         Object(Object<'a>),
         Array(Array<'a>),
         /// Takes classname as input
-        UninitializedObj(Identifier),
+        UninitializedObj(Class),
         UninitializedArr,
     }
-
-    pub fn initObj<'a>(id: &'a Identifier, class: &Class) -> Object<'a> {
-        todo!()
-    }
-
-    pub fn initArr<'a>() -> Array<'a> {
-        todo!()
-    }
 }
-
-//-----------------//
-// Symbolic memory //
-//-----------------//
 
 #[derive(Debug, Clone)]
 struct Frame<'a> {
@@ -69,6 +57,7 @@ type SymStack<'a> = Vec<Frame<'a>>;
 
 type SymHeap<'a> = FxHashMap<Reference, ReferenceValue<'a>>;
 
+/// Type representing the symbolic memory
 #[derive(Clone)]
 pub struct SymMemory<'ctx> {
     program: Program,
@@ -166,56 +155,8 @@ impl<'a> SymMemory<'a> {
                         ),
                     },
 
-                    Some(ReferenceValue::UninitializedObj(class_name)) => {
-                        let mut new_fields = FxHashMap::default();
-
-                        // initialize newObj lazily
-                        let members = self.program.get_class(&class_name).1.clone();
-                        for member in members {
-                            if let Member::Field((ty, field_name)) = member {
-                                match ty {
-                                    Type::Int => {
-                                        new_fields.insert(
-                                            field_name.clone(),
-                                            (Type::Int, fresh_int(self.ctx, field_name.clone())),
-                                        );
-                                    }
-                                    Type::Bool => {
-                                        new_fields.insert(
-                                            field_name.clone(),
-                                            (Type::Bool, fresh_bool(self.ctx, field_name.clone())),
-                                        );
-                                    }
-                                    Type::ClassType(n) => {
-                                        // add new unitializedObject to the heap
-                                        let next_r = Uuid::new_v4();
-                                        self.heap_insert(
-                                            next_r,
-                                            ReferenceValue::UninitializedObj(n.clone()),
-                                        );
-
-                                        // insert unitialized object in the object's fields
-                                        new_fields.insert(
-                                            field_name.clone(),
-                                            (
-                                                Type::ClassType(n.clone()),
-                                                SymExpression::Ref((
-                                                    Type::ClassType(n.clone()),
-                                                    next_r,
-                                                )),
-                                            ),
-                                        );
-                                    }
-                                    Type::ArrayType(ty) => todo!(),
-                                    Type::Void => {
-                                        panic_with_diagnostics("Panic should never trigger", &self)
-                                    }
-                                }
-                            }
-                        }
-
-                        // push new object under original reference to heap and recurse
-                        let new_obj = ReferenceValue::Object((class_name.clone(), new_fields));
+                    Some(ReferenceValue::UninitializedObj(class)) => {
+                        let new_obj = self.init_object(&class);
                         self.heap_insert(r, new_obj);
                         self.heap_get_field(obj_name, field_name)
                     }
@@ -259,6 +200,60 @@ impl<'a> SymMemory<'a> {
             _ => panic_with_diagnostics(&format!("{} is not a reference", obj_name), &self),
         }
     }
+
+    /// given a class initializes all fields lazily and returns a ReferenceValue
+    pub fn init_object(&mut self, (class, members): &Class) -> ReferenceValue<'a> {
+        let mut fields = FxHashMap::default();
+
+        // map all fields to symbolic values
+        for member in members {
+            match member {
+                Member::Field((ty, field)) => match ty {
+                    Type::Int => {
+                        fields.insert(
+                            field.clone(),
+                            (Type::Int, fresh_int(&self.ctx, field.to_string())),
+                        );
+                    }
+                    Type::Bool => {
+                        (
+                            Type::Bool,
+                            fields.insert(
+                                field.clone(),
+                                (Type::Bool, fresh_bool(&self.ctx, field.to_string())),
+                            ),
+                        );
+                    }
+                    Type::ClassType(class) => {
+                        // insert uninitialized object to heap
+                        let (ty, r) = (Type::ClassType(class.to_string()), Uuid::new_v4());
+                        self.heap_insert(
+                            r,
+                            ReferenceValue::UninitializedObj((class.clone(), members.clone())),
+                        );
+                        fields.insert(
+                            field.clone(),
+                            (
+                                Type::ClassType(class.to_string()),
+                                SymExpression::Ref((ty, r)),
+                            ),
+                        );
+                    }
+                    Type::Void => panic_with_diagnostics(
+                        &format!("Type of {}.{} can't be void", class, field),
+                        &self,
+                    ),
+                    Type::ArrayType(_) => todo!(),
+                },
+                _ => (),
+            }
+        }
+        ReferenceValue::Object(("todo".to_owned(), fields))
+    }
+
+    pub fn init_array() -> ReferenceValue<'a> {
+        todo!()
+    }
 }
 
 impl fmt::Debug for SymMemory<'_> {
@@ -276,9 +271,7 @@ State of Sym-Heap:
     }
 }
 
-//--------------//
-// z3 bindings //
-//-------------//
+/// Contains all functions needed to interact with z3
 pub mod bindings {
 
     use super::*;
