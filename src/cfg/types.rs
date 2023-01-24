@@ -1,6 +1,7 @@
 use rustc_hash::FxHashMap;
 use petgraph::graph::{Graph, NodeIndex};
 use crate::{ast::*, shared::Scope};
+use std::{hash::Hash, fmt::Display};
 
 pub enum Node {
     EnteringMain(Parameters),
@@ -63,7 +64,49 @@ pub enum Routine {
 }
 
 /// Map objectname to the class of said object e.g. c.increment() can only be performed if we know where to find the increment function
-pub type TypeStack = Vec<FxHashMap<Identifier, Class>>;
+pub struct TypeStack(Vec<FxHashMap<Identifier, Class>>);
+
+impl Default for TypeStack {
+    fn default() -> Self {
+        TypeStack(vec![FxHashMap::default()])
+    }
+}
+
+impl TypeStack {
+    pub fn insert(
+        &mut self,
+        obj_name: Identifier,
+        value: Class,
+    ) -> () {
+        match self.0.last_mut() {
+            Some(env) => {
+                env.insert(obj_name, value);
+            }
+            None => (),
+        };
+    }
+    
+    pub fn get(
+        &self,
+        id: &Identifier
+    ) -> Option<Class> {
+        for frame in self.0.iter().rev() {
+            match frame.get(id) {
+                Some(class) => return Some(class.clone()),
+                None => (),
+            }
+        }
+        return None;
+    }
+
+    pub fn push(&mut self) {
+        self.0.push(FxHashMap::default())
+    }
+
+    pub fn pop(&mut self) {
+        self.0.pop();
+    }
+}
 
 /// Given a generated subgraph, this struct denotes the last node & which edge comes from it should we want to extend it
 #[derive(Clone)]

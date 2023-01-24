@@ -12,7 +12,7 @@ Comma<T>: Vec<T> = { // (1)
     }
 };
 
-pub Program = <Class*>; 
+pub Program : Program = <Class*> => Program(<>); 
 
 Class : Class = "class" <Identifier> "{" <Member*> "}";
 
@@ -99,7 +99,9 @@ Rhs : Rhs= {
     Expression => Rhs::Expression(<>),
     <Identifier> "." <Identifier> => Rhs::Accessfield(<>),
     Invocation => Rhs::Invocation(<>),
-    "new" <Identifier> "(" <Arguments> ")" => Rhs::Newobject(<>)
+    "new" <Identifier> "(" <Arguments> ")" => Rhs::Newobject(<>),
+    "new" <Classtype> "[" <Integer> "]" => Rhs::NewArray(<>),
+    "new" <Primitivetype> "[" <Integer> "]" => Rhs::NewArray(<>)
 }
 
 Invocation : Invocation = {

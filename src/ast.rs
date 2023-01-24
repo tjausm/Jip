@@ -1,4 +1,6 @@
 use std::fmt;
+
+use crate::shared::panic_with_diagnostics;
 /*
 use non_empty_vec::NonEmpty;
 
@@ -8,13 +10,74 @@ use non_empty_vec::NonEmpty;
 // - labels with only 1 ´option´ are type aliases, , 1 < options are enums
 */
 
-pub type Program = Vec<Class>;
+#[derive(Clone)]
+pub struct Program(pub Vec<Class>);
+
+impl Program {
+    pub fn get_class<'a>(&'a self, class_name: &str) -> &'a Class {
+        match self.0.iter()
+            .find(|(id, _)| id == class_name) {
+                Some(class) => return class,
+                None => panic_with_diagnostics(&format!(
+                    "Class {} doesn't exist",
+                    class_name
+                ), &())
+            }
+    
+    }
+    
+    pub fn get_methodcontent<'a>(
+        &'a self,
+        class_name: &Identifier,
+        method_name: &Identifier,
+    ) -> &'a Methodcontent {
+        let class = self.get_class(class_name);
+    
+        for member in class.1.iter() {
+            match member {
+                Member::Method(method) => match method {
+                    Method::Static(content @ (_, id, _, _)) => {
+                        if id == method_name {
+                            return content;
+                        }
+                    }
+                    Method::Nonstatic(content @ (_, id, _, _)) => {
+                        if id == method_name {
+                            return content;
+                        }
+                    }
+                },
+                _ => (),
+            }
+        }
+        panic_with_diagnostics(&format!(
+            "Static method {}.{} doesn't exist",
+            class.0, method_name
+        ), &());
+        
+    }
+    
+    pub fn get_constructor<'a>(&'a self, class_name: &str) -> &'a Constructor {
+        let class = self.get_class(class_name);
+    
+        for m in class.1.iter() {
+            match m {
+                Member::Constructor(c) => return c,
+                _ => continue,
+            }
+        }
+        panic_with_diagnostics(&format!(
+            "Class {} does not have a constructor",
+            class_name
+        ), &());
+    }
+}
 
 pub type Class = (Identifier, Members);
 
 pub type Members = Vec<Member>;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Member {
     Constructor(Constructor),
     Method(Method),
@@ -23,7 +86,7 @@ pub enum Member {
 
 pub type Constructor = (Identifier, Parameters, Statements);
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Method {
     Static(Methodcontent),
     Nonstatic(Methodcontent),
@@ -84,6 +147,7 @@ pub enum Rhs {
     Accessfield(Identifier, Identifier),
     Invocation(Invocation),
     Newobject(Identifier, Arguments),
+    NewArray(Type, i64)
 }
 
 //TODO: add args hier
@@ -211,6 +275,7 @@ impl fmt::Debug for Rhs {
             Rhs::Accessfield(class, field) => write!(f, "{}.{};", class, field),
             Rhs::Invocation((class, fun, args)) => write!(f, " {}.{}({:?});", class, fun, args),
             Rhs::Newobject(class, args) => write!(f, "{}({:?});", class, args),
+            Rhs::NewArray(ty, size) => write!(f, "{:?}[{}]", ty, size),
         }
     }
 }

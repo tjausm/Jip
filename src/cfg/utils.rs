@@ -19,96 +19,14 @@ pub fn print_short_id(scope: &Scope) -> String {
     }
 }
 
-pub fn insert_into_ty_stack<K: Eq + Hash, V>(
-    env: &mut Vec<FxHashMap<K, V>>,
-    key: K,
-    value: V,
-) -> () {
-    match env.last_mut() {
-        Some(env) => {
-            env.insert(key, value);
-        }
-        None => (),
-    };
-}
 
-pub fn get_from_ty_stack<K: Eq + Hash + Display, V: Clone>(
-    env_stack: &Vec<FxHashMap<K, V>>,
-    id: &K,
-) -> Option<V> {
-    for env in env_stack.iter().rev() {
-        match env.get(id) {
-            Some(class) => return Some(class.clone()),
-            None => (),
-        }
-    }
-    return None;
-}
 
 /// given an object or class name, return class name
-/// e.g. if we call o.f(), where object o is of class O then get_class(o) = O
-pub fn get_classname<'a>(object_or_class: &'a String, ty_env: &TypeStack) -> String {
-    get_from_ty_stack(ty_env, &object_or_class)
+/// e.g. if we call `o.f()`, where object `o` is of class `C` then `get_class(o) = C`
+pub fn get_classname<'a>(object_or_class: &'a String, ty_stack: &TypeStack) -> String {
+    ty_stack.get(&object_or_class)
         .map(|t| t.0)
         .unwrap_or(object_or_class.clone())
-}
-
-pub fn get_class<'a>(prog: &'a Program, class_name: &str) -> &'a Class {
-    match prog.iter()
-        .find(|(id, _)| id == class_name) {
-            Some(class) => return class,
-            None => panic_with_diagnostics(&format!(
-                "Class {} doesn't exist",
-                class_name
-            ), None)
-        }
-
-}
-
-pub fn get_methodcontent<'a>(
-    prog: &'a Program,
-    class_name: &Identifier,
-    method_name: &Identifier,
-) -> &'a Methodcontent {
-    let class = get_class(prog, class_name);
-
-    for member in class.1.iter() {
-        match member {
-            Member::Method(method) => match method {
-                Method::Static(content @ (_, id, _, _)) => {
-                    if id == method_name {
-                        return content;
-                    }
-                }
-                Method::Nonstatic(content @ (_, id, _, _)) => {
-                    if id == method_name {
-                        return content;
-                    }
-                }
-            },
-            _ => (),
-        }
-    }
-    panic_with_diagnostics(&format!(
-        "Static method {}.{} doesn't exist",
-        class.0, method_name
-    ), None);
-    
-}
-
-fn get_constructor<'a>(prog: &'a Program, class_name: &str) -> &'a Constructor {
-    let class = get_class(prog, class_name);
-
-    for m in class.1.iter() {
-        match m {
-            Member::Constructor(c) => return c,
-            _ => continue,
-        }
-    }
-    panic_with_diagnostics(&format!(
-        "Class {} does not have a constructor",
-        class_name
-    ), None);
 }
 
 pub fn get_routine_content<'a>(
@@ -117,11 +35,11 @@ pub fn get_routine_content<'a>(
 ) -> (&'a Parameters, &'a Statements) {
     match routine {
         Routine::Constructor { class } => {
-            let (_, params, stmts) = get_constructor(prog, class);
+            let (_, params, stmts) = prog.get_constructor(class);
             (params, stmts)
         }
         Routine::Method { class, method } => {
-            let (_, _, params, stmts) = get_methodcontent(prog, class, method);
+            let (_, _, params, stmts) = prog.get_methodcontent( class, method);
             (params, stmts)
         }
     }
