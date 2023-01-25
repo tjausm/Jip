@@ -200,7 +200,7 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                     Statement::Return(expr) => {
 
                         // stop path if current scope `id == None`, indicating we are in main scope
-                        if sym_memory.current_scope().id == None {continue};
+                        if sym_memory.get_scope(0).id == None {continue};
 
                         // evaluate return expression with type of retval and add to stack
                         match sym_memory.stack_get(retval_id) {
@@ -375,7 +375,37 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                     }
                     // if we can leave over this edge pop scope otherwise dismiss path 
                     Action::LeaveScope { from: to_scope } => 
-                    if *sym_memory.current_scope() == *to_scope {sym_memory.stack_pop()} else {continue 'q_nodes},
+                    if *sym_memory.get_scope(0) == *to_scope {sym_memory.stack_pop()} else {continue 'q_nodes},
+
+                    // From main a `require` functions as an `assume`, 
+                    // from all 'deeper' scopes the require functions as an `assert`. The `ensure` statement always functions like an `assume`.
+                    Action::CheckSpecifications { specifications } => {
+
+                        let from_main_scope = sym_memory.get_scope(0).id == None ||sym_memory.get_scope(1).id == None;
+
+                        for specification in specifications {
+                            match (specification, from_main_scope){
+                                // if require is called outside main scope we assert
+                                (Specification::Requires(expr), false) => {
+                                    let ast = expr_to_bool(&ctx, &sym_memory, expr);
+
+                                    diagnostics.z3_invocations = diagnostics.z3_invocations + 1;
+            
+                                    pc.push(PathConstraint::Assert(ast));
+                                    check_path(&ctx, &pc)?;
+                                },
+                                // otherwise process we assume
+                                (spec, _) => {
+                                    let expr = match spec {
+                                        Specification::Requires(expr) => expr,
+                                        Specification::Ensures(expr) => expr,
+                                    };
+                                    let ast = expr_to_bool(&ctx, &sym_memory, expr);
+                                    pc.push(PathConstraint::Assume(ast)); 
+                                }
+                            };
+                        }
+                    },
                 }
             }
             let next = edge.target();

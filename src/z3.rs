@@ -126,11 +126,12 @@ impl<'a> SymMemory<'a> {
         self.stack.pop();
     }
 
-    /// Returns scope of top most frame in the stack
-    pub fn current_scope(&self) -> &Scope {
-        match self.stack.last() {
+    /// Returns scope indexed from the top of the stack `get_scope(0) == top_scope`
+    pub fn get_scope(&self, index: usize) -> &Scope {
+        let position = self.stack.len()- (1 + index);
+        match self.stack.get(position) {
             Some(frame) => &frame.scope,
-            None => panic_with_diagnostics("No scope exists currently", &self),
+            None => panic_with_diagnostics(&format!("No scope exists at position {}", position), &self),
         }
     }
 

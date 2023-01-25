@@ -4,6 +4,7 @@ use crate::{ast::*, shared::Scope};
 use std::{hash::Hash, fmt::Display};
 
 pub enum Node {
+    // From this node we initialize our fresh parameters & the base scope
     EnteringMain(Parameters),
     Statement(Statement),
     /// classname, methodname and list of expressions we assign to parameters
@@ -41,6 +42,12 @@ pub enum Action {
     LiftRetval,
     LeaveScope {
         from: Scope,
+    },
+    /// From main a `require` functions as an `assume`, from all 'deeper' scopes the `require` functions as an `assert`.
+    /// The `ensure` statement always functions like an `assume`. 
+    /// (check specifications before leaving scope to ensure it knows it's leaving from main scope)
+    CheckSpecifications {
+        specifications: Specifications
     },
 }
 
@@ -108,7 +115,7 @@ impl TypeStack {
     }
 }
 
-/// Given a generated subgraph, this struct denotes the last node & which edge comes from it should we want to extend it
+/// Given a generated subgraph, this struct denotes the last node & and the Edge we need to use to extend it
 #[derive(Clone)]
 pub struct Start {
     pub node: NodeIndex,
