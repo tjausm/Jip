@@ -474,8 +474,8 @@ fn routine_to_cfg<'a>(
             f_start_node,
             [
                 start.edge,
-                check_specs.clone(),
                 vec![enter_scope.clone(), assign_args.clone()],
+                check_specs.clone(),
                 append_incoming.clone(),
             ]
             .concat(),

@@ -43,7 +43,7 @@ pub enum Action {
     LeaveScope {
         from: Scope,
     },
-    /// From main a `require` functions as an `assume`, from all 'deeper' scopes the `require` functions as an `assume`.
+    /// From main a `require` functions as an `assume`, from all 'deeper' scopes the `require` functions as an `assert`.
     /// The `ensure` statement always functions like an `assume`. 
     /// (check specifications before leaving scope to ensure it knows it's leaving from main scope)
     CheckSpecifications {
