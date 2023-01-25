@@ -376,6 +376,7 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                     // if we can leave over this edge pop scope otherwise dismiss path 
                     Action::LeaveScope { from: to_scope } => 
                     if *sym_memory.current_scope() == *to_scope {sym_memory.stack_pop()} else {continue 'q_nodes},
+                    Action::CheckSpecifications { specifications } => todo!(),
                 }
             }
             let next = edge.target();

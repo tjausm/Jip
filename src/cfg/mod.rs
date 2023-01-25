@@ -32,13 +32,23 @@ pub fn generate_dot_cfg(program: Program) -> String {
 /// Returns cfg, and the start_node representing entry point of the program
 pub fn generate_cfg(prog: Program) -> (NodeIndex, CFG) {
     //extract main.main method from program
-    let main_method = prog.get_methodcontent( &"Main".to_string(), &"main".to_string());
+    let main_method = prog.get_methodcontent(&"Main".to_string(), &"main".to_string());
 
     match main_method {
-        (Type::Void, _, args, _, body) => {
-            //initiate cfg
+        (Type::Void, _, args, specs, body) => {
+            //initialize cfg, the Start and the end
             let mut cfg: CFG = Graph::<Node, Vec<Action>>::new();
-            let start = to_start(cfg.add_node(Node::EnteringMain(args.clone())));
+            let start_node = cfg.add_node(Node::EnteringMain(args.clone()));
+            let start = if specs.len() == 0 {
+                to_start(start_node)
+            } else {
+                Start {
+                    node: start_node,
+                    edge: vec![Action::CheckSpecifications {
+                        specifications: specs.clone(),
+                    }],
+                }
+            };
             let end = cfg.add_node(Node::End);
 
             //initiate environments
@@ -48,7 +58,7 @@ pub fn generate_cfg(prog: Program) -> (NodeIndex, CFG) {
             //insert objects passed to main in TypeStack
             for (ty, obj_name) in args {
                 if let Type::Classtype(class_name) = ty {
-                    let class = prog.get_class( &class_name).clone();
+                    let class = prog.get_class(&class_name).clone();
                     ty_stack.insert(obj_name.clone(), class)
                 }
             }
@@ -247,7 +257,7 @@ fn stmts_to_cfg<'a>(
                 let class = get_classname(&class_or_obj, &ty_stack);
                 let is_static = class.clone() == class_or_obj;
 
-                let (ty, _, _,_, _) = prog.get_methodcontent(&class, &method_name);
+                let (ty, _, _, _, _) = prog.get_methodcontent(&class, &method_name);
 
                 // declare retval and if non-static declarethis
                 let append_actions = if is_static {
@@ -301,7 +311,7 @@ fn stmts_to_cfg<'a>(
                 );
             }
             Statement::Assignment((lhs, Rhs::Newobject(class_name, args))) => {
-                let class = prog.get_class( &class_name);
+                let class = prog.get_class(&class_name);
 
                 // we pass actions InitObj and declareThis
                 let append_actions = vec![
@@ -377,7 +387,7 @@ fn stmts_to_cfg<'a>(
                 // keep track of variable types, to know where to find nonstatic methods called on object
                 match &other {
                     Statement::Declaration((Type::Classtype(class_name), id)) => {
-                        let class = prog.get_class( class_name);
+                        let class = prog.get_class(class_name);
                         ty_stack.insert(id.clone(), class.clone())
                     }
                     _ => (),
@@ -419,14 +429,14 @@ fn routine_to_cfg<'a>(
     starts: Vec<Start>,
 ) -> Start {
     // collect information for the actions on the cfg edge
-    let (params, _) = get_routine_content(prog, &routine);
+    let (params, specs, _) = get_routine_content(prog, &routine);
 
     // put new frame on typeStack and keep track of the params accompanying classes
     ty_stack.push();
     for (ty, id) in params {
         match ty {
             Type::Classtype(class_name) => {
-                let class = prog.get_class( class_name).clone();
+                let class = prog.get_class(class_name).clone();
                 ty_stack.insert(id.clone(), class)
             }
             _ => (),
@@ -448,6 +458,15 @@ fn routine_to_cfg<'a>(
     let (f_start_node, f_end_node) =
         routinebody_to_cfg(routine, ty_stack, f_env, prog, cfg, &fun_scope);
 
+    // generate CheckSpecifications action if there are specs
+    let check_specs = if specs.len() > 0 {
+        vec![Action::CheckSpecifications {
+            specifications: specs.clone(),
+        }]
+    } else {
+        vec![]
+    };
+
     // update incoming actions with actions passed from start struct, and appendable actions from append_incoming
     for start in starts {
         cfg.add_edge(
@@ -455,6 +474,7 @@ fn routine_to_cfg<'a>(
             f_start_node,
             [
                 start.edge,
+                check_specs.clone(),
                 vec![enter_scope.clone(), assign_args.clone()],
                 append_incoming.clone(),
             ]
@@ -490,7 +510,7 @@ fn routinebody_to_cfg<'a>(
 
     // Check whether method exists and get body
     // if constructor get_constructorbody
-    let (_, body) = get_routine_content(prog, &routine);
+    let (_, _, body) = get_routine_content(prog, &routine);
 
     let enter_function = cfg.add_node(Node::EnterRoutine(routine.clone()));
 

@@ -32,15 +32,15 @@ pub fn get_classname<'a>(object_or_class: &'a String, ty_stack: &TypeStack) -> S
 pub fn get_routine_content<'a>(
     prog: &'a Program,
     routine: &Routine,
-) -> (&'a Parameters, &'a Statements) {
+) -> (&'a Parameters, &'a Specifications, &'a Statements) {
     match routine {
         Routine::Constructor { class } => {
-            let (_, params, _, stmts) = prog.get_constructor(class);
-            (params, stmts)
+            let (_, params, specs, stmts) = prog.get_constructor(class);
+            (params, specs, stmts)
         }
         Routine::Method { class, method } => {
-            let (_, _, params, _, stmts) = prog.get_methodcontent( class, method);
-            (params, stmts)
+            let (_, _, params, specs, stmts) = prog.get_methodcontent( class, method);
+            (params, specs, stmts)
         }
     }
 }
@@ -87,6 +87,7 @@ impl fmt::Debug for Action {
             }
             Action::LiftRetval => write!(f, "Lifting retval"),
             Action::DeclareRetval { ty } => write!(f, "Declaring '{:?} retval'", ty),
+            Action::CheckSpecifications { specifications} => write!(f, "Checking specifications: {:?}", specifications)
         }
     }
 }
