@@ -1,0 +1,14 @@
+class Main {
+    static void main(){
+        Main.requiresThree(4);
+    }
+    // triggers error if not called from main with t != 3
+    static void requiresThree(int t)
+        requires(t == 3)
+    {
+        ;
+    }
+    static void triggerRequire(){
+        Main.require(4)
+    }
+}
