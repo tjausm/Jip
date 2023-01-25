@@ -35,11 +35,11 @@ pub fn get_routine_content<'a>(
 ) -> (&'a Parameters, &'a Statements) {
     match routine {
         Routine::Constructor { class } => {
-            let (_, params, stmts) = prog.get_constructor(class);
+            let (_, params, _, stmts) = prog.get_constructor(class);
             (params, stmts)
         }
         Routine::Method { class, method } => {
-            let (_, _, params, stmts) = prog.get_methodcontent( class, method);
+            let (_, _, params, _, stmts) = prog.get_methodcontent( class, method);
             (params, stmts)
         }
     }

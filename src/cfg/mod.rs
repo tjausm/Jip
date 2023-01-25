@@ -35,7 +35,7 @@ pub fn generate_cfg(prog: Program) -> (NodeIndex, CFG) {
     let main_method = prog.get_methodcontent( &"Main".to_string(), &"main".to_string());
 
     match main_method {
-        (Type::Void, _, args, body) => {
+        (Type::Void, _, args, _, body) => {
             //initiate cfg
             let mut cfg: CFG = Graph::<Node, Vec<Action>>::new();
             let start = to_start(cfg.add_node(Node::EnteringMain(args.clone())));
@@ -247,7 +247,7 @@ fn stmts_to_cfg<'a>(
                 let class = get_classname(&class_or_obj, &ty_stack);
                 let is_static = class.clone() == class_or_obj;
 
-                let (ty, _, _, _) = prog.get_methodcontent(&class, &method_name);
+                let (ty, _, _,_, _) = prog.get_methodcontent(&class, &method_name);
 
                 // declare retval and if non-static declarethis
                 let append_actions = if is_static {

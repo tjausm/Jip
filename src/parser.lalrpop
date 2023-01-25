@@ -22,14 +22,19 @@ Member : Member = {
     Field => Member::Field(<>)
 }
 
-Constructor : Constructor = <Identifier> "(" <Comma<Parameter>> ")" <Body>;
+Constructor : Constructor = <Identifier> "(" <Comma<Parameter>> ")" <Specification*> <Body>;
 
 Method : Method = {
-    "static" <Type> <Identifier> "(" <Comma<Parameter>> ")" <Body> => Method::Static((<>)),
-    <Type> <Identifier> "(" <Comma<Parameter>> ")" <Body> => Method::Nonstatic((<>)),
+    "static" <Type> <Identifier> "(" <Comma<Parameter>> ")" <Specification*> <Body> => Method::Static((<>)),
+    <Type> <Identifier> "(" <Comma<Parameter>> ")" <Specification*> <Body>  => Method::Nonstatic((<>)),
 }
 
 Parameter : Parameter = <Nonvoidtype> <Identifier>;
+
+Specification : Specification = {
+    "requires (" <VerificationExpression> ")" => Specification::Requires(<>),
+    "ensures (" <VerificationExpression> ")" => Specification::Ensures(<>)
+}
 
 //TODO: how can i adhere to original grammar here?
 // removing field gens conflict between field & method when evaluating class members
