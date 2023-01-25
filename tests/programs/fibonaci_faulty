@@ -5,7 +5,7 @@
 class Main
 {
     static void main(int n)
-        //requires(n>=0)
+        requires(n>=0)
     {
         // prove that the two versions of Fibonacci return the same values:
         int f1 := Main.fib(n);
@@ -14,7 +14,7 @@ class Main
     }
 
     static int fib(int n)
-        //requires(n >= 0)
+        requires(n >= 0)
     {
         if (n == 0) return 0;
         else if (n == 1) return 1;
