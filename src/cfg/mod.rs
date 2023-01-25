@@ -382,7 +382,6 @@ fn stmts_to_cfg<'a>(
                     scope_end,
                 );
             }
-
             // for 'return x' we assign 'retval := x', add edge to scope_end and stop recursing
             Statement::Return(expr) => {
                 let retval_assign = cfg.add_node(Node::Statement(Statement::Return(expr.clone())));

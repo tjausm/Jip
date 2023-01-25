@@ -43,7 +43,6 @@ pub mod symModel {
         Array(Array<'a>),
         /// Takes classname as input
         UninitializedObj(Class),
-        UninitializedArr,
     }
 }
 
@@ -189,15 +188,43 @@ impl<'a> SymMemory<'a> {
                     };
                     fields.insert(field_name.clone(), (ty.clone(), var));
                 }
-                _ => panic_with_diagnostics(
+                otherwise => panic_with_diagnostics(
                     &format!(
-                        "Reference of {} not found on heap while doing assignment '{}.{} := {:?}'",
-                        obj_name, obj_name, field_name, var
+                        "{:?} can't be assigned in assignment '{}.{} := {:?}'",
+                        otherwise, obj_name, field_name, var
                     ),
                     &self,
                 ),
             },
             _ => panic_with_diagnostics(&format!("{} is not a reference", obj_name), &self),
+        }
+    }
+
+    pub fn heap_get_index(&self, arr_name: Identifier, index: SymExpression) -> SymExpression<'a> {
+        todo!();
+    }
+
+    pub fn heap_update_index(
+        &mut self,
+        arr_name: Identifier,
+        index: SymExpression,
+        var: SymExpression,
+    ) -> SymExpression<'a> {
+        match self.stack_get(&arr_name){
+            Some(SymExpression::Ref((_, r))) => match self.heap.get(&r){
+                Some(ReferenceValue::Array((ty, arr))) => {
+                    for _ in arr.len()..index{
+                        match ty {
+                            Type::Int => todo!(),
+                            Type::Bool => todo!(),
+                            Type::ClassType(_) => todo!(),
+                            otherwise => panic_with_diagnostics(&format("Array of type {} is not possible", otherwise), &self)
+                        }
+                    }
+                },
+                otherwise => panic_with_diagnostics(&format!("{:?} is not an array and can't be assigned to in assignment '{}[{:?}] := {:?}'", otherwise, arr_name, index, var), &self),
+            },
+            _ => panic_with_diagnostics(&format!("{} is not a reference", arr_name), &self),
         }
     }
 
@@ -251,8 +278,9 @@ impl<'a> SymMemory<'a> {
         ReferenceValue::Object(("todo".to_owned(), fields))
     }
 
-    pub fn init_array() -> ReferenceValue<'a> {
-        todo!()
+    //todo: how to initialize correctly
+    pub fn init_array(&mut self, ty: Type, expr: &Expression) -> ReferenceValue<'a> {
+        ReferenceValue::Array((ty, vec![]))
     }
 }
 

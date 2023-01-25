@@ -151,7 +151,7 @@ pub enum Rhs {
     AccessArray(Identifier, Expression),
     Invocation(Invocation),
     Newobject(Identifier, Arguments),
-    NewArray(Type, i64)
+    NewArray(Type, Expression)
 }
 
 //TODO: add args hier
@@ -280,8 +280,8 @@ impl fmt::Debug for Rhs {
             Rhs::AccessField(class, field) => write!(f, "{}.{};", class, field),
             Rhs::AccessArray(class, index) => write!(f, "{}.[{:?}];", class, index),
             Rhs::Invocation((class, fun, args)) => write!(f, " {}.{}({:?});", class, fun, args),
-            Rhs::Newobject(class, args) => write!(f, "{}({:?});", class, args),
-            Rhs::NewArray(ty, size) => write!(f, "{:?}[{}]", ty, size),
+            Rhs::Newobject(class, args) => write!(f, "new {}({:?});", class, args),
+            Rhs::NewArray(ty, size) => write!(f, "new {:?}[{:?}]", ty, size),
         }
     }
 }

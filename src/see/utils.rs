@@ -1,3 +1,4 @@
+use uuid::Uuid;
 use z3::Context;
 
 use crate::ast::*;
@@ -37,8 +38,13 @@ pub fn parse_rhs<'a, 'b>(
         Rhs::AccessField(obj_name, field_name) => {
             sym_memory.heap_get_field(obj_name, field_name).clone()
         },
+        Rhs::NewArray(ty, len) => {
+            let r = Uuid::new_v4();
+            let arr = sym_memory.init_array(ty.clone(), len);
+            sym_memory.heap_insert(r, arr);
+            SymExpression::Ref((ty.clone(), r))
+        },
         Rhs::AccessArray(_,_ ) => todo!(),
-
 
         Rhs::Expression(expr) => match ty {
             Type::Int => {

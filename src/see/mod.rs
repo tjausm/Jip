@@ -171,7 +171,7 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                             Ok(_) => (),
                             
                         }
-                    },
+                    }
                     Statement::Assignment((lhs, rhs)) => {
                         // get lhs type
                         // parse expression variable

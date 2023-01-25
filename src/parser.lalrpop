@@ -107,8 +107,8 @@ Rhs : Rhs= {
     <Identifier> "[" <Expression> "]" => Rhs::AccessArray(<>),
     Invocation => Rhs::Invocation(<>),
     "new" <Identifier> "(" <Arguments> ")" => Rhs::Newobject(<>),
-    "new" <ClassType> "[" <Integer> "]" => Rhs::NewArray(<>),
-    "new" <Primitivetype> "[" <Integer> "]" => Rhs::NewArray(<>)
+    "new" <ClassType> "[" <Expression> "]" => Rhs::NewArray(<>),
+    "new" <Primitivetype> "[" <Expression> "]" => Rhs::NewArray(<>)
 }
 
 Invocation : Invocation = {
