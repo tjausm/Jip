@@ -32,8 +32,8 @@ Method : Method = {
 Parameter : Parameter = <Nonvoidtype> <Identifier>;
 
 Specification : Specification = {
-    "requires (" <VerificationExpression> ")" => Specification::Requires(<>),
-    "ensures (" <VerificationExpression> ")" => Specification::Ensures(<>)
+    "requires" "(" <VerificationExpression> ")" => Specification::Requires(<>),
+    "ensures" "(" <VerificationExpression> ")" => Specification::Ensures(<>)
 }
 
 //TODO: how can i adhere to original grammar here?

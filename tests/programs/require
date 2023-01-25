@@ -9,6 +9,6 @@ class Main {
         ;
     }
     static void triggerRequire(){
-        Main.require(4)
+        Main.require(4);
     }
 }
