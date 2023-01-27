@@ -1,7 +1,7 @@
 use rustc_hash::FxHashMap;
 use petgraph::graph::{Graph, NodeIndex};
 use crate::{ast::*, shared::Scope};
-use std::{hash::Hash, fmt::Display};
+use std::{hash::Hash};
 
 pub enum Node {
     // From this node we initialize our fresh parameters & the base scope

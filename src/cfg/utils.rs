@@ -1,10 +1,9 @@
-use crate::shared::{Scope, panic_with_diagnostics};
+use std::fmt;
+
+use crate::shared::{Scope};
 use crate::ast::*;
 use crate::cfg::types::*;
 
-use rustc_hash::FxHashMap;
-use std::fmt::{Display, self};
-use std::hash::Hash;
 
 
 /// print the first 4 symbols of a scope id

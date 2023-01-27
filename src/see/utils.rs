@@ -2,7 +2,7 @@ use z3::Context;
 
 use crate::ast::*;
 use crate::shared::panic_with_diagnostics;
-use crate::z3::{expr_to_bool, expr_to_int, Reference, SymMemory, SymbolicExpression};
+use crate::z3::{expr_to_bool, expr_to_int, SymMemory, SymbolicExpression};
 
 pub fn type_lhs<'ctx>(sym_memory: &mut SymMemory<'ctx>, lhs: &'ctx Lhs) -> Type {
     match lhs {
@@ -48,7 +48,7 @@ pub fn parse_rhs<'a, 'b>(
             Type::Classtype(class) => match expr {
                 Expression::Identifier(id) => match sym_memory.stack_get(id) {
                     Some(SymbolicExpression::Ref((ty, r))) => SymbolicExpression::Ref((ty, r)),
-                    Some(se) => panic_with_diagnostics(
+                    Some(_) => panic_with_diagnostics(
                         &format!("Trying to parse '{:?}' of type {:?}", rhs, ty),
                         &sym_memory,
                     ),
@@ -89,11 +89,6 @@ pub fn lhs_from_rhs<'a>(
         }
         Lhs::Identifier(id) => sym_memory.stack_insert(id, var),
     }
-}
-
-/// move function into memory module
-fn initialize_referencevalue(r: Reference, ty: Type, sym_heap: &mut SymMemory) {
-    todo!("Initialize fields and return reference to new object on the heap")
 }
 
 /// evaluates the parameters & arguments to a mapping id -> variable that can be added to a function scope

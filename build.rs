@@ -76,8 +76,8 @@ fn write_header(test_file: &mut File) {
     write!(
         test_file,
         r#"
-    use assert_cmd::Command;
-    "#
+use assert_cmd::Command;
+"#
     )
     .unwrap();
 }

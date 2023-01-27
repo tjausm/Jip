@@ -1,7 +1,7 @@
 //! Symbolic Execution Engine (SEE) combines parser, CFG creation, program path generation, transformation from path to formula and verification of said formula by Z3
 //!
-
-lalrpop_mod!(pub parser);// synthesized by LALRPOP
+//! 
+lalrpop_mod!(#[allow(dead_code)] pub parser);// synthesized by LALRPOP and pass allow(dead_code) to avoid warning of mods only used in unit tests
 
 pub(crate) mod types;
 mod utils;
@@ -417,7 +417,7 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
 
 /// Contains parser tests since parser mod is auto-generated
 #[cfg(test)]
-mod tests {
+pub mod tests {
 
     lalrpop_mod!(pub parser);
 

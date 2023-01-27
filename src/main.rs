@@ -1,6 +1,7 @@
 //! Binary 'jip' is a cmd-line tool for performing static analysis on programs written in the OOX language.
 //!
 
+
 #[macro_use]
 extern crate lalrpop_util;
 
