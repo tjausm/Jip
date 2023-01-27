@@ -20,23 +20,26 @@ fn main() {
     // writes test file header, put `use`, `const` etc there
     write_header(&mut test_file);
 
-    // recursively 
+    
     let test_folder = read_dir("./tests/programs").unwrap();
-    build_test_from_directory(&mut test_file, test_folder)
+    build_test_from_directory(&mut test_file, test_folder, "")
 }
 
-fn build_test_from_directory(test_file: &mut File, directory: ReadDir){
+/// recursively build test for each oox program in folder and all it's child folders
+fn build_test_from_directory(test_file: &mut File, directory: ReadDir, parent: &str){
 
     for entry in directory {
 
         let entry = entry.unwrap();
-        // if is directory recurse
+
+        // if is directory recurse and pass directory name 
         if entry.file_type().unwrap().is_dir() {
-            build_test_from_directory(test_file, read_dir(entry.path()).unwrap())
+            build_test_from_directory(test_file, read_dir(entry.path()).unwrap(), &format!("{}{}_", parent, entry.file_name().to_string_lossy()))
         } 
+
         // if is .oox file write test
         else if entry.path().extension().unwrap() == "oox" {
-            write_test(test_file, &entry);
+            write_test(test_file, &entry, parent);
         }
     }
 }
@@ -44,11 +47,11 @@ fn build_test_from_directory(test_file: &mut File, directory: ReadDir){
 //gens 1 test per program in 'tests/programs/..' folder (file can't have extension)
 //tests check if program ending with '_faulty' are shown incorrect,
 //and if all other program are proven to be correct
-fn write_test(test_file: &mut File, entry: &DirEntry) {
+fn write_test(test_file: &mut File, entry: &DirEntry, parent: &str) {
     let entry = entry.path().canonicalize().unwrap();
     let path = entry.display();
     let faulty = entry.file_stem().unwrap().to_string_lossy().ends_with("faulty");
-    let test_name = format!("{}", entry.file_stem().unwrap().to_string_lossy());
+    let test_name = format!("{}{}", parent, entry.file_stem().unwrap().to_string_lossy());
 
     if faulty {
         write!(

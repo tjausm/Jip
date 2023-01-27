@@ -12,8 +12,6 @@ class Main {
         int minval := min.value;
         int pval := p.value;
         assert minval > pval;
-
-        
     }
 }
 

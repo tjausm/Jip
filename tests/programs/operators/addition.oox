@@ -1,0 +1,8 @@
+class Main{
+static void main(int a, int b){
+    assume a >= 0 && b > 0;
+    int x := a + b;
+    assert x >= a && x >= b;    
+}
+}
+
