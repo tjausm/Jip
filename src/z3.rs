@@ -318,6 +318,7 @@ pub fn check_path<'ctx>(
         }
     }
 
+
     //println!("{}", constraints.not());
 
     let solver = Solver::new(&ctx);

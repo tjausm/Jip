@@ -1,0 +1,9 @@
+Node x := new Node(1, null);
+
+if(x.next != null){ Node y := x.next }
+
+ 
+static void main(int y) {
+	int[] arr := new int[8];
+	int x := arr[y];
+}
