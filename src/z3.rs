@@ -35,7 +35,8 @@ pub mod symModel {
     /// Consists of `identifier` (= classname) and a hashmap describing it's fields
     pub type Object<'a> = (Identifier, FxHashMap<Identifier, (Type, SymExpression<'a>)>);
 
-    pub type Array<'a> = (Type, Vec<SymExpression<'a>>);
+    /// (type, concrete values, symbolic length)
+    pub type Array<'a> = (Type, Vec<SymExpression<'a>>, SymExpression<'a>);
 
     #[derive(Debug, Clone)]
     pub enum ReferenceValue<'a> {
@@ -136,20 +137,28 @@ impl<'a> SymMemory<'a> {
         }
     }
 
-    /// Insert mapping `Reference |-> ReferenceValue` into heap
-    pub fn heap_insert(&mut self, r: Reference, v: ReferenceValue<'a>) -> () {
+    /// Inserts mapping `Reference |-> ReferenceValue` into heap returning it's reference
+    /// generates new reference if none is given
+    pub fn heap_insert(&mut self, r: Option<Reference>,  v: ReferenceValue<'a>) -> Reference {
+        let r = r.unwrap_or(Uuid::new_v4());
         self.heap.insert(r, v);
+        r
     }
 
-    /// Get symbolic value of the object's field, panics if something goes wrong
-    pub fn heap_get_field(&mut self, obj_name: &String, field_name: &String) -> SymExpression<'a> {
+    /// Possibly update with passed `var` and return current symbolic value of the object's field
+    pub fn heap_access_object(&mut self, obj_name: &String, field_name: String, var: Option<SymExpression<'a>>) -> SymExpression<'a> {
         match self.stack_get(obj_name) {
             Some(SymExpression::Ref((_, r))) => {
                 let ref_val = self.heap.get(&r).map(|s| s.clone());
                 match ref_val {
-                    Some(ReferenceValue::Object((_, fields))) => match fields.get(field_name) {
-                        Some((_, expr)) => expr.clone(),
-                        None => panic_with_diagnostics(
+                    Some(ReferenceValue::Object((_, mut fields))) => match (fields.get(&field_name), var) {
+                        (Some((_, expr)), None) => expr.clone(),
+                        (Some((ty, _)), Some(var)) => {
+                            let ty = ty.clone();
+                            fields.insert(field_name, (ty, var.clone()));
+                            var
+                        }
+                        (None, _) => panic_with_diagnostics(
                             &format!("Field {} does not exist on {}", field_name, obj_name),
                             &self,
                         ),
@@ -157,8 +166,8 @@ impl<'a> SymMemory<'a> {
 
                     Some(ReferenceValue::UninitializedObj(class)) => {
                         let new_obj = self.init_object(&class);
-                        self.heap_insert(r, new_obj);
-                        self.heap_get_field(obj_name, field_name)
+                        self.heap_insert(Some(r), new_obj);
+                        self.heap_access_object(obj_name, field_name, var)
                     }
 
                     _ => panic_with_diagnostics(
@@ -170,55 +179,30 @@ impl<'a> SymMemory<'a> {
             _ => panic_with_diagnostics(&format!("{} is not a reference", obj_name), &self),
         }
     }
-    /// Update symbolic value of the object's field, panics if something goes wrong
-    pub fn heap_update_field(
-        &mut self,
-        obj_name: &String,
-        field_name: &'a String,
-        var: SymExpression<'a>,
-    ) -> () {
-        match self.stack_get(obj_name) {
-            Some(SymExpression::Ref((_, r))) => match self.heap.get_mut(&r) {
-                Some(ReferenceValue::Object((_, fields))) => {
-                    let ty = match fields.get(field_name) {
-                        Some(field) => field,
-                        None => panic_with_diagnostics(
-                            &format!("Field {} does not exist on {}", field_name, obj_name),
-                            &self,
-                        ),
-                    }
-                    .0
-                    .clone();
-                    fields.insert(field_name.clone(), (ty, var));
-                }
-                otherwise => panic_with_diagnostics(
-                    &format!(
-                        "{:?} can't be assigned in assignment '{}.{} := {:?}'",
-                        otherwise, obj_name, field_name, var
-                    ),
-                    &self,
-                ),
-            },
-            _ => panic_with_diagnostics(&format!("{} is not a reference", obj_name), &self),
-        }
-    }
 
-    pub fn heap_get_index(&self, arr_name: Identifier, index: SymExpression) -> SymExpression<'a> {
-        todo!();
-    }
-
-    pub fn heap_update_index(
+    /// Possibly update with passed `var` and return current symbolic expression at arrays index
+    pub fn heap_access_array(
         &mut self,
-        arr_name: Identifier,
-        index: SymExpression,
-        var: SymExpression,
+        arr_name: &Identifier,
+        index: &Expression,
+        var: Option<SymExpression>,
     ) -> SymExpression<'a> {
         match self.stack_get(&arr_name){
             Some(SymExpression::Ref((_, r))) => match self.heap.get(&r){
-                Some(ReferenceValue::Array((ty, arr))) => {
+                Some(ReferenceValue::Array((ty, arr, length))) => {
                     todo!()
                 },
                 otherwise => panic_with_diagnostics(&format!("{:?} is not an array and can't be assigned to in assignment '{}[{:?}] := {:?}'", otherwise, arr_name, index, var), &self),
+            },
+            _ => panic_with_diagnostics(&format!("{} is not a reference", arr_name), &self),
+        }
+    }
+
+    pub fn heap_get_length(&self, arr_name : &Identifier) -> &SymExpression<'a>{
+        match self.stack_get(&arr_name){
+            Some(SymExpression::Ref((_, r))) => match self.heap.get(&r){
+                Some(ReferenceValue::Array((_, _, length))) => length,
+                otherwise => panic_with_diagnostics(&format!("Can't return length of {} since the value it references to ({:?}) is not an array", arr_name, otherwise), &self),
             },
             _ => panic_with_diagnostics(&format!("{} is not a reference", arr_name), &self),
         }
@@ -249,9 +233,9 @@ impl<'a> SymMemory<'a> {
                     }
                     Type::ClassType(class) => {
                         // insert uninitialized object to heap
-                        let (ty, r) = (Type::ClassType(class.to_string()), Uuid::new_v4());
-                        self.heap_insert(
-                            r,
+                        let ty= Type::ClassType(class.to_string());
+                        let r = self.heap_insert(
+                            None,
                             ReferenceValue::UninitializedObj((class.clone(), members.clone())),
                         );
                         fields.insert(
@@ -275,8 +259,12 @@ impl<'a> SymMemory<'a> {
     }
 
     //todo: how to initialize correctly
-    pub fn init_array(&mut self, ty: Type, expr: &Expression) -> ReferenceValue<'a> {
-        ReferenceValue::Array((ty, vec![]))
+    pub fn init_array(&mut self, ty: Type) -> ReferenceValue<'a> {
+
+        // generate symbolic length 
+        let length = fresh_int(self.ctx, "array_length".to_string());
+
+        ReferenceValue::Array((ty, vec![], length))
     }
 }
 
@@ -495,6 +483,7 @@ pub mod bindings {
                     panic_with_diagnostics(&format!("Variable {} is undeclared", id), &sym_memory)
                 }
             },
+            Expression::ArrLength(id) => sym_expr_to_dyn(ctx, sym_memory.heap_get_length(id).clone()),
             Expression::Literal(Literal::Integer(n)) => Dynamic::from(ast::Int::from_i64(ctx, *n)),
             Expression::Literal(Literal::Boolean(b)) => {
                 Dynamic::from(ast::Bool::from_bool(ctx, *b))

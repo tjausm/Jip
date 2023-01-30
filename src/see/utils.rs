@@ -3,13 +3,13 @@ use z3::Context;
 
 use crate::ast::*;
 use crate::shared::panic_with_diagnostics;
+use crate::z3::bindings::{expr_to_bool, expr_to_int};
+use crate::z3::symModel::{Reference, SymExpression};
 use crate::z3::SymMemory;
-use crate::z3::bindings::{expr_to_bool, expr_to_int };
-use crate::z3::symModel::{SymExpression, Reference};
 
 pub fn type_lhs<'ctx>(sym_memory: &mut SymMemory<'ctx>, lhs: &'ctx Lhs) -> Type {
     match lhs {
-        Lhs::AccessField(obj, field) => match sym_memory.heap_get_field(obj, field) {
+        Lhs::AccessField(obj, field) => match sym_memory.heap_access_object(obj, field.to_string(), None) {
             SymExpression::Bool(_) => Type::Bool,
             SymExpression::Int(_) => Type::Int,
             SymExpression::Ref((ty, _)) => ty,
@@ -32,19 +32,20 @@ pub fn parse_rhs<'a, 'b>(
     ctx: &'a Context,
     sym_memory: &mut SymMemory<'a>,
     ty: &Type,
+    lhs: &'a Lhs,
     rhs: &'a Rhs,
 ) -> SymExpression<'a> {
     match rhs {
         Rhs::AccessField(obj_name, field_name) => {
-            sym_memory.heap_get_field(obj_name, field_name).clone()
-        },
+            sym_memory.heap_access_object(obj_name, field_name.to_string(), None).clone()
+        }
         Rhs::NewArray(ty, len) => {
-            let r = Uuid::new_v4();
-            let arr = sym_memory.init_array(ty.clone(), len);
-            sym_memory.heap_insert(r, arr);
+            let arr = sym_memory.init_array(ty.clone());
+            let r = sym_memory.heap_insert(None, arr);
             SymExpression::Ref((ty.clone(), r))
-        },
-        Rhs::AccessArray(_,_ ) => todo!(),
+        }
+
+        Rhs::AccessArray(arr_name, index) => sym_memory.heap_access_array(arr_name, index, None),
 
         Rhs::Expression(expr) => match ty {
             Type::Int => {
@@ -80,7 +81,10 @@ pub fn parse_rhs<'a, 'b>(
             ),
         },
         _ => panic_with_diagnostics(
-            &format!("Rhs of the form {:?} with type {:?} should not be in the cfg", rhs, ty),
+            &format!(
+                "Rhs of the form {:?} with type {:?} should not be in the cfg",
+                rhs, ty
+            ),
             &sym_memory,
         ),
     }
@@ -94,10 +98,10 @@ pub fn lhs_from_rhs<'a>(
     rhs: &'a Rhs,
 ) -> () {
     let ty = type_lhs(sym_memory, lhs);
-    let var = parse_rhs(&ctx, sym_memory, &ty, rhs);
+    let var = parse_rhs(&ctx, sym_memory, &ty, lhs, rhs);
     match lhs {
         Lhs::AccessField(obj_name, field_name) => {
-            sym_memory.heap_update_field(obj_name, field_name, var)
+            sym_memory.heap_access_object(obj_name, field_name.to_string(), Some(var));
         }
         Lhs::Identifier(id) => sym_memory.stack_insert(id, var),
         Lhs::AccessArray(_, _) => todo!(),
