@@ -205,6 +205,7 @@ pub enum Expression {
     //expression9
     Identifier(Identifier),
     Literal(Literal),
+    ArrLength(Identifier)
 }
 
 #[derive(Debug, Clone)]
@@ -263,6 +264,7 @@ impl fmt::Debug for Expression {
             Expression::Identifier(id) => write!(f, "{}", id),
             Expression::Literal(Literal::Boolean(val)) => write!(f, "{:?}", val),
             Expression::Literal(Literal::Integer(val)) => write!(f, "{:?}", val),
+            Expression::ArrLength(id) => write!(f, "#{:?}", id)
         }
     }
 }

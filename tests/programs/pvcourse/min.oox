@@ -1,0 +1,77 @@
+// This program returns the smallest element of an array a. Ref-typed variables and
+// creation of new stores are deliberately added to stress your verifier.
+// The assignments to u.val and x.val are also deliberately added for the same reason;
+// they should not affect the post-condition as their pointers cannot point to the same
+// store pointed to by m (but your verifier has to prove this first of course).
+
+// N is an experiment parameter; replace it with a concrete value in [2..10].
+// Below I will use maximum N, namely 10.
+
+class PVbenchmark {
+
+    static Num min(int[] a, Num x, Num u, Num m)
+        requires(a != null)
+    {
+      // setting N to 10:
+      int N := 10 ;
+      assume #a>0 && #a==N
+             && x != null
+             && (forall v,i : a : v>0) ;
+      int k := 0 ;
+      while (k < #a) {
+          int kval :=  a[k] ;
+          u := new Num(kval) ;
+          if (k==0) m := u ;
+          int uv := u.val ;
+          int mv := m.val ;
+          if (uv <= mv) // subtle, uv<mv would go wrong...
+             m := u ;
+          else u.val := uv + 1 ;
+          if (m != null) { // always be the case
+              assert m != x ;
+              mv := m.val ;
+              x.val := mv + 1 ;
+          }
+          k := k+1 ;
+      }
+      int mv := m.val ;
+      assert (forall v,i : a : mv <= v) ;
+      return m ;
+    }
+
+    static Num min_invalid(int[] a, Num x, Num u, Num m)
+      requires(a != null)
+      {
+      // setting N to 10:
+      int N := 10 ;
+      assume #a>0 && #a==N
+             && x != null
+             && (forall v,i : a : v>0) ;
+      int k := 0 ;
+      while (k < #a) {
+          int kval :=  a[k] ;
+          u := new Num(kval) ;
+          if (k==0) m := u ;
+          int uv := u.val ;
+          int mv := m.val ;
+          if (uv <= mv) // subtle, uv<mv would go wrong...
+             m := u ;
+          else u.val := uv + 1 ;
+          if (m != null) { // always be the case
+              assert m != x ;
+              mv := m.val ;
+              x.val := mv + 1 ;
+          }
+          k := k+1 ;
+      }
+      int mv := m.val ;
+      assert (forall v,i : a : mv <= v-1) ; // should be <=v
+      return m ;
+    }
+
+}
+
+class Num {
+   int val ;
+   Num(int x) { this.val := x ; }
+}

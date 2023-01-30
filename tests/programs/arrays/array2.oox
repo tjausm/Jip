@@ -1,0 +1,98 @@
+//
+// For testing oox against arrays of objects.
+//
+class Point {
+    int x ;
+    int y ;
+    Point(int x, int y) {
+       this.x := x ;
+       this.y := y ;
+    }
+}
+
+class Main
+{
+
+    static void foo1(Point[] a, int i, int k)
+          requires(a != null && #a > 1
+                   && 0 <= i && i < #a
+                   && 0 <= k && k < #a)
+    {
+       Point o := a[i] ;
+       o.x := 0 ;
+       Point p := a[0] ;
+       p.x := 1 ;
+       Point r := a[0] ;
+       int v := r.x ;
+       assert v == 1 ;
+    }
+
+    static void foo1_invalid(Point[] a, int i, int k)
+          requires(a != null && #a > 1
+                   && 0 <= i && i < #a
+                   && 0 <= k && k < #a)
+    {
+       Point o := a[i] ;
+       o.x := 0 ;
+       Point p := a[0] ;
+       p.x := 1 ;
+       Point r := a[i] ;
+       int v := r.x ;
+       assert v == 0 ;
+    }
+
+    static void foo2(Point[] a, int i, int k)
+          requires(a != null && #a > 1
+                   && 0 <= i && i < #a
+                   && 0 <= k && k < #a)
+    {
+       Point o := a[i] ;
+       o.x := 0 ;
+       int m := 0;
+       while (m < #a) {
+          o := a[m] ;
+          int v := o.x ;
+          assert v == 0 ;
+          m := m+1 ;
+       }
+    }
+
+
+    // A Bubblesort algorithm.
+    static Point[] sort(Point[] array)
+        requires(array != null)
+        exceptional(false)
+    {
+        bool sorted := false;
+        while (!sorted) {
+            sorted := true;
+            int i := 1;
+            while (i < #array) {
+                Point u := array[i];
+                Point v := array[i - 1];
+                assume u != null ;
+                assume v != null ;
+                int a := u.x ;
+                int b := v.x ;
+                if (a > b) { // bug should be a<b
+                    array[i] := v;
+                    array[i - 1] := u;
+                    sorted := false;
+                }
+                i := i + 1;
+            }
+        }
+        int k := 1 ;
+        while (k < #array) {
+           Point u := array[k];
+           Point v := array[k - 1];
+           int a := u.x ;
+           int b := v.x ;
+           assert b <= a ;
+           k := k+1 ;
+        }
+        return array;
+    }
+
+
+}

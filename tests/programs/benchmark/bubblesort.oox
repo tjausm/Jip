@@ -1,0 +1,27 @@
+//
+// Bubble sort on an array of integers
+//
+class Main {
+    static int[] sort(int [] array)
+        requires(array != null)
+        ensures(forall v, i : retval : forall w, j : retval : i < j ==> v <= w)
+        exceptional (false)
+    {
+        bool sorted := false;
+        while (!sorted) {
+            sorted := true;
+            int i := 1;
+            while (i < #array) {
+                int a := array [i];
+                int b := array [i - 1];
+                if (a < b) {
+                    array [i] := b;
+                    array [i - 1] := a;
+                    sorted := false;
+                }
+                i := i + 1;
+            }
+        }
+        return array;
+    }
+}

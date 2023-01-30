@@ -198,6 +198,7 @@ Expression8 : Expression = {
 
 Expression9 : Expression = {
     Identifier => Expression::Identifier(<>),
+    "#" <Identifier> => Expression::ArrLength(<>),
     Literal => Expression::Literal(<>),
     "(" <e:Expression> ")" => e
 }
