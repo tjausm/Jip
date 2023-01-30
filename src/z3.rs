@@ -213,14 +213,7 @@ impl<'a> SymMemory<'a> {
         match self.stack_get(&arr_name){
             Some(SymExpression::Ref((_, r))) => match self.heap.get(&r){
                 Some(ReferenceValue::Array((ty, arr))) => {
-                    for _ in arr.len()..index{
-                        match ty {
-                            Type::Int => todo!(),
-                            Type::Bool => todo!(),
-                            Type::ClassType(_) => todo!(),
-                            otherwise => panic_with_diagnostics(&format("Array of type {} is not possible", otherwise), &self)
-                        }
-                    }
+                    todo!()
                 },
                 otherwise => panic_with_diagnostics(&format!("{:?} is not an array and can't be assigned to in assignment '{}[{:?}] := {:?}'", otherwise, arr_name, index, var), &self),
             },
