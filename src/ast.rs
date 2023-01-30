@@ -15,33 +15,28 @@ pub struct Program(pub Vec<Class>);
 
 impl Program {
     pub fn get_class<'a>(&'a self, class_name: &str) -> &'a Class {
-        match self.0.iter()
-            .find(|(id, _)| id == class_name) {
-                Some(class) => return class,
-                None => panic_with_diagnostics(&format!(
-                    "Class {} doesn't exist",
-                    class_name
-                ), &())
-            }
-    
+        match self.0.iter().find(|(id, _)| id == class_name) {
+            Some(class) => return class,
+            None => panic_with_diagnostics(&format!("Class {} doesn't exist", class_name), &()),
+        }
     }
-    
+
     pub fn get_methodcontent<'a>(
         &'a self,
         class_name: &Identifier,
         method_name: &Identifier,
     ) -> &'a Methodcontent {
         let class = self.get_class(class_name);
-    
+
         for member in class.1.iter() {
             match member {
                 Member::Method(method) => match method {
-                    Method::Static(content @ (_, id, _, _)) => {
+                    Method::Static(content @ (_, id, _, _, _)) => {
                         if id == method_name {
                             return content;
                         }
                     }
-                    Method::Nonstatic(content @ (_, id, _, _)) => {
+                    Method::Nonstatic(content @ (_, id, _, _, _)) => {
                         if id == method_name {
                             return content;
                         }
@@ -50,26 +45,25 @@ impl Program {
                 _ => (),
             }
         }
-        panic_with_diagnostics(&format!(
-            "Static method {}.{} doesn't exist",
-            class.0, method_name
-        ), &());
-        
+        panic_with_diagnostics(
+            &format!("Static method {}.{} doesn't exist", class.0, method_name),
+            &(),
+        );
     }
-    
+
     pub fn get_constructor<'a>(&'a self, class_name: &str) -> &'a Constructor {
         let class = self.get_class(class_name);
-    
+
         for m in class.1.iter() {
             match m {
                 Member::Constructor(c) => return c,
                 _ => continue,
             }
         }
-        panic_with_diagnostics(&format!(
-            "Class {} does not have a constructor",
-            class_name
-        ), &());
+        panic_with_diagnostics(
+            &format!("Class {} does not have a constructor", class_name),
+            &(),
+        );
     }
 }
 
@@ -85,7 +79,7 @@ pub enum Member {
     Field(Field),
 }
 
-pub type Constructor = (Identifier, Parameters, Statements);
+pub type Constructor = (Identifier, Parameters, Specifications, Statements);
 
 #[derive(Clone, Debug)]
 pub enum Method {
@@ -94,11 +88,19 @@ pub enum Method {
 }
 
 //TODO: add args hier
-pub type Methodcontent = (Type, Identifier, Parameters, Statements);
+pub type Methodcontent = (Type, Identifier, Parameters, Specifications, Statements);
 
 pub type Parameters = Vec<Parameter>;
 
 pub type Parameter = (Type, Identifier);
+
+pub type Specifications = Vec<Specification>;
+
+#[derive(Clone, Debug)]
+pub enum Specification {
+    Requires(Expression),
+    Ensures(Expression),
+}
 
 pub type Field = (Type, Identifier);
 

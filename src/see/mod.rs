@@ -1,7 +1,7 @@
 //! Symbolic Execution Engine (SEE) combines parser, CFG creation, program path generation, transformation from path to formula and verification of said formula by Z3
 //!
-
-lalrpop_mod!(pub parser);// synthesized by LALRPOP
+//! 
+lalrpop_mod!(#[allow(dead_code)] pub parser);// synthesized by LALRPOP and pass allow(dead_code) to avoid warning of mods only used in unit tests
 
 pub(crate) mod types;
 mod utils;
@@ -28,8 +28,31 @@ use z3::{Config, Context};
 use rustc_hash::FxHashMap;
 use std::collections::VecDeque;
 use std::fs;
+use std::time::Instant;
 
 const PROG_CORRECT: &'static str = "Program is correct";
+
+
+pub fn bench(program: &str, start: Depth, end: Option<Depth>, step: i32) -> (ExitCode, String) {
+    let end = end.unwrap_or(start) + 1;
+    let depths = (start..end).step_by(step.try_into().unwrap());
+
+    println!("d        time");
+
+    for d in depths {
+        let now = Instant::now();
+
+        // Code block to measure.
+        {
+            match print_verification(program, d, false) {
+                (ExitCode::Error, e) => return (ExitCode::Error, e),
+                _ => (),
+            }
+        }
+        println!("{}       {:?}", d, now.elapsed());
+    }
+    return (ExitCode::Valid, "Benchmark done!".to_owned());
+}
 
 fn print_result(r: Result<Diagnostics, Error>) -> (ExitCode, String) {
     match r {
@@ -181,7 +204,7 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                     Statement::Return(expr) => {
 
                         // stop path if current scope `id == None`, indicating we are in main scope
-                        if sym_memory.current_scope().id == None {continue};
+                        if sym_memory.get_scope(0).id == None {continue};
 
                         // evaluate return expression with type of retval and add to stack
                         match sym_memory.stack_get(retval_id) {
@@ -310,7 +333,37 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                     }
                     // if we can leave over this edge pop scope otherwise dismiss path 
                     Action::LeaveScope { from: to_scope } => 
-                    if *sym_memory.current_scope() == *to_scope {sym_memory.stack_pop()} else {continue 'q_nodes},
+                    if *sym_memory.get_scope(0) == *to_scope {sym_memory.stack_pop()} else {continue 'q_nodes},
+
+                    // From main a `require` functions as an `assume`, 
+                    // from all 'deeper' scopes the require functions as an `assert`. The `ensure` statement always functions like an `assume`.
+                    Action::CheckSpecifications { specifications } => {
+
+                        let from_main_scope = sym_memory.get_scope(0).id == None ||sym_memory.get_scope(1).id == None;
+
+                        for specification in specifications {
+                            match (specification, from_main_scope){
+                                // if require is called outside main scope we assert
+                                (Specification::Requires(expr), false) => {
+                                    let ast = expr_to_bool(&ctx, &sym_memory, expr);
+
+                                    diagnostics.z3_invocations = diagnostics.z3_invocations + 1;
+            
+                                    pc.push(PathConstraint::Assert(ast));
+                                    check_path(&ctx, &pc)?;
+                                },
+                                // otherwise process we assume
+                                (spec, _) => {
+                                    let expr = match spec {
+                                        Specification::Requires(expr) => expr,
+                                        Specification::Ensures(expr) => expr,
+                                    };
+                                    let ast = expr_to_bool(&ctx, &sym_memory, expr);
+                                    pc.push(PathConstraint::Assume(ast)); 
+                                }
+                            };
+                        }
+                    },
                 }
             }
             let next = edge.target();
@@ -322,7 +375,7 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
 
 /// Contains parser tests since parser mod is auto-generated
 #[cfg(test)]
-mod tests {
+pub mod tests {
 
     lalrpop_mod!(pub parser);
 

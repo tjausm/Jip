@@ -23,14 +23,19 @@ Member : Member = {
     Field => Member::Field(<>)
 }
 
-Constructor : Constructor = <Identifier> "(" <Comma<Parameter>> ")" <Body>;
+Constructor : Constructor = <Identifier> "(" <Comma<Parameter>> ")" <Specification*> <Body>;
 
 Method : Method = {
-    "static" <Type> <Identifier> "(" <Comma<Parameter>> ")" <Body> => Method::Static((<>)),
-    <Type> <Identifier> "(" <Comma<Parameter>> ")" <Body> => Method::Nonstatic((<>)),
+    "static" <Type> <Identifier> "(" <Comma<Parameter>> ")" <Specification*> <Body> => Method::Static((<>)),
+    <Type> <Identifier> "(" <Comma<Parameter>> ")" <Specification*> <Body>  => Method::Nonstatic((<>)),
 }
 
 Parameter : Parameter = <Nonvoidtype> <Identifier>;
+
+Specification : Specification = {
+    "requires" "(" <VerificationExpression> ")" => Specification::Requires(<>),
+    "ensures" "(" <VerificationExpression> ")" => Specification::Ensures(<>)
+}
 
 //TODO: how can i adhere to original grammar here?
 // removing field gens conflict between field & method when evaluating class members
@@ -70,17 +75,17 @@ ArrayType : Type = {
 pub Statements  = Statement*;
 
 pub Statement : Statement = {
-    DeclareAssign => Statement::DeclareAssign(<>),
-    Declaration => Statement::Declaration(<>),
-    Assignment => Statement::Assignment(<>),
-    <Invocation> ";" => Statement::Call(<>),
-    Skip => Statement::Skip(<>),
-    Ite => Statement::Ite(<>),
-    "return" <Expression> ";" => Statement::Return(<>),
-    Block => Statement::Block(<>),
-    Assert => Statement::Assert(<>),
-    Assume => Statement::Assume(<>),
-    While => Statement::While(<>)
+        DeclareAssign => Statement::DeclareAssign(<>),
+        Declaration => Statement::Declaration(<>),
+        Assignment => Statement::Assignment(<>),
+        <Invocation> ";" => Statement::Call(<>),
+        Skip => Statement::Skip(<>),
+        Ite => Statement::Ite(<>),
+        "return" <Expression> ";" => Statement::Return(<>),
+        Block => Statement::Block(<>),
+        Assert => Statement::Assert(<>),
+        Assume => Statement::Assume(<>),
+        While => Statement::While(<>)
 }
 
 DeclareAssign : DeclareAssign = {
@@ -117,7 +122,7 @@ Invocation : Invocation = {
 
 Arguments : Arguments = <Comma<Expression>>;
 
-Skip : Skip = ";" => (Skip);
+Skip : Skip = ";" => Skip;
 
 Ite : Ite = {
     "if" "(" <e:Expression> ")" <s1:Statement> "else" <s2:Statement> => (e, Box::new(s1), Box::new(s2))
@@ -128,7 +133,7 @@ Block : Box<Statements> = {
 }
 
 Assert : Expression = {
-    "assert" <s:VerificationExpression> ";" => (<>)
+    "assert" <s:VerificationExpression> ";" => <>
 }
 
 Assume : Expression = "assume" <VerificationExpression> ";";
@@ -141,19 +146,18 @@ Expression : Expression = {
 
 pub VerificationExpression : Expression = Expression1;
 
-
-pub Expression1 : Expression = {
+Expression1 : Expression = {
     "forall" <id:Identifier> ":" <r:Expression1> => Expression::Forall(id, Box::new(r)),
     "exists" <id:Identifier> ":" <r:Expression1> => Expression::Exists(id, Box::new(r)),
     Expression2
 }
 
-pub Expression2 : Expression = {
+Expression2 : Expression = {
     <l:Expression3> "==>" <r:Expression2> => Expression::Implies(Box::new(l), Box::new(r)),
     Expression3
 }
 
-pub Expression3 : Expression = {
+Expression3 : Expression = {
     <l:Expression4> "&&" <r:Expression3> => Expression::And(Box::new(l), Box::new(r)),
     <l:Expression4> "||" <r:Expression3> => Expression::Or(Box::new(l), Box::new(r)),
     Expression4

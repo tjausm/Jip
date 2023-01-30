@@ -59,7 +59,7 @@ pub fn parse_rhs<'a, 'b>(
             Type::ClassType(class) => match expr {
                 Expression::Identifier(id) => match sym_memory.stack_get(id) {
                     Some(SymExpression::Ref((ty, r))) => SymExpression::Ref((ty, r)),
-                    Some(se) => panic_with_diagnostics(
+                    Some(_) => panic_with_diagnostics(
                         &format!("Trying to parse '{:?}' of type {:?}", rhs, ty),
                         &sym_memory,
                     ),
@@ -102,11 +102,6 @@ pub fn lhs_from_rhs<'a>(
         Lhs::Identifier(id) => sym_memory.stack_insert(id, var),
         Lhs::AccessArray(_, _) => todo!(),
     }
-}
-
-/// move function into memory module
-fn initialize_referencevalue(r: Reference, ty: Type, sym_heap: &mut SymMemory) {
-    todo!("Initialize fields and return reference to new object on the heap")
 }
 
 /// evaluates the parameters & arguments to a mapping id -> variable that can be added to a function scope

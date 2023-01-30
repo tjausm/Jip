@@ -1,6 +1,7 @@
 //! Binary 'jip' is a cmd-line tool for performing static analysis on programs written in the OOX language.
 //!
 
+
 #[macro_use]
 extern crate lalrpop_util;
 
@@ -12,7 +13,6 @@ use std::process::exit;
 mod cfg;
 mod see;
 mod ast;
-mod bench;
 mod shared;
 mod z3;
 
@@ -88,6 +88,6 @@ fn main() {
             start,
             end,
             interval,
-        } => exit(bench::bench(&program, start, end, interval)),
+        } => exit(see::bench(&program, start, end, interval)),
     };
 }

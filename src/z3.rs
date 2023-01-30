@@ -79,15 +79,13 @@ impl<'ctx> SymMemory<'ctx> {
     }
 }
 
+
 impl<'a> SymMemory<'a> {
     /// Insert mapping `Identifier |-> SymbolicExpression` in top most frame of stack
     pub fn stack_insert(&mut self, id: &'a Identifier, var: SymExpression<'a>) -> () {
-        match self.stack.last_mut() {
-            Some(s) => {
-                s.env.insert(id, var);
-            }
-            None => (),
-        };
+        if let Some(s) = self.stack.last_mut() {
+            s.env.insert(id, var);
+        }
     }
 
     /// Insert mapping `Identifier |-> SymbolicExpression` in frame below top most frame of stack
@@ -127,11 +125,14 @@ impl<'a> SymMemory<'a> {
         self.stack.pop();
     }
 
-    /// Returns scope of top most frame in the stack
-    pub fn current_scope(&self) -> &Scope {
-        match self.stack.last() {
+    /// Returns scope indexed from the top of the stack `get_scope(0) == top_scope`
+    pub fn get_scope(&self, index: usize) -> &Scope {
+        let position = self.stack.len() - (1 + index);
+        match self.stack.get(position) {
             Some(frame) => &frame.scope,
-            None => panic_with_diagnostics("No scope exists currently", &self),
+            None => {
+                panic_with_diagnostics(&format!("No scope exists at position {}", position), &self)
+            }
         }
     }
 
@@ -147,7 +148,7 @@ impl<'a> SymMemory<'a> {
                 let ref_val = self.heap.get(&r).map(|s| s.clone());
                 match ref_val {
                     Some(ReferenceValue::Object((_, fields))) => match fields.get(field_name) {
-                        Some((ty, expr)) => expr.clone(),
+                        Some((_, expr)) => expr.clone(),
                         None => panic_with_diagnostics(
                             &format!("Field {} does not exist on {}", field_name, obj_name),
                             &self,
@@ -179,14 +180,16 @@ impl<'a> SymMemory<'a> {
         match self.stack_get(obj_name) {
             Some(SymExpression::Ref((_, r))) => match self.heap.get_mut(&r) {
                 Some(ReferenceValue::Object((_, fields))) => {
-                    let (ty, _) = match fields.get(field_name) {
+                    let ty = match fields.get(field_name) {
                         Some(field) => field,
                         None => panic_with_diagnostics(
                             &format!("Field {} does not exist on {}", field_name, obj_name),
                             &self,
                         ),
-                    };
-                    fields.insert(field_name.clone(), (ty.clone(), var));
+                    }
+                    .0
+                    .clone();
+                    fields.insert(field_name.clone(), (ty, var));
                 }
                 otherwise => panic_with_diagnostics(
                     &format!(
@@ -508,18 +511,17 @@ pub mod bindings {
         }
     }
 
-    fn unwrap_as_bool<'ctx>(d: Dynamic<'ctx>) -> Bool<'ctx> {
-        match d.as_bool() {
-            Some(b) => b,
-            None => panic_with_diagnostics(&format!("{} is not of type Bool", d), &()),
-        }
+fn unwrap_as_bool(d: Dynamic) -> Bool {
+    match d.as_bool() {
+        Some(b) => b,
+        None => panic_with_diagnostics(&format!("{} is not of type Bool", d), &()),
     }
+}
 
-    fn unwrap_as_int<'ctx>(d: Dynamic<'ctx>) -> Int<'ctx> {
-        match d.as_int() {
-            Some(b) => b,
-            None => panic_with_diagnostics(&format!("{} is not of type Int", d), &()),
-        }
+fn unwrap_as_int(d: Dynamic) -> Int {
+    match d.as_int() {
+        Some(b) => b,
+        None => panic_with_diagnostics(&format!("{} is not of type Int", d), &()),
     }
 }
 
@@ -527,7 +529,7 @@ pub mod bindings {
 mod tests {
 
     use super::*;
-    use z3::{Config, FuncDecl};
+    use z3::Config;
 
     #[test]
     fn test_solving() {
@@ -574,4 +576,4 @@ mod tests {
 
         solver.assert(&exists.not());
     }
-}
+}}

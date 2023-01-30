@@ -1,10 +1,9 @@
-use crate::shared::{Scope, panic_with_diagnostics};
+use std::fmt;
+
+use crate::shared::{Scope};
 use crate::ast::*;
 use crate::cfg::types::*;
 
-use rustc_hash::FxHashMap;
-use std::fmt::{Display, self};
-use std::hash::Hash;
 
 
 /// print the first 4 symbols of a scope id
@@ -32,15 +31,15 @@ pub fn get_classname<'a>(object_or_class: &'a String, ty_stack: &TypeStack) -> S
 pub fn get_routine_content<'a>(
     prog: &'a Program,
     routine: &Routine,
-) -> (&'a Parameters, &'a Statements) {
+) -> (&'a Parameters, &'a Specifications, &'a Statements) {
     match routine {
         Routine::Constructor { class } => {
-            let (_, params, stmts) = prog.get_constructor(class);
-            (params, stmts)
+            let (_, params, specs, stmts) = prog.get_constructor(class);
+            (params, specs, stmts)
         }
         Routine::Method { class, method } => {
-            let (_, _, params, stmts) = prog.get_methodcontent( class, method);
-            (params, stmts)
+            let (_, _, params, specs, stmts) = prog.get_methodcontent( class, method);
+            (params, specs, stmts)
         }
     }
 }
@@ -87,6 +86,7 @@ impl fmt::Debug for Action {
             }
             Action::LiftRetval => write!(f, "Lifting retval"),
             Action::DeclareRetval { ty } => write!(f, "Declaring '{:?} retval'", ty),
+            Action::CheckSpecifications { specifications} => write!(f, "Checking specifications: {:?}", specifications)
         }
     }
 }

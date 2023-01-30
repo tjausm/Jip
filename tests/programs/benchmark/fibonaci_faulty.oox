@@ -1,15 +1,20 @@
-// Fibonacci functions. Be mindful that the recursive fib will genarate exponentially many paths.
+//
+// Fibonacci functions. Be mindful that the recursive fib will genarate
+// exponentially many paths.
+//
 class Main
 {
     static void main(int n)
+        requires(n>=0)
     {
         // prove that the two versions of Fibonacci return the same values:
-        assume n >= 0;
         int f1 := Main.fib(n);
         int f2 := Main.impFib(n) ;
-        assert f1 == f2 ;
+        assert f1 != f2 ;
     }
+
     static int fib(int n)
+        requires(n >= 0)
     {
         if (n == 0) return 0;
         else if (n == 1) return 1;
@@ -20,6 +25,7 @@ class Main
             return a + b;
         }
     }
+
     // imperative version
     static int impFib(int n) {
        if (n == 0) return 0;
@@ -36,4 +42,5 @@ class Main
           return total ;
        }
     }
+
 }

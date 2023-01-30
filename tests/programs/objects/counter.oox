@@ -1,0 +1,24 @@
+class Main {
+    
+    static void main(){
+        Counter counter := new Counter(8);
+        counter.increment();
+        Counter refCounter;
+        refCounter := Main.incrementRef(counter);
+        int cvalue := refCounter.count;
+        assert cvalue == 10;
+    }
+
+    // peform some operations on passed reference and pass back
+    static Counter incrementRef(Counter y){
+        y.increment();
+        return y;
+    }
+}
+
+class Counter {
+    -int count;
+    Counter(int initial) {this.count := initial; }
+    void increment() {int i := this.count; this.count := i + 1;}
+    void decrement() {int i := this.count; this.count := i - 1;}
+}
