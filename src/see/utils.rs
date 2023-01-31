@@ -9,7 +9,7 @@ use crate::z3::SymMemory;
 
 pub fn type_lhs<'ctx>(sym_memory: &mut SymMemory<'ctx>, lhs: &'ctx Lhs) -> Type {
     match lhs {
-        Lhs::AccessField(obj, field) => match sym_memory.heap_access_object(obj, field.to_string(), None) {
+        Lhs::AccessField(obj, field) => match sym_memory.heap_access_object(obj, field, None) {
             SymExpression::Bool(_) => Type::Bool,
             SymExpression::Int(_) => Type::Int,
             SymExpression::Ref((ty, _)) => ty,
@@ -37,7 +37,7 @@ pub fn parse_rhs<'a, 'b>(
 ) -> SymExpression<'a> {
     match rhs {
         Rhs::AccessField(obj_name, field_name) => {
-            sym_memory.heap_access_object(obj_name, field_name.to_string(), None).clone()
+            sym_memory.heap_access_object(obj_name, field_name, None).clone()
         }
         Rhs::NewArray(ty, len) => {
             let arr = sym_memory.init_array(ty.clone());
@@ -101,7 +101,7 @@ pub fn lhs_from_rhs<'a>(
     let var = parse_rhs(&ctx, sym_memory, &ty, lhs, rhs);
     match lhs {
         Lhs::AccessField(obj_name, field_name) => {
-            sym_memory.heap_access_object(obj_name, field_name.to_string(), Some(var));
+            sym_memory.heap_access_object(obj_name, field_name, Some(var));
         }
         Lhs::Identifier(id) => sym_memory.stack_insert(id, var),
         Lhs::AccessArray(_, _) => todo!(),

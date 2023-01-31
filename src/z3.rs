@@ -80,7 +80,6 @@ impl<'ctx> SymMemory<'ctx> {
     }
 }
 
-
 impl<'a> SymMemory<'a> {
     /// Insert mapping `Identifier |-> SymbolicExpression` in top most frame of stack
     pub fn stack_insert(&mut self, id: &'a Identifier, var: SymExpression<'a>) -> () {
@@ -139,26 +138,34 @@ impl<'a> SymMemory<'a> {
 
     /// Inserts mapping `Reference |-> ReferenceValue` into heap returning it's reference
     /// generates new reference if none is given
-    pub fn heap_insert(&mut self, r: Option<Reference>,  v: ReferenceValue<'a>) -> Reference {
+    pub fn heap_insert(&mut self, r: Option<Reference>, v: ReferenceValue<'a>) -> Reference {
         let r = r.unwrap_or(Uuid::new_v4());
         self.heap.insert(r, v);
         r
     }
 
     /// Possibly update with passed `var` and return current symbolic value of the object's field
-    pub fn heap_access_object(&mut self, obj_name: &String, field_name: String, var: Option<SymExpression<'a>>) -> SymExpression<'a> {
+    pub fn heap_access_object(
+        &mut self,
+        obj_name: &String,
+        field_name: &'a String,
+        var: Option<SymExpression<'a>>,
+    ) -> SymExpression<'a> {
+        match var {
+            Some(var) => {self.heap_update_field(obj_name, &field_name, var.clone()); var},
+            None => self.heap_get_field(obj_name, &field_name),
+        }
+    }
+
+    /// Get symbolic value of the object's field, panics if something goes wrong
+    fn heap_get_field(&mut self, obj_name: &String, field_name: &String) -> SymExpression<'a> {
         match self.stack_get(obj_name) {
             Some(SymExpression::Ref((_, r))) => {
                 let ref_val = self.heap.get(&r).map(|s| s.clone());
                 match ref_val {
-                    Some(ReferenceValue::Object((_, mut fields))) => match (fields.get(&field_name), var) {
-                        (Some((_, expr)), None) => expr.clone(),
-                        (Some((ty, _)), Some(var)) => {
-                            let ty = ty.clone();
-                            fields.insert(field_name, (ty, var.clone()));
-                            var
-                        }
-                        (None, _) => panic_with_diagnostics(
+                    Some(ReferenceValue::Object((_, fields))) => match fields.get(field_name) {
+                        Some((_, expr)) => expr.clone(),
+                        None => panic_with_diagnostics(
                             &format!("Field {} does not exist on {}", field_name, obj_name),
                             &self,
                         ),
@@ -167,7 +174,7 @@ impl<'a> SymMemory<'a> {
                     Some(ReferenceValue::UninitializedObj(class)) => {
                         let new_obj = self.init_object(&class);
                         self.heap_insert(Some(r), new_obj);
-                        self.heap_access_object(obj_name, field_name, var)
+                        self.heap_get_field(obj_name, field_name)
                     }
 
                     _ => panic_with_diagnostics(
@@ -176,6 +183,38 @@ impl<'a> SymMemory<'a> {
                     ),
                 }
             }
+            _ => panic_with_diagnostics(&format!("{} is not a reference", obj_name), &self),
+        }
+    }
+    /// Update symbolic value of the object's field, panics if something goes wrong
+    fn heap_update_field(
+        &mut self,
+        obj_name: &String,
+        field_name: &'a String,
+        var: SymExpression<'a>,
+    ) -> () {
+        match self.stack_get(obj_name) {
+            Some(SymExpression::Ref((_, r))) => match self.heap.get_mut(&r) {
+                Some(ReferenceValue::Object((_, fields))) => {
+                    let ty = match fields.get(field_name) {
+                        Some(field) => field,
+                        None => panic_with_diagnostics(
+                            &format!("Field {} does not exist on {}", field_name, obj_name),
+                            &self,
+                        ),
+                    }
+                    .0
+                    .clone();
+                    fields.insert(field_name.clone(), (ty, var));
+                }
+                otherwise => panic_with_diagnostics(
+                    &format!(
+                        "{:?} can't be assigned in assignment '{}.{} := {:?}'",
+                        otherwise, obj_name, field_name, var
+                    ),
+                    &self,
+                ),
+            },
             _ => panic_with_diagnostics(&format!("{} is not a reference", obj_name), &self),
         }
     }
@@ -198,7 +237,7 @@ impl<'a> SymMemory<'a> {
         }
     }
 
-    pub fn heap_get_length(&self, arr_name : &Identifier) -> &SymExpression<'a>{
+    pub fn heap_get_length(&self, arr_name: &Identifier) -> &SymExpression<'a> {
         match self.stack_get(&arr_name){
             Some(SymExpression::Ref((_, r))) => match self.heap.get(&r){
                 Some(ReferenceValue::Array((_, _, length))) => length,
@@ -233,7 +272,7 @@ impl<'a> SymMemory<'a> {
                     }
                     Type::ClassType(class) => {
                         // insert uninitialized object to heap
-                        let ty= Type::ClassType(class.to_string());
+                        let ty = Type::ClassType(class.to_string());
                         let r = self.heap_insert(
                             None,
                             ReferenceValue::UninitializedObj((class.clone(), members.clone())),
@@ -260,8 +299,7 @@ impl<'a> SymMemory<'a> {
 
     //todo: how to initialize correctly
     pub fn init_array(&mut self, ty: Type) -> ReferenceValue<'a> {
-
-        // generate symbolic length 
+        // generate symbolic length
         let length = fresh_int(self.ctx, "array_length".to_string());
 
         ReferenceValue::Array((ty, vec![], length))
@@ -483,7 +521,9 @@ pub mod bindings {
                     panic_with_diagnostics(&format!("Variable {} is undeclared", id), &sym_memory)
                 }
             },
-            Expression::ArrLength(id) => sym_expr_to_dyn(ctx, sym_memory.heap_get_length(id).clone()),
+            Expression::ArrLength(id) => {
+                sym_expr_to_dyn(ctx, sym_memory.heap_get_length(id).clone())
+            }
             Expression::Literal(Literal::Integer(n)) => Dynamic::from(ast::Int::from_i64(ctx, *n)),
             Expression::Literal(Literal::Boolean(b)) => {
                 Dynamic::from(ast::Bool::from_bool(ctx, *b))
@@ -500,69 +540,70 @@ pub mod bindings {
         }
     }
 
-fn unwrap_as_bool(d: Dynamic) -> Bool {
-    match d.as_bool() {
-        Some(b) => b,
-        None => panic_with_diagnostics(&format!("{} is not of type Bool", d), &()),
+    fn unwrap_as_bool(d: Dynamic) -> Bool {
+        match d.as_bool() {
+            Some(b) => b,
+            None => panic_with_diagnostics(&format!("{} is not of type Bool", d), &()),
+        }
+    }
+
+    fn unwrap_as_int(d: Dynamic) -> Int {
+        match d.as_int() {
+            Some(b) => b,
+            None => panic_with_diagnostics(&format!("{} is not of type Int", d), &()),
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+
+        use super::*;
+        use z3::Config;
+
+        #[test]
+        fn test_solving() {
+            let cfg = Config::new();
+            let ctx = Context::new(&cfg);
+            let x = Int::new_const(&ctx, "x");
+            let y = Int::new_const(&ctx, "y");
+            let solver = Solver::new(&ctx);
+            solver.assert(&x.gt(&y));
+            assert_eq!(solver.check(), SatResult::Sat);
+        }
+
+        #[test]
+        fn manual_max() {
+            let cfg = Config::new();
+            let ctx = Context::new(&cfg);
+            let x = ast::Real::new_const(&ctx, "x");
+            let y = ast::Real::new_const(&ctx, "y");
+            let z = ast::Real::new_const(&ctx, "z");
+            let x_plus_y = ast::Real::add(&ctx, &[&x, &y]);
+            let x_plus_z = ast::Real::add(&ctx, &[&x, &z]);
+            let substitutions = &[(&y, &z)];
+            assert!(x_plus_y.substitute(substitutions) == x_plus_z);
+        }
+        #[test]
+        fn exist_example() {
+            let cfg = Config::new();
+            let ctx = Context::new(&cfg);
+            let solver = Solver::new(&ctx);
+
+            let x = ast::Int::new_const(&ctx, "x");
+            let one = ast::Int::from_i64(&ctx, 1);
+
+            let exists: ast::Bool = ast::exists_const(
+                &ctx,
+                &[&x],
+                &[],
+                &x._eq(&one), // hier gaat expression in
+            )
+            .try_into()
+            .unwrap();
+
+            println!("{:?}", exists);
+
+            solver.assert(&exists.not());
+        }
     }
 }
-
-fn unwrap_as_int(d: Dynamic) -> Int {
-    match d.as_int() {
-        Some(b) => b,
-        None => panic_with_diagnostics(&format!("{} is not of type Int", d), &()),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-
-    use super::*;
-    use z3::Config;
-
-    #[test]
-    fn test_solving() {
-        let cfg = Config::new();
-        let ctx = Context::new(&cfg);
-        let x = Int::new_const(&ctx, "x");
-        let y = Int::new_const(&ctx, "y");
-        let solver = Solver::new(&ctx);
-        solver.assert(&x.gt(&y));
-        assert_eq!(solver.check(), SatResult::Sat);
-    }
-
-    #[test]
-    fn manual_max() {
-        let cfg = Config::new();
-        let ctx = Context::new(&cfg);
-        let x = ast::Real::new_const(&ctx, "x");
-        let y = ast::Real::new_const(&ctx, "y");
-        let z = ast::Real::new_const(&ctx, "z");
-        let x_plus_y = ast::Real::add(&ctx, &[&x, &y]);
-        let x_plus_z = ast::Real::add(&ctx, &[&x, &z]);
-        let substitutions = &[(&y, &z)];
-        assert!(x_plus_y.substitute(substitutions) == x_plus_z);
-    }
-    #[test]
-    fn exist_example() {
-        let cfg = Config::new();
-        let ctx = Context::new(&cfg);
-        let solver = Solver::new(&ctx);
-
-        let x = ast::Int::new_const(&ctx, "x");
-        let one = ast::Int::from_i64(&ctx, 1);
-
-        let exists: ast::Bool = ast::exists_const(
-            &ctx,
-            &[&x],
-            &[],
-            &x._eq(&one), // hier gaat expression in
-        )
-        .try_into()
-        .unwrap();
-
-        println!("{:?}", exists);
-
-        solver.assert(&exists.not());
-    }
-}}
