@@ -151,62 +151,31 @@ impl<'a> SymMemory<'a> {
         field_name: &'a String,
         var: Option<SymExpression<'a>>,
     ) -> SymExpression<'a> {
-        match var {
-            Some(var) => {self.heap_update_field(obj_name, &field_name, var.clone()); var},
-            None => self.heap_get_field(obj_name, &field_name),
-        }
-    }
-
-    /// Get symbolic value of the object's field, panics if something goes wrong
-    fn heap_get_field(&mut self, obj_name: &String, field_name: &String) -> SymExpression<'a> {
-        match self.stack_get(obj_name) {
-            Some(SymExpression::Ref((_, r))) => {
-                let ref_val = self.heap.get(&r).map(|s| s.clone());
-                match ref_val {
-                    Some(ReferenceValue::Object((_, fields))) => match fields.get(field_name) {
-                        Some((_, expr)) => expr.clone(),
-                        None => panic_with_diagnostics(
-                            &format!("Field {} does not exist on {}", field_name, obj_name),
-                            &self,
-                        ),
-                    },
-
-                    Some(ReferenceValue::UninitializedObj(class)) => {
-                        let new_obj = self.init_object(&class);
-                        self.heap_insert(Some(r), new_obj);
-                        self.heap_get_field(obj_name, field_name)
-                    }
-
-                    _ => panic_with_diagnostics(
-                        &format!("Reference of {} not found on heap", obj_name),
-                        &self,
-                    ),
-                }
-            }
-            _ => panic_with_diagnostics(&format!("{} is not a reference", obj_name), &self),
-        }
-    }
-    /// Update symbolic value of the object's field, panics if something goes wrong
-    fn heap_update_field(
-        &mut self,
-        obj_name: &String,
-        field_name: &'a String,
-        var: SymExpression<'a>,
-    ) -> () {
         match self.stack_get(obj_name) {
             Some(SymExpression::Ref((_, r))) => match self.heap.get_mut(&r) {
                 Some(ReferenceValue::Object((_, fields))) => {
-                    let ty = match fields.get(field_name) {
+                    let (ty, expr) = match fields.get(field_name) {
                         Some(field) => field,
                         None => panic_with_diagnostics(
                             &format!("Field {} does not exist on {}", field_name, obj_name),
                             &self,
                         ),
+                    };
+                    match var {
+                        Some(var) => {
+                            let ty = ty.clone();
+                            fields.insert(field_name.clone(), (ty, var.clone()));
+                            var
+                        }
+                        None => expr.clone(),
                     }
-                    .0
-                    .clone();
-                    fields.insert(field_name.clone(), (ty, var));
-                }
+                },
+                Some(ReferenceValue::UninitializedObj(class)) => {
+                    let class = class.clone();
+                    let new_obj = self.init_object(&class);
+                    self.heap_insert(Some(r), new_obj);
+                    self.heap_access_object(obj_name, field_name, var)
+                },
                 otherwise => panic_with_diagnostics(
                     &format!(
                         "{:?} can't be assigned in assignment '{}.{} := {:?}'",
