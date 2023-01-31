@@ -6,13 +6,8 @@
 class Main {
 
     static void main(int x, int[] a)
-       requires(a != null && #a>0)
-       {
-       // N is an experiment parameter,
-       // setting to max N=10:
-       int N := 1 ;
-
-       
+       requires(#a>0)
+       {     
        bool found := false ;
        int atPosition := 0;
 
@@ -27,8 +22,8 @@ class Main {
        }
 
        if (found) {
-         int val := a[k]; 
-         assert val == x; 
+         int v := a[k]; 
+         assert v == x; 
          } else ;
     }
 

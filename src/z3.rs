@@ -405,7 +405,8 @@ pub mod bindings {
             (SatResult::Unsat, _) => return Ok(()),
             (SatResult::Sat, Some(model)) => {
                 return Err(Error::Verification(format!(
-                    "Following counter-example was found:\n{:?}",
+                    "For formula: {}\nFollowing counter-example was found:\n{:?}",
+                    ast.to_string(),
                     model
                 )));
             }

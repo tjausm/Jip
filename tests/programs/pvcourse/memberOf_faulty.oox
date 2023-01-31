@@ -6,7 +6,7 @@
 class Main {
 
     static void main(int x, int[] a)
-       requires(a != null && #a>0)
+       requires(#a>0)
        {
        // N is an experiment parameter,
        // setting to max N=10:
