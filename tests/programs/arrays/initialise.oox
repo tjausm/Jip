@@ -1,6 +1,5 @@
 class Main {
     static void main(int i, int j){
-        int [] arr;
         int[] arr := new int[8];
     }
 }

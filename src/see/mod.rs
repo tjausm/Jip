@@ -170,8 +170,7 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                         }
                         Type::Bool => {
                             sym_memory.stack_insert(&id, fresh_bool(&ctx, id.clone()));
-                        }
-                        Type::ArrayType(_) => {}
+                        },
                         ty => {
                             let r = Uuid::new_v4();
                             sym_memory.stack_insert(&id, SymExpression::Ref((ty.clone(), r)))
