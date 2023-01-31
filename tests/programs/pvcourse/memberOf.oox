@@ -10,7 +10,7 @@ class Main {
        {
        // N is an experiment parameter,
        // setting to max N=10:
-       int N := 10 ;
+       int N := 1 ;
 
        
        bool found := false ;

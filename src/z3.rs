@@ -15,7 +15,7 @@ use z3::{ast, Context, SatResult, Solver};
 use crate::ast::*;
 use crate::shared::{panic_with_diagnostics, Error, Scope};
 
-use self::bindings::{fresh_bool, fresh_int};
+use self::bindings::{check_length, expr_to_int, fresh_bool, fresh_int};
 use self::symModel::{Reference, ReferenceValue, SymExpression};
 
 /// Contains the models for symbolic expressions, objects and arrays and accompanying helper functions.
@@ -169,13 +169,13 @@ impl<'a> SymMemory<'a> {
                         }
                         None => expr.clone(),
                     }
-                },
+                }
                 Some(ReferenceValue::UninitializedObj(class)) => {
                     let class = class.clone();
                     let new_obj = self.init_object(&class);
                     self.heap_insert(Some(r), new_obj);
                     self.heap_access_object(obj_name, field_name, var)
-                },
+                }
                 otherwise => panic_with_diagnostics(
                     &format!(
                         "{:?} can't be assigned in assignment '{}.{} := {:?}'",
@@ -194,15 +194,48 @@ impl<'a> SymMemory<'a> {
         arr_name: &Identifier,
         index: &Expression,
         var: Option<SymExpression>,
-    ) -> SymExpression<'a> {
-        match self.stack_get(&arr_name){
-            Some(SymExpression::Ref((_, r))) => match self.heap.get(&r){
-                Some(ReferenceValue::Array((ty, arr, length))) => {
-                    todo!()
-                },
+    ) -> Result<SymExpression<'a>, Error> {
+        let index = expr_to_int(self.ctx, self, index);
+
+        let (ty, arr, length)= match self.stack_get(&arr_name){
+            Some(SymExpression::Ref((_, r))) => match self.heap.get_mut(&r){
+                Some(ReferenceValue::Array((ty, arr, length))) => (ty, arr, length),
                 otherwise => panic_with_diagnostics(&format!("{:?} is not an array and can't be assigned to in assignment '{}[{:?}] := {:?}'", otherwise, arr_name, index, var), &self),
             },
             _ => panic_with_diagnostics(&format!("{} is not a reference", arr_name), &self),
+        };
+
+        // check if index is always < length
+        check_length(self.ctx, length.clone(), SymExpression::Int(index.clone()))?;
+
+        // instantiate null and fresh value before loop
+        let (null, fresh) = match ty {
+            Type::Int => (
+                SymExpression::Int(Int::from_i64(self.ctx, 0)),
+                bindings::fresh_int(self.ctx, format!("{}[{:?}]", arr_name, index)),
+            ),
+            Type::Bool => (
+                SymExpression::Bool(Bool::from_bool(self.ctx, false)),
+                bindings::fresh_bool(self.ctx, format!("{}[{:?}]", arr_name, index)),
+            ),
+            other => (
+                SymExpression::Ref((other.clone(), Uuid::nil())),
+                SymExpression::Ref((other.clone(), Uuid::nil())),
+            ),
+        };
+
+        // if index is a literal
+        match index.as_i64() {
+            // then fill array up to index with value null and return last element
+            Some(index) => {
+                for _ in arr.len()..(index as usize) {
+                    arr.push(null.clone());
+                }
+                Ok(arr.get(index as usize).unwrap().clone())
+            }
+
+            // otherwise return fresh
+            None => Ok(fresh),
         }
     }
 
@@ -327,6 +360,19 @@ pub mod bindings {
         return SymExpression::Bool(Bool::new_const(&ctx, id));
     }
 
+    /// Checks if `always length > index` for usage in array accessing
+    pub fn check_length<'ctx>(
+        ctx: &'ctx Context,
+        length: SymExpression,
+        index: SymExpression,
+    ) -> Result<(), Error> {
+        let length = unwrap_as_int(sym_expr_to_dyn(ctx, length));
+        let index = unwrap_as_int(sym_expr_to_dyn(ctx, index));
+        let length_gt_index = length.gt(&index);
+
+        check_ast(ctx, &length_gt_index)
+    }
+
     /// Combine the constraints in reversed order and check correctness
     /// `solve_constraints(ctx, vec![assume x, assert y, assume z] = x -> (y && z)`
     pub fn check_path<'ctx>(
@@ -343,10 +389,13 @@ pub mod bindings {
             }
         }
 
-        //println!("{}", constraints.not());
+        check_ast(ctx, &constraints)
+    }
 
+    // returns error if there exists a counterexample for given formula
+    fn check_ast<'ctx>(ctx: &'ctx Context, ast: &Bool) -> Result<(), Error> {
         let solver = Solver::new(&ctx);
-        solver.assert(&constraints.not());
+        solver.assert(&ast.not());
         let result = solver.check();
         let model = solver.get_model();
 
@@ -367,7 +416,6 @@ pub mod bindings {
             }
         };
     }
-
     pub fn expr_to_int<'ctx>(
         ctx: &'ctx Context,
         env: &SymMemory<'ctx>,

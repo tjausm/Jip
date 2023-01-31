@@ -2,7 +2,7 @@ use uuid::Uuid;
 use z3::Context;
 
 use crate::ast::*;
-use crate::shared::panic_with_diagnostics;
+use crate::shared::{panic_with_diagnostics, Error};
 use crate::z3::bindings::{expr_to_bool, expr_to_int};
 use crate::z3::symModel::{Reference, SymExpression};
 use crate::z3::SymMemory;
@@ -34,15 +34,15 @@ pub fn parse_rhs<'a, 'b>(
     ty: &Type,
     lhs: &'a Lhs,
     rhs: &'a Rhs,
-) -> SymExpression<'a> {
+) -> Result<SymExpression<'a>, Error> {
     match rhs {
         Rhs::AccessField(obj_name, field_name) => {
-            sym_memory.heap_access_object(obj_name, field_name, None).clone()
+            Ok(sym_memory.heap_access_object(obj_name, field_name, None).clone())
         }
         Rhs::NewArray(ty, len) => {
             let arr = sym_memory.init_array(ty.clone());
             let r = sym_memory.heap_insert(None, arr);
-            SymExpression::Ref((ty.clone(), r))
+            Ok(SymExpression::Ref((ty.clone(), r)))
         }
 
         Rhs::AccessArray(arr_name, index) => sym_memory.heap_access_array(arr_name, index, None),
@@ -50,16 +50,16 @@ pub fn parse_rhs<'a, 'b>(
         Rhs::Expression(expr) => match ty {
             Type::Int => {
                 let ast = expr_to_int(&ctx, &sym_memory, &expr);
-                SymExpression::Int(ast)
+                Ok(SymExpression::Int(ast))
             }
 
             Type::Bool => {
                 let ast = expr_to_bool(&ctx, &sym_memory, &expr);
-                SymExpression::Bool(ast)
+                Ok(SymExpression::Bool(ast))
             }
             Type::ClassType(class) => match expr {
                 Expression::Identifier(id) => match sym_memory.stack_get(id) {
-                    Some(SymExpression::Ref((ty, r))) => SymExpression::Ref((ty, r)),
+                    Some(SymExpression::Ref((ty, r))) => Ok(SymExpression::Ref((ty, r))),
                     Some(_) => panic_with_diagnostics(
                         &format!("Trying to parse '{:?}' of type {:?}", rhs, ty),
                         &sym_memory,
@@ -96,16 +96,17 @@ pub fn lhs_from_rhs<'a>(
     sym_memory: &mut SymMemory<'a>,
     lhs: &'a Lhs,
     rhs: &'a Rhs,
-) -> () {
+) -> Result<(), Error> {
     let ty = type_lhs(sym_memory, lhs);
-    let var = parse_rhs(&ctx, sym_memory, &ty, lhs, rhs);
+    let var = parse_rhs(&ctx, sym_memory, &ty, lhs, rhs)?;
     match lhs {
         Lhs::AccessField(obj_name, field_name) => {
             sym_memory.heap_access_object(obj_name, field_name, Some(var));
         }
         Lhs::Identifier(id) => sym_memory.stack_insert(id, var),
         Lhs::AccessArray(_, _) => todo!(),
-    }
+    };
+    Ok(())
 }
 
 /// evaluates the parameters & arguments to a mapping id -> variable that can be added to a function scope
