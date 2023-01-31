@@ -205,18 +205,16 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                         // evaluate return expression with type of retval and add to stack
                         match sym_memory.stack_get(retval_id) {
                             Some(SymbolicExpression::Int(_)) => {
-                                let ast = expr_to_int(&ctx, &sym_memory, &expr);
                                 sym_memory.stack_insert(
                                     retval_id,
-                                    SymbolicExpression::Int(ast),
+                                    SymbolicExpression::Int(&expr),
                                 );
                             }
 
                             Some(SymbolicExpression::Bool(_)) => {
-                                let ast = expr_to_bool(&ctx, &sym_memory, &expr);
                                 sym_memory.stack_insert(
                                     retval_id,
-                                    SymbolicExpression::Bool(ast),
+                                    SymbolicExpression::Bool(&expr),
                                 );
                             }
                             Some(SymbolicExpression::Ref(_)) => {

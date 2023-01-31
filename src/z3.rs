@@ -20,8 +20,8 @@ pub type Reference = Uuid;
 
 #[derive(Debug, Clone)]
 pub enum SymbolicExpression<'a> {
-    Int(Int<'a>),
-    Bool(Bool<'a>),
+    Int(&'a Expression),
+    Bool(&'a Expression),
     Ref((Type, Reference)),
 }
 
@@ -76,7 +76,6 @@ impl<'ctx> SymMemory<'ctx> {
         }
     }
 }
-
 
 impl<'a> SymMemory<'a> {
     /// Insert mapping `Identifier |-> SymbolicExpression` in top most frame of stack
@@ -140,11 +139,7 @@ impl<'a> SymMemory<'a> {
     }
 
     /// Get symbolic value of the object's field, panics if something goes wrong
-    pub fn heap_get_field(
-        &mut self,
-        obj_name: &String,
-        field_name: &String,
-    ) -> SymbolicExpression<'a> {
+    pub fn heap_get_field(&mut self, obj_name: &String, field_name: &String) -> SymbolicExpression<'a> {
         match self.stack_get(obj_name) {
             Some(SymbolicExpression::Ref((_, r))) => {
                 let ref_val = self.heap.get(&r).map(|s| s.clone());
@@ -287,20 +282,26 @@ impl fmt::Debug for PathConstraint<'_> {
 }
 
 /// casts `SymbolicExpression` to dynamic z3 ast value from stack
-pub fn sym_expr_to_dyn<'a>(ctx: &'a Context, expr: SymbolicExpression<'a>) -> Dynamic<'a> {
+pub fn sym_expr_to_dyn<'a>(
+    ctx: &'a Context,
+    sym_memory: &SymMemory<'a>,
+    expr: &'a SymbolicExpression,
+) -> Dynamic<'a> {
     match expr {
-        SymbolicExpression::Int(i) => Dynamic::from(i),
-        SymbolicExpression::Bool(b) => Dynamic::from(b),
+        SymbolicExpression::Int(i) => expr_to_dynamic(ctx, Rc::new(sym_memory), i),
+        SymbolicExpression::Bool(b) => expr_to_dynamic(ctx, Rc::new(sym_memory), b),
         SymbolicExpression::Ref((_, r)) => Dynamic::from(Int::from_u64(ctx, r.as_u64_pair().0)),
     }
 }
 
-pub fn fresh_int<'ctx>(ctx: &'ctx Context, id: String) -> SymbolicExpression<'ctx> {
-    return SymbolicExpression::Int(Int::new_const(&ctx, id));
+pub fn fresh_int<'ctx>(ctx: &'ctx Context, id: String) -> SymbolicExpression {
+    todo!();
+    //return SymbolicExpression::Int(Int::new_const(&ctx, id));
 }
 
-pub fn fresh_bool<'ctx>(ctx: &'ctx Context, id: String) -> SymbolicExpression<'ctx> {
-    return SymbolicExpression::Bool(Bool::new_const(&ctx, id));
+pub fn fresh_bool<'ctx>(ctx: &'ctx Context, id: String) -> SymbolicExpression {
+    todo!();
+    //return SymbolicExpression::Bool(Bool::new_const(&ctx, id));
 }
 
 /// Combine the constraints in reversed order and check correctness
@@ -461,7 +462,9 @@ fn expr_to_dynamic<'ctx, 'b>(
             return Dynamic::from(expr.not());
         }
         Expression::Identifier(id) => match sym_memory.stack_get(id) {
-            Some(sym_expr) => sym_expr_to_dyn(ctx, sym_expr),
+            Some(SymbolicExpression::Int(i)) => expr_to_dynamic(ctx, sym_memory, i),
+            Some(SymbolicExpression::Bool(b)) => expr_to_dynamic(ctx, sym_memory, b),
+            Some(SymbolicExpression::Ref(b)) => todo!(),
             None => panic_with_diagnostics(&format!("Variable {} is undeclared", id), &sym_memory),
         },
         Expression::Literal(Literal::Integer(n)) => Dynamic::from(ast::Int::from_i64(ctx, *n)),

@@ -37,13 +37,11 @@ pub fn parse_rhs<'a, 'b>(
 
         Rhs::Expression(expr) => match ty {
             Type::Int => {
-                let ast = expr_to_int(&ctx, &sym_memory, &expr);
-                SymbolicExpression::Int(ast)
+                SymbolicExpression::Int(expr)
             }
 
             Type::Bool => {
-                let ast = expr_to_bool(&ctx, &sym_memory, &expr);
-                SymbolicExpression::Bool(ast)
+                SymbolicExpression::Bool(expr)
             }
             Type::Classtype(class) => match expr {
                 Expression::Identifier(id) => match sym_memory.stack_get(id) {
@@ -105,11 +103,9 @@ pub fn params_to_vars<'ctx>(
     loop {
         match (params_iter.next(), args_iter.next()) {
             (Some((Type::Int, arg_id)), Some(expr)) => {
-                let expr = expr_to_int(ctx, sym_memory, expr);
                 variables.push((arg_id, SymbolicExpression::Int(expr)));
             }
             (Some((Type::Bool, arg_id)), Some(expr)) => {
-                let expr = expr_to_bool(ctx, sym_memory, expr);
                 variables.push((arg_id, SymbolicExpression::Bool(expr)));
             }
             (Some((Type::Classtype(class), arg_id)), Some(expr)) => {
