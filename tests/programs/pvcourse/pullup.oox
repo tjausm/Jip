@@ -1,0 +1,82 @@
+// This contrived program modifies an array a such that each $a[k+1] is
+// at least equal to a[k]+1. So, at the end we expect the last element
+// of a to be >= a[0]+#a-1.
+
+// N is an experiment parameter; replace it with a concrete value in [2..10].
+// Below I will use maximum N, namely 10.
+class Main {
+    static void main(int step, int[] a){
+        a := PVbenchmark.pullup(step, a);
+        a := PVbenchmark.pullupinvalid(step, a);
+    }
+}
+
+
+class PVbenchmark {
+
+    static int[] pullUp(int step, int[] a)
+        //requires(a != null)
+    {
+
+       // N is an experiment parameter
+       int N := 10 ;
+       assume #a>=2 && #a==N && step>0 ;
+
+       int x0 := a[0] ;
+       int x1 := a[1] ;
+       if (x0 >= x1) {
+             x0 := x0 + step ;
+             a[1] := x0  ;
+          } ;
+
+       int k := 1 ;
+       while (k < #a - 1) {
+         int next := a[k+1] ;
+         int x := a[k] ;
+         if (x >= next) {
+             x := x + step ;
+             a[k+1] := x ;
+         }
+         k := k+1 ;
+       }
+       // error; should be >= b[0]+#b-1. Change: bug removed.
+       // assert b[N-1] >= b[0] + #b - 1 ;
+       int xlast := a[N-1] ;
+       x0 := a[0] ;
+       assert xlast >= x0 + #a -1 ;
+       return a ;
+    }
+
+    static int[] pullUp_invalid(int step, int[] a)
+        //requires(a != null)
+    {
+
+       // N is an experiment parameter
+       int N := 10 ;
+       assume #a>=2 && #a==N && step>0 ;
+
+       int x0 := a[0] ;
+       int x1 := a[1] ;
+       if (x0 >= x1) {
+             x0 := x0 + step ;
+             a[1] := x0  ;
+          } ;
+
+       int k := 1 ;
+       while (k < #a - 1) {
+         int next := a[k+1] ;
+         int x := a[k] ;
+         if (x >= next) {
+             x := x + step ;
+             a[k+1] := x ;
+         }
+         k := k+1 ;
+       }
+       // error; should be >= b[0]+#b-1. Change: bug removed.
+       // assert b[N-1] >= b[0] + #b - 1 ;
+       int xlast := a[N-1] ;
+       x0 := a[0] ;
+       assert xlast >= x0 + #a ;
+       return a ;
+    }
+}

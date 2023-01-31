@@ -38,7 +38,7 @@ fn build_test_from_directory(test_file: &mut File, directory: ReadDir, parent: &
         } 
 
         // if is .oox file write test
-        else if entry.path().extension().unwrap() == "oox" {
+        else if entry.path().extension().map(|ext| ext == "oox" ) == Some(true) {
             write_test(test_file, &entry, parent);
         }
     }
