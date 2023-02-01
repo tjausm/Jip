@@ -93,7 +93,7 @@ impl<'ctx> SymMemory<'ctx> {
 impl<'a> SymMemory<'a> {
     /// inserts a free variable (meaning we don't substitute's)
     pub fn stack_insert_free_var(&mut self, ty: Type, id: &'a Identifier) -> () {
-        if let Some(s) = self.stack.last_mut(){
+        if let Some(s) = self.stack.last_mut() {
             match ty {
                 Type::Int => s.env.insert(
                     &id,
@@ -103,7 +103,7 @@ impl<'a> SymMemory<'a> {
                     &id,
                     SymExpression::Bool(SymValue::Expr(Expression::Identifier(id.clone()))),
                 ),
-                _ => None
+                _ => None,
             };
         };
     }
@@ -310,7 +310,6 @@ impl<'a> SymMemory<'a> {
 
     /// substitutes all variables in a `SymExpression`
     pub fn substitute(&self, sym_expr: SymExpression) -> SymExpression {
-        println!("{:?}", sym_expr);
         match sym_expr {
             SymExpression::Int(SymValue::Expr(expr)) => {
                 SymExpression::Int(SymValue::Expr(self.substitute_expr(expr).clone()))
@@ -387,9 +386,13 @@ impl<'a> SymMemory<'a> {
             Expression::Identifier(id) => match self.stack_get(&id) {
                 Some(SymExpression::Bool(SymValue::Expr(expr))) => expr,
                 Some(SymExpression::Int(SymValue::Expr(expr))) => expr,
-                Some(sym_expr) => {
-                    panic_with_diagnostics(&format!("identifier {} with value {:?} can't be substituted", id, sym_expr), self)
-                }
+                Some(sym_expr) => panic_with_diagnostics(
+                    &format!(
+                        "identifier {} with value {:?} can't be substituted",
+                        id, sym_expr
+                    ),
+                    self,
+                ),
                 None => panic_with_diagnostics(&format!("{} was not declared", id), self),
             },
             otherwise => {

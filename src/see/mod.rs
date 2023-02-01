@@ -202,10 +202,19 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                                     _ => panic_with_diagnostics(&format!("Can't return expression '{:?}'", expr), &sym_memory),
                                 }
                             },
-                            Some(sym_expr) => {
+                            Some(SymExpression::Bool(_)) => {
+                                
                                 sym_memory.stack_insert(
                                     retval_id,
-                                    sym_expr,
+                                    SymExpression::Int(SymValue::Expr(expr.clone())),
+                                );
+                            
+                            },
+                            Some(SymExpression::Int(_)) => {
+                                
+                                sym_memory.stack_insert(
+                                    retval_id,
+                                    SymExpression::Int(SymValue::Expr(expr.clone())),
                                 );
                             },
                             None => panic_with_diagnostics(&format!("retval is undeclared in expression 'return {:?}'", expr), &sym_memory),  
