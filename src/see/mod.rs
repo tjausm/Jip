@@ -136,10 +136,10 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                 for p in parameters {
                     match p {
                         (Type::Int, id) => {
-                            sym_memory.stack_insert(&id, SymExpression::Int(SymValue::Free(id.clone())))
+                            sym_memory.stack_insert(&id, SymExpression::Int(SymValue::Expr(Expression::Identifier(id.clone()))))
                         }
                         (Type::Bool, id) => {
-                            sym_memory.stack_insert(&id,  SymExpression::Bool(SymValue::Free(id.clone())))
+                            sym_memory.stack_insert(&id,  SymExpression::Bool(SymValue::Expr(Expression::Identifier(id.clone()))))
                         },
                         (Type::Classtype(ty), id) => {
                             let r = Uuid::new_v4();

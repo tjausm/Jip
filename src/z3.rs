@@ -186,11 +186,10 @@ fn expr_to_dynamic<'ctx, 'a>(
 
             return Dynamic::from(expr.not());
         }
+        // type variable using stack or substitute one level deep??
         Expression::Identifier(id) => match sym_memory.stack_get(id){
-            Some(SymExpression::Bool(SymValue::Free(e))) => Dynamic::from(Bool::new_const(ctx, e)),
-            Some(SymExpression::Int(SymValue::Free(e))) => Dynamic::from(Int::new_const(ctx, e)),
-            Some(SymExpression::Bool(SymValue::Expr(e))) => expr_to_dynamic(ctx, sym_memory, &e),
-            Some(SymExpression::Int(SymValue::Expr(e))) => expr_to_dynamic(ctx, sym_memory, &e),
+            Some(SymExpression::Bool(_)) => Dynamic::from(Bool::new_const(ctx, id.clone())),
+            Some(SymExpression::Int(_)) => Dynamic::from(Int::new_const(ctx, id.clone())),
             Some(sym_expr) => panic_with_diagnostics(&format!("{:?} is not parseable to a z3 ast", sym_expr), &sym_memory),
             None => panic_with_diagnostics(&format!("{} is undeclared", id), &sym_memory),
         },

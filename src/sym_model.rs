@@ -17,7 +17,6 @@ pub type Reference = Uuid;
 
 #[derive(Debug, Clone)]
 pub enum SymValue {
-    Free(String),
     Uninitialized,
     Expr(Expression)
 }
@@ -80,6 +79,7 @@ impl<'ctx> SymMemory<'ctx> {
 }
 
 impl<'a> SymMemory<'a> {
+
     /// Insert mapping `Identifier |-> SymbolicExpression` in top most frame of stack
     pub fn stack_insert(&mut self, id: &'a Identifier, var: SymExpression) -> () {
         if let Some(s) = self.stack.last_mut() {
@@ -165,13 +165,13 @@ impl<'a> SymMemory<'a> {
                                     Type::Int => {
                                         new_fields.insert(
                                             field_name.clone(),
-                                            (Type::Int, SymExpression::Int(SymValue::Free(format!("{}.{}", r.as_u64_pair().0, field_name)))),
+                                            (Type::Int, SymExpression::Int(SymValue::Expr(Expression::Identifier(format!("{}.{}", r.as_u64_pair().0, field_name))))),
                                         );
                                     }
                                     Type::Bool => {
                                         new_fields.insert(
                                             field_name.clone(),
-                                            (Type::Bool, SymExpression::Bool(SymValue::Free(format!("{}.{}", r.as_u64_pair().0, field_name)))),
+                                            (Type::Bool, SymExpression::Bool(SymValue::Expr(Expression::Identifier(format!("{}.{}", r.as_u64_pair().0, field_name))))),
                                         );
                                     }
                                     Type::Classtype(n) => {
@@ -246,6 +246,47 @@ impl<'a> SymMemory<'a> {
                 ),
             },
             _ => panic_with_diagnostics(&format!("{} is not a reference", obj_name), &self),
+        }
+    }
+
+    /// substitutes all variables in a `SymExpression` 
+    pub fn substitute(&self, sym_expr: SymExpression) -> SymExpression{
+
+        match sym_expr {
+            SymExpression::Int(SymValue::Expr(expr)) => SymExpression::Int(SymValue::Expr(self.substitute_expr(expr).clone())),
+            SymExpression::Bool(SymValue::Expr(expr)) => SymExpression::Bool(SymValue::Expr(self.substitute_expr(expr).clone())),
+            SymExpression::Ref(_) => return sym_expr,
+            _ => panic_with_diagnostics(&format!("Cannot evaluate {:?}", sym_expr), &self)
+        }
+
+    }
+    /// helper function to substitute the underlying `Expression` in a SymExpression
+    fn substitute_expr(&self, expr: Expression) -> Expression{
+        match expr{
+            Expression::Forall(id, r) => Expression::Forall(id.clone(), Box::new(self.substitute_expr(*r))),
+            Expression::And(l, r) => Expression::And(Box::new(self.substitute_expr(*l)), Box::new(self.substitute_expr(*r))),
+            Expression::Or(l, r) => Expression::Or(Box::new(self.substitute_expr(*l)), Box::new(self.substitute_expr(*r))),
+            Expression::EQ(l, r) => Expression::EQ(Box::new(self.substitute_expr(*l)), Box::new(self.substitute_expr(*r))),
+            Expression::NE(l, r) => Expression::NE(Box::new(self.substitute_expr(*l)), Box::new(self.substitute_expr(*r))),
+            Expression::LT(l, r) => Expression::LT(Box::new(self.substitute_expr(*l)), Box::new(self.substitute_expr(*r))),
+            Expression::GT(l, r) => Expression::GT(Box::new(self.substitute_expr(*l)), Box::new(self.substitute_expr(*r))),
+            Expression::GEQ(l, r) => Expression::GEQ(Box::new(self.substitute_expr(*l)), Box::new(self.substitute_expr(*r))),
+            Expression::LEQ(l, r) => Expression::LEQ(Box::new(self.substitute_expr(*l)), Box::new(self.substitute_expr(*r))),
+            Expression::Plus(l, r) => Expression::Plus(Box::new(self.substitute_expr(*l)), Box::new(self.substitute_expr(*r))),
+            Expression::Minus(l, r) => Expression::Minus(Box::new(self.substitute_expr(*l)), Box::new(self.substitute_expr(*r))),
+            Expression::Multiply(l, r) => Expression::Multiply(Box::new(self.substitute_expr(*l)), Box::new(self.substitute_expr(*r))),
+            Expression::Divide(l, r) => Expression::Divide(Box::new(self.substitute_expr(*l)), Box::new(self.substitute_expr(*r))),
+            Expression::Mod(l, r) => Expression::Mod(Box::new(self.substitute_expr(*l)), Box::new(self.substitute_expr(*r))),
+            Expression::Negative(expr) =>  Expression::Negative(Box::new(self.substitute_expr(*expr))),
+            Expression::Not(expr) => Expression::Not(Box::new(self.substitute_expr(*expr))),
+            Expression::Identifier(id) => match self.stack_get(&id){
+                Some(SymExpression::Bool(SymValue::Expr(expr))) => expr,
+                Some(SymExpression::Int(SymValue::Expr(expr))) => expr,
+                Some(sym_expr) => panic_with_diagnostics(&format!("{:?} can't be substituted", sym_expr), self),
+                None => panic_with_diagnostics(&format!("{} was not declared", id), self),
+            },
+            Expression::Literal(_) => todo!(),
+            otherwise => panic_with_diagnostics(&format!("{:?} is not yet implemented", otherwise), &self)
         }
     }
 }
