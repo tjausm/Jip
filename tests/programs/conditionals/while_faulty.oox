@@ -1,7 +1,6 @@
 
 class Main {
-    static void main(){
-        int x;
+    static void main(int x){
         assume 1 < x;
         while (0 < x) x := x - 1;
         int y := x;
