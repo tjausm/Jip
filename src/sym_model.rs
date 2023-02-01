@@ -13,6 +13,21 @@ use crate::shared::{panic_with_diagnostics, Error, Scope};
 //----------------------//
 // Symbolic expressions //
 //----------------------//
+#[derive(Clone)]
+pub enum PathConstraint {
+    Assume(Expression),
+    Assert(Expression),
+}
+
+impl fmt::Debug for PathConstraint {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            PathConstraint::Assume(pc) => write!(f, "{:?}", pc),
+            PathConstraint::Assert(pc) => write!(f, "{:?}", pc),
+        }
+    }
+}
+
 pub type Reference = Uuid;
 
 #[derive(Debug, Clone)]
@@ -249,6 +264,16 @@ impl<'a> SymMemory<'a> {
         }
     }
 
+    pub fn expr_to_assertion(&self, expr: Expression) -> PathConstraint{
+        let sub_expr = self.substitute_expr(expr.clone());
+        PathConstraint::Assume(sub_expr)
+    }
+
+    pub fn expr_to_assumption(&self, expr: Expression) -> PathConstraint{
+        let sub_expr = self.substitute_expr(expr.clone());
+        PathConstraint::Assume(sub_expr)
+    }
+
     /// substitutes all variables in a `SymExpression` 
     pub fn substitute(&self, sym_expr: SymExpression) -> SymExpression{
 
@@ -261,7 +286,7 @@ impl<'a> SymMemory<'a> {
 
     }
     /// helper function to substitute the underlying `Expression` in a SymExpression
-    fn substitute_expr(&self, expr: Expression) -> Expression{
+    pub fn substitute_expr(&self, expr: Expression) -> Expression{
         match expr{
             Expression::Forall(id, r) => Expression::Forall(id.clone(), Box::new(self.substitute_expr(*r))),
             Expression::And(l, r) => Expression::And(Box::new(self.substitute_expr(*l)), Box::new(self.substitute_expr(*r))),
@@ -279,13 +304,13 @@ impl<'a> SymMemory<'a> {
             Expression::Mod(l, r) => Expression::Mod(Box::new(self.substitute_expr(*l)), Box::new(self.substitute_expr(*r))),
             Expression::Negative(expr) =>  Expression::Negative(Box::new(self.substitute_expr(*expr))),
             Expression::Not(expr) => Expression::Not(Box::new(self.substitute_expr(*expr))),
+            Expression::Literal(_) => expr,
             Expression::Identifier(id) => match self.stack_get(&id){
                 Some(SymExpression::Bool(SymValue::Expr(expr))) => expr,
                 Some(SymExpression::Int(SymValue::Expr(expr))) => expr,
                 Some(sym_expr) => panic_with_diagnostics(&format!("{:?} can't be substituted", sym_expr), self),
                 None => panic_with_diagnostics(&format!("{} was not declared", id), self),
             },
-            Expression::Literal(_) => todo!(),
             otherwise => panic_with_diagnostics(&format!("{:?} is not yet implemented", otherwise), &self)
         }
     }

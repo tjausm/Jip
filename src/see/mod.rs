@@ -1,7 +1,7 @@
 //! Symbolic Execution Engine (SEE) combines parser, CFG creation, program path generation, transformation from path to formula and verification of said formula by Z3
 //!
-//! 
-lalrpop_mod!(#[allow(dead_code)] pub parser);// synthesized by LALRPOP and pass allow(dead_code) to avoid warning of mods only used in unit tests
+//!
+lalrpop_mod!(#[allow(dead_code)] pub parser); // synthesized by LALRPOP and pass allow(dead_code) to avoid warning of mods only used in unit tests
 
 pub(crate) mod types;
 mod utils;
@@ -10,12 +10,13 @@ use crate::see::types::*;
 use crate::see::utils::*;
 
 use crate::ast::*;
-use crate::cfg::{generate_cfg, generate_dot_cfg};
 use crate::cfg::types::{Action, Node};
+use crate::cfg::{generate_cfg, generate_dot_cfg};
 use crate::shared::ExitCode;
-use crate::shared::{Error, panic_with_diagnostics};
-use crate::sym_model::{SymExpression, SymMemory, SymValue, ReferenceValue};
-use crate::z3::{check_path, expr_to_bool,  PathConstraint};
+use crate::shared::{panic_with_diagnostics, Error};
+use crate::sym_model::PathConstraint;
+use crate::sym_model::{ReferenceValue, SymExpression, SymMemory, SymValue};
+use crate::z3::verify_constraints;
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
 use uuid::Uuid;
@@ -26,7 +27,6 @@ use std::fs;
 use std::time::Instant;
 
 const PROG_CORRECT: &'static str = "Program is correct";
-
 
 pub fn bench(program: &str, start: Depth, end: Option<Depth>, step: i32) -> (ExitCode, String) {
     let end = end.unwrap_or(start) + 1;
@@ -67,13 +67,13 @@ pub fn load_program(file_name: String) -> Result<String, (ExitCode, String)> {
 fn parse_program(program: &str) -> Program {
     match parser::ProgramParser::new().parse(program) {
         Ok(prog) => prog,
-        Err(err) => panic_with_diagnostics(&format!("{}", err), &()) 
+        Err(err) => panic_with_diagnostics(&format!("{}", err), &()),
     }
 }
 
 pub fn print_cfg(program: &str) -> (ExitCode, String) {
-        let program = parse_program(program);
-        (ExitCode::Valid, generate_dot_cfg(program))
+    let program = parse_program(program);
+    (ExitCode::Valid, generate_dot_cfg(program))
 }
 
 pub fn print_verification(program: &str, d: Depth, verbose: bool) -> (ExitCode, String) {
@@ -111,15 +111,9 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
     let (start_node, cfg) = generate_cfg(prog.clone());
 
     //init our bfs through the cfg
-    let mut q: VecDeque<(SymMemory, Vec<PathConstraint>, Depth, NodeIndex)> =
-        VecDeque::new();
+    let mut q: VecDeque<(SymMemory, Vec<PathConstraint>, Depth, NodeIndex)> = VecDeque::new();
 
-    q.push_back((
-        SymMemory::new(prog.clone()),
-        vec![],
-        d,
-        start_node,
-    ));
+    q.push_back((SymMemory::new(prog.clone()), vec![], d, start_node));
 
     // Assert -> build & verify z3 formula, return error if disproven
     // Assume -> build & verify z3 formula, stop evaluating pad if disproven
@@ -135,20 +129,25 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
             Node::EnteringMain(parameters) => {
                 for p in parameters {
                     match p {
-                        (Type::Int, id) => {
-                            sym_memory.stack_insert(&id, SymExpression::Int(SymValue::Expr(Expression::Identifier(id.clone()))))
-                        }
-                        (Type::Bool, id) => {
-                            sym_memory.stack_insert(&id,  SymExpression::Bool(SymValue::Expr(Expression::Identifier(id.clone()))))
-                        },
+                        (Type::Int, id) => sym_memory.stack_insert(
+                            &id,
+                            SymExpression::Int(SymValue::Expr(Expression::Identifier(id.clone()))),
+                        ),
+                        (Type::Bool, id) => sym_memory.stack_insert(
+                            &id,
+                            SymExpression::Bool(SymValue::Expr(Expression::Identifier(id.clone()))),
+                        ),
                         (Type::Classtype(ty), id) => {
                             let r = Uuid::new_v4();
-                            sym_memory.stack_insert(id, SymExpression::Ref((Type::Classtype(ty.clone()), r)));
+                            sym_memory.stack_insert(
+                                id,
+                                SymExpression::Ref((Type::Classtype(ty.clone()), r)),
+                            );
                             sym_memory.heap_insert(r, ReferenceValue::UninitializedObj(ty.clone()));
-                        },
+                        }
                         (ty, id) => panic_with_diagnostics(
                             &format!("Can't call main with parameter {} of type {:?}", id, ty),
-                            &sym_memory
+                            &sym_memory,
                         ),
                     }
                 }
@@ -170,23 +169,21 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                         Type::Void => panic!("Panic should never trigger, parser doesn't accept void type in declaration"),
                     },
                     Statement::Assume(expr) => {
-                        todo!(); //let ast = expr_to_bool(&ctx, &sym_memory, &expr);
-                        //pc.push(PathConstraint::Assume(ast));
+                        let assumption = sym_memory.expr_to_assumption(expr.clone());
+                        pc.push(assumption);
                     }
 
                     // return err if is invalid else continue
                     Statement::Assert(expr) =>   {
-                        todo!();
-                        // let ast = expr_to_bool(&ctx, &sym_memory, &expr);
 
-                        // diagnostics.z3_invocations = diagnostics.z3_invocations + 1;
+                         diagnostics.z3_invocations = diagnostics.z3_invocations + 1;
 
-                        // pc.push(PathConstraint::Assert(ast));
-                        // match check_path(&ctx, &pc) {
-                        //     Err(why) => return Err(why),
-                        //     Ok(_) => (),
-                            
-                        //}
+                        let assertion = sym_memory.expr_to_assumption(expr.clone());
+                        pc.push(assertion);
+                         match verify_constraints(&pc, &sym_memory) {
+                             Err(why) => return Err(why),
+                             Ok(_) => (),
+                        }
                     },
                     Statement::Assignment((lhs, rhs)) => {
                         // get lhs type
@@ -229,7 +226,7 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
 
         'q_nodes: for edge in cfg.edges(curr_node) {
             // clone new stack and heap for each edge we travel to
-            let mut sym_memory= sym_memory.clone();
+            let mut sym_memory = sym_memory.clone();
 
             // perform all actions in an edge and enque the result
             for action in edge.weight() {
@@ -239,17 +236,14 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                         // declare retval with correct type in new scope
                         match ty {
                             Type::Int => sym_memory.stack_insert(
-                                
                                 retval_id,
                                 SymExpression::Int(SymValue::Uninitialized),
                             ),
                             Type::Bool => sym_memory.stack_insert(
-                                
                                 retval_id,
                                 SymExpression::Bool(SymValue::Uninitialized),
                             ),
                             Type::Classtype(ty) => sym_memory.stack_insert(
-                                
                                 retval_id,
                                 SymExpression::Ref((Type::Classtype(ty.clone()), Uuid::nil())),
                             ),
@@ -257,23 +251,20 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                         }
                     }
                     Action::AssignArgs { params, args } => {
-                        let variables =
-                            params_to_vars(  &mut sym_memory, &params, &args);
+                        let variables = params_to_vars(&mut sym_memory, &params, &args);
 
                         for (id, var) in variables {
-                            sym_memory.stack_insert( id, var);
+                            sym_memory.stack_insert(id, var);
                         }
                     }
                     Action::DeclareThis { class, obj } => match obj {
-                        Lhs::Identifier(id) => match sym_memory.stack_get( id) {
-                            Some(SymExpression::Ref(r)) => sym_memory.stack_insert(
-                                
-                                this_id,
-                                SymExpression::Ref(r),
-                            ),
+                        Lhs::Identifier(id) => match sym_memory.stack_get(id) {
+                            Some(SymExpression::Ref(r)) => {
+                                sym_memory.stack_insert(this_id, SymExpression::Ref(r))
+                            }
                             Some(_) => panic_with_diagnostics(
                                 &format!("{} is not of type {}", id, class),
-                                &sym_memory
+                                &sym_memory,
                             ),
                             None => panic_with_diagnostics(
                                 &format!("Variable {} is undeclared", id),
@@ -305,13 +296,13 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                                         );
                                     }
                                     Type::Bool => {
-                                        (
-                                            
-                                            fields.insert(
-                                                field.clone(),
-                                                (Type::Bool, SymExpression::Bool(SymValue::Uninitialized)),
+                                        (fields.insert(
+                                            field.clone(),
+                                            (
+                                                Type::Bool,
+                                                SymExpression::Bool(SymValue::Uninitialized),
                                             ),
-                                        );
+                                        ),);
                                     }
                                     Type::Classtype(class) => {
                                         // insert uninitialized object to heap
@@ -319,9 +310,7 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                                             (Type::Classtype(class.to_string()), Uuid::new_v4());
                                         sym_memory.heap_insert(
                                             r,
-                                            ReferenceValue::UninitializedObj(
-                                                class.to_string(),
-                                            ),
+                                            ReferenceValue::UninitializedObj(class.to_string()),
                                         );
                                         fields.insert(
                                             field.clone(),
@@ -353,7 +342,7 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                     }
                     // lift retval 1 scope up
                     Action::LiftRetval => {
-                        match sym_memory.stack_get( retval_id) {
+                        match sym_memory.stack_get(retval_id) {
                             Some(retval) => sym_memory.stack_insert_below(retval_id, retval),
                             None => panic_with_diagnostics(
                                 "Can't lift retval to a higher scope",
@@ -361,28 +350,33 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                             ),
                         };
                     }
-                    // if we can leave over this edge pop scope otherwise dismiss path 
-                    Action::LeaveScope { from: to_scope } => 
-                    if *sym_memory.get_scope(0) == *to_scope {sym_memory.stack_pop()} else {continue 'q_nodes},
+                    // if we can leave over this edge pop scope otherwise dismiss path
+                    Action::LeaveScope { from: to_scope } => {
+                        if *sym_memory.get_scope(0) == *to_scope {
+                            sym_memory.stack_pop()
+                        } else {
+                            continue 'q_nodes;
+                        }
+                    }
 
-                    // From main a `require` functions as an `assume`, 
+                    // From main a `require` functions as an `assume`,
                     // from all 'deeper' scopes the require functions as an `assert`. The `ensure` statement always functions like an `assume`.
                     Action::CheckSpecifications { specifications } => {
-
-                        let from_main_scope = sym_memory.get_scope(0).id == None ||sym_memory.get_scope(1).id == None;
+                        let from_main_scope = sym_memory.get_scope(0).id == None
+                            || sym_memory.get_scope(1).id == None;
 
                         for specification in specifications {
-                            match (specification, from_main_scope){
+                            match (specification, from_main_scope) {
                                 // if require is called outside main scope we assert
                                 (Specification::Requires(expr), false) => {
                                     todo!("")
                                     // let ast = expr_to_bool(&ctx, &sym_memory, expr);
 
                                     // diagnostics.z3_invocations = diagnostics.z3_invocations + 1;
-            
+
                                     // pc.push(PathConstraint::Assert(ast));
                                     // check_path(&ctx, &pc)?;
-                                },
+                                }
                                 // otherwise process we assume
                                 (spec, _) => {
                                     let expr = match spec {
@@ -391,11 +385,11 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                                     };
                                     todo!()
                                     //let ast = expr_to_bool(&ctx, &sym_memory, expr);
-                                    //pc.push(PathConstraint::Assume(ast)); 
+                                    //pc.push(PathConstraint::Assume(ast));
                                 }
                             };
                         }
-                    },
+                    }
                 }
             }
             let next = edge.target();

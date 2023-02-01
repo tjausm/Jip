@@ -5,43 +5,40 @@ use std::fmt;
 use std::rc::Rc;
 use uuid::Uuid;
 use z3::ast::{Ast, Bool, Dynamic, Int};
-use z3::{ast, Context, SatResult, Solver};
+use z3::{ast, Context, SatResult, Solver, Config};
 
 use crate::ast::*;
 use crate::shared::{panic_with_diagnostics, Error};
-use crate::sym_model::{SymMemory, SymExpression, SymValue};
+use crate::sym_model::{SymMemory, SymExpression, PathConstraint};
 
 //--------------//
 // z3 bindings //
 //-------------//
-#[derive(Clone)]
-pub enum PathConstraint<'a> {
-    Assume(Bool<'a>),
-    Assert(Bool<'a>),
-}
 
-impl fmt::Debug for PathConstraint<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            PathConstraint::Assume(pc) => write!(f, "{}", pc),
-            PathConstraint::Assert(pc) => write!(f, "{}", pc),
-        }
-    }
-}
 
 /// Combine the constraints in reversed order and check correctness
 /// `solve_constraints(ctx, vec![assume x, assert y, assume z] = x -> (y && z)`
-pub fn check_path<'ctx>(
-    ctx: &'ctx Context,
-    path_constraints: &Vec<PathConstraint<'ctx>>,
+pub fn verify_constraints<'a>(
+    path_constraints: &Vec<PathConstraint>,
+    sym_memory: &SymMemory<'a>
 ) -> Result<(), Error> {
-    let mut constraints = Bool::from_bool(ctx, true);
+    //initialise fresh context
+    let z3_cfg = Config::new();
+    let ctx = Context::new(&z3_cfg);
+
+
+    let mut constraints = Bool::from_bool(&ctx, true);
 
     //reverse loop and combine constraints
     for constraint in path_constraints.iter().rev() {
         match constraint {
-            PathConstraint::Assert(c) => constraints = Bool::and(&ctx, &[&c, &constraints]),
-            PathConstraint::Assume(c) => constraints = Bool::implies(&c, &constraints),
+            PathConstraint::Assert(assertion) => {
+                let assertion_ast = expr_to_bool(&ctx, sym_memory, assertion);
+                constraints = Bool::and(&ctx, &[&assertion_ast, &constraints])},
+            PathConstraint::Assume(assumption) => {
+                let assumption_ast = expr_to_bool(&ctx, sym_memory, assumption);
+                constraints = Bool::implies(&assumption_ast, &constraints)
+            },
         }
     }
 
@@ -70,7 +67,7 @@ pub fn check_path<'ctx>(
     };
 }
 
-pub fn expr_to_int<'ctx>(
+fn expr_to_int<'ctx>(
     ctx: &'ctx Context,
     env: &SymMemory<'ctx>,
     expr: &'ctx Expression,
@@ -78,7 +75,7 @@ pub fn expr_to_int<'ctx>(
     return unwrap_as_int(expr_to_dynamic(&ctx, Rc::new(env), expr));
 }
 
-pub fn expr_to_bool<'ctx>(
+fn expr_to_bool<'ctx>(
     ctx: &'ctx Context,
     env: &SymMemory<'ctx>,
     expr: &'ctx Expression,
