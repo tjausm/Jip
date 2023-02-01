@@ -1,14 +1,10 @@
 class Main {
-    static void main(){
-        int x; 
-        int y; 
+    static void main(int x, int y){
         int z; 
-        int a
         if (x >= y) 
             z := x; 
         else 
             z := y; 
-        a := z;
         assert z >= x && z >= y;
     }
 }

@@ -14,6 +14,7 @@ use crate::cfg::{generate_cfg, generate_dot_cfg};
 use crate::cfg::types::{Action, Node};
 use crate::shared::ExitCode;
 use crate::shared::{Error, panic_with_diagnostics};
+use crate::z3::SymValue;
 use crate::z3::{
     check_path, expr_to_bool, expr_to_int, fresh_bool, fresh_int, PathConstraint, ReferenceValue, SymMemory, SymExpression};
 use petgraph::graph::NodeIndex;
@@ -162,10 +163,10 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                 match stmt {
                     Statement::Declaration((ty, id)) => match ty {
                         Type::Int => {
-                            sym_memory.stack_insert(&id, fresh_int(&ctx, id.clone()));
+                            sym_memory.stack_insert(&id, SymExpression::Int(SymValue::Uninitialized));
                         }
                         Type::Bool => {
-                            sym_memory.stack_insert(&id,  fresh_bool(&ctx, id.clone()));
+                            sym_memory.stack_insert(&id,  SymExpression::Bool(SymValue::Uninitialized));
                         },
                         Type::Classtype(ty) => {
                             let r = Uuid::new_v4();
