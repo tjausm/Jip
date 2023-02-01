@@ -1,17 +1,10 @@
 class Main {
     
     static void main(Node p){
-
-        bool mem := p.member(1);
-        //assert mem == false;
-
         int len := p.length();
         assert len < 1;
 
-        Node min := p.min();
-        int minval := min.value;
-        int pval := p.value;
-        assert minval > pval;
+
     }
 }
 
@@ -45,23 +38,6 @@ class Node {
             int k := n.length() ;
             return k+1 ;
         };
-    }
-
-    Node min()
-    {
-        Node p := this ;
-        Node min := p ;
-        int minval := min.value ;
-
-        while ( p != null) {
-           int value := p.value ;
-           if ( value < minval) {
-                min := p ;
-                minval := value ;
-           } else ;
-           p := p.next;
-        }
-       return min ;
     }
 
 }

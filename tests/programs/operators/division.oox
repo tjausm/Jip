@@ -1,0 +1,14 @@
+class Main{
+    static void main(int a, int b){
+        assume a > 0 && b > 0;
+        int remainder := a;
+        int answer := 0;
+
+        while (remainder >= b) { 
+            remainder := remainder - b;
+            answer := answer + 1;
+        }
+        assert answer == a / b;
+    }
+
+}
