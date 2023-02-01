@@ -19,24 +19,31 @@ use crate::shared::{panic_with_diagnostics, Error, Scope};
 pub type Reference = Uuid;
 
 #[derive(Debug, Clone)]
-pub enum SymbolicExpression<'a> {
-    Int(&'a Expression),
-    Bool(&'a Expression),
+pub enum SymValue {
+    Free(String),
+    Uninitialized,
+    Expr(Expression)
+}
+
+#[derive(Debug, Clone)]
+pub enum SymExpression {
+    Int(SymValue),
+    Bool(SymValue),
     Ref((Type, Reference)),
 }
 
 /// Consists of `identifier` (= classname) and a hashmap describing it's fields
-pub type Object<'a> = (
+pub type Object = (
     Identifier,
-    FxHashMap<Identifier, (Type, SymbolicExpression<'a>)>,
+    FxHashMap<Identifier, (Type, SymExpression)>,
 );
 
-pub type _Array<'a> = (Type, Vec<SymbolicExpression<'a>>);
+pub type _Array = (Type, Vec<SymExpression>);
 
 #[derive(Debug, Clone)]
-pub enum ReferenceValue<'a> {
-    Object(Object<'a>),
-    //Array(Array<'a>),
+pub enum ReferenceValue {
+    Object(Object),
+    //Array(Array),
     /// Takes classname as input
     UninitializedObj(Identifier),
 }
@@ -48,19 +55,19 @@ pub enum ReferenceValue<'a> {
 #[derive(Debug, Clone)]
 struct Frame<'a> {
     pub scope: Scope,
-    pub env: FxHashMap<&'a Identifier, SymbolicExpression<'a>>,
+    pub env: FxHashMap<&'a Identifier, SymExpression>,
 }
 
 type SymStack<'a> = Vec<Frame<'a>>;
 
-type SymHeap<'a> = FxHashMap<Reference, ReferenceValue<'a>>;
+type SymHeap = FxHashMap<Reference, ReferenceValue>;
 
 #[derive(Clone)]
 pub struct SymMemory<'ctx> {
     program: Program,
     ctx: &'ctx Context,
     stack: SymStack<'ctx>,
-    heap: SymHeap<'ctx>,
+    heap: SymHeap,
 }
 
 impl<'ctx> SymMemory<'ctx> {
@@ -79,14 +86,14 @@ impl<'ctx> SymMemory<'ctx> {
 
 impl<'a> SymMemory<'a> {
     /// Insert mapping `Identifier |-> SymbolicExpression` in top most frame of stack
-    pub fn stack_insert(&mut self, id: &'a Identifier, var: SymbolicExpression<'a>) -> () {
+    pub fn stack_insert(&mut self, id: &'a Identifier, var: SymExpression) -> () {
         if let Some(s) = self.stack.last_mut() {
             s.env.insert(id, var);
         }
     }
 
     /// Insert mapping `Identifier |-> SymbolicExpression` in frame below top most frame of stack
-    pub fn stack_insert_below(&mut self, id: &'a Identifier, var: SymbolicExpression<'a>) -> () {
+    pub fn stack_insert_below(&mut self, id: &'a Identifier, var: SymExpression) -> () {
         let below_index = self.stack.len() - 2;
         match self.stack.get_mut(below_index) {
             Some(frame) => {
@@ -97,9 +104,9 @@ impl<'a> SymMemory<'a> {
     }
 
     /// Iterate over frames from stack returning the first variable with given `id`
-    pub fn stack_get(&self, id: &'a Identifier) -> Option<SymbolicExpression<'a>> {
+    pub fn stack_get(&self, id: &'a Identifier) -> Option<SymExpression> {
         if id == "null" {
-            return Some(SymbolicExpression::Ref((Type::Void, Uuid::nil())));
+            return Some(SymExpression::Ref((Type::Void, Uuid::nil())));
         };
 
         for s in self.stack.iter().rev() {
@@ -134,14 +141,14 @@ impl<'a> SymMemory<'a> {
     }
 
     /// Insert mapping `Reference |-> ReferenceValue` into heap
-    pub fn heap_insert(&mut self, r: Reference, v: ReferenceValue<'a>) -> () {
+    pub fn heap_insert(&mut self, r: Reference, v: ReferenceValue) -> () {
         self.heap.insert(r, v);
     }
 
     /// Get symbolic value of the object's field, panics if something goes wrong
-    pub fn heap_get_field(&mut self, obj_name: &String, field_name: &String) -> SymbolicExpression<'a> {
+    pub fn heap_get_field(&mut self, obj_name: &String, field_name: &String) -> SymExpression {
         match self.stack_get(obj_name) {
-            Some(SymbolicExpression::Ref((_, r))) => {
+            Some(SymExpression::Ref((_, r))) => {
                 let ref_val = self.heap.get(&r).map(|s| s.clone());
                 match ref_val {
                     Some(ReferenceValue::Object((_, fields))) => match fields.get(field_name) {
@@ -185,7 +192,7 @@ impl<'a> SymMemory<'a> {
                                             field_name.clone(),
                                             (
                                                 Type::Classtype(n.clone()),
-                                                SymbolicExpression::Ref((
+                                                SymExpression::Ref((
                                                     Type::Classtype(n.clone()),
                                                     next_r,
                                                 )),
@@ -219,10 +226,10 @@ impl<'a> SymMemory<'a> {
         &mut self,
         obj_name: &String,
         field_name: &'a String,
-        var: SymbolicExpression<'a>,
+        var: SymExpression,
     ) -> () {
         match self.stack_get(obj_name) {
-            Some(SymbolicExpression::Ref((_, r))) => match self.heap.get_mut(&r) {
+            Some(SymExpression::Ref((_, r))) => match self.heap.get_mut(&r) {
                 Some(ReferenceValue::Object((_, fields))) => {
                     let ty = match fields.get(field_name) {
                         Some(field) => field,
@@ -281,26 +288,15 @@ impl fmt::Debug for PathConstraint<'_> {
     }
 }
 
-/// casts `SymbolicExpression` to dynamic z3 ast value from stack
-pub fn sym_expr_to_dyn<'a>(
-    ctx: &'a Context,
-    sym_memory: &SymMemory<'a>,
-    expr: &'a SymbolicExpression,
-) -> Dynamic<'a> {
-    match expr {
-        SymbolicExpression::Int(i) => expr_to_dynamic(ctx, Rc::new(sym_memory), i),
-        SymbolicExpression::Bool(b) => expr_to_dynamic(ctx, Rc::new(sym_memory), b),
-        SymbolicExpression::Ref((_, r)) => Dynamic::from(Int::from_u64(ctx, r.as_u64_pair().0)),
-    }
-}
-
-pub fn fresh_int<'ctx>(ctx: &'ctx Context, id: String) -> SymbolicExpression {
-    todo!();
+// todo: inline this
+pub fn fresh_int<'ctx>(ctx: &'ctx Context, id: String) -> SymExpression {
+    SymExpression::Int(SymValue::Free(id))
     //return SymbolicExpression::Int(Int::new_const(&ctx, id));
 }
 
-pub fn fresh_bool<'ctx>(ctx: &'ctx Context, id: String) -> SymbolicExpression {
-    todo!();
+// todo: inline this
+pub fn fresh_bool<'ctx>(ctx: &'ctx Context, id: String) -> SymExpression {
+    SymExpression::Bool(SymValue::Free(id))
     //return SymbolicExpression::Bool(Bool::new_const(&ctx, id));
 }
 
@@ -361,10 +357,10 @@ pub fn expr_to_bool<'ctx>(
     return unwrap_as_bool(expr_to_dynamic(&ctx, Rc::new(env), expr));
 }
 
-fn expr_to_dynamic<'ctx, 'b>(
+fn expr_to_dynamic<'ctx, 'a>(
     ctx: &'ctx Context,
-    sym_memory: Rc<&SymMemory<'ctx>>,
-    expr: &'ctx Expression,
+    sym_memory: Rc<&SymMemory<'a>>,
+    expr: &'a Expression,
 ) -> Dynamic<'ctx> {
     match expr {
         Expression::Exists(id, expr) => {
@@ -461,12 +457,7 @@ fn expr_to_dynamic<'ctx, 'b>(
 
             return Dynamic::from(expr.not());
         }
-        Expression::Identifier(id) => match sym_memory.stack_get(id) {
-            Some(SymbolicExpression::Int(i)) => expr_to_dynamic(ctx, sym_memory, i),
-            Some(SymbolicExpression::Bool(b)) => expr_to_dynamic(ctx, sym_memory, b),
-            Some(SymbolicExpression::Ref(b)) => todo!(),
-            None => panic_with_diagnostics(&format!("Variable {} is undeclared", id), &sym_memory),
-        },
+        Expression::Identifier(id) => todo!(),
         Expression::Literal(Literal::Integer(n)) => Dynamic::from(ast::Int::from_i64(ctx, *n)),
         Expression::Literal(Literal::Boolean(b)) => Dynamic::from(ast::Bool::from_bool(ctx, *b)),
         otherwise => {

@@ -15,7 +15,7 @@ use crate::cfg::types::{Action, Node};
 use crate::shared::ExitCode;
 use crate::shared::{Error, panic_with_diagnostics};
 use crate::z3::{
-    check_path, expr_to_bool, expr_to_int, fresh_bool, fresh_int, PathConstraint, ReferenceValue, SymMemory, SymbolicExpression};
+    check_path, expr_to_bool, expr_to_int, fresh_bool, fresh_int, PathConstraint, ReferenceValue, SymMemory, SymExpression};
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
 use uuid::Uuid;
@@ -147,7 +147,7 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                         },
                         (Type::Classtype(ty), id) => {
                             let r = Uuid::new_v4();
-                            sym_memory.stack_insert(id, SymbolicExpression::Ref((Type::Classtype(ty.clone()), r)));
+                            sym_memory.stack_insert(id, SymExpression::Ref((Type::Classtype(ty.clone()), r)));
                             sym_memory.heap_insert(r, ReferenceValue::UninitializedObj(ty.clone()));
                         },
                         (ty, id) => panic_with_diagnostics(
@@ -169,7 +169,7 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                         },
                         Type::Classtype(ty) => {
                             let r = Uuid::new_v4();
-                            sym_memory.stack_insert(&id,  SymbolicExpression::Ref((Type::Classtype(ty.clone()), r)))
+                            sym_memory.stack_insert(&id,  SymExpression::Ref((Type::Classtype(ty.clone()), r)))
                         },
                         Type::Void => panic!("Panic should never trigger, parser doesn't accept void type in declaration"),
                     },
@@ -204,28 +204,21 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
 
                         // evaluate return expression with type of retval and add to stack
                         match sym_memory.stack_get(retval_id) {
-                            Some(SymbolicExpression::Int(_)) => {
-                                sym_memory.stack_insert(
-                                    retval_id,
-                                    SymbolicExpression::Int(&expr),
-                                );
-                            }
-
-                            Some(SymbolicExpression::Bool(_)) => {
-                                sym_memory.stack_insert(
-                                    retval_id,
-                                    SymbolicExpression::Bool(&expr),
-                                );
-                            }
-                            Some(SymbolicExpression::Ref(_)) => {
+                            Some(SymExpression::Ref(_)) => {
                                 match expr {
                                     Expression::Identifier(id) => match sym_memory.stack_get( id) {
-                                        Some(SymbolicExpression::Ref(r)) => sym_memory.stack_insert(retval_id, SymbolicExpression::Ref(r)),
+                                        Some(SymExpression::Ref(r)) => sym_memory.stack_insert(retval_id, SymExpression::Ref(r)),
                                         Some(expr) => panic_with_diagnostics(&format!("Can't return '{:?}' as a referencevalue", expr), &sym_memory),
                                         None => panic_with_diagnostics(&format!("{} is undeclared", id), &sym_memory),
                                     },
                                     _ => panic_with_diagnostics(&format!("Can't return expression '{:?}'", expr), &sym_memory),
                                 }
+                            },
+                            Some(sym_expr) => {
+                                sym_memory.stack_insert(
+                                    retval_id,
+                                    sym_expr,
+                                );
                             },
                             None => panic_with_diagnostics(&format!("retval is undeclared in expression 'return {:?}'", expr), &sym_memory),  
                         }
@@ -261,7 +254,7 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                             Type::Classtype(ty) => sym_memory.stack_insert(
                                 
                                 retval_id,
-                                SymbolicExpression::Ref((Type::Classtype(ty.clone()), Uuid::nil())),
+                                SymExpression::Ref((Type::Classtype(ty.clone()), Uuid::nil())),
                             ),
                             Type::Void => panic!("Cannot declare retval of type void"),
                         }
@@ -276,10 +269,10 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                     }
                     Action::DeclareThis { class, obj } => match obj {
                         Lhs::Identifier(id) => match sym_memory.stack_get( id) {
-                            Some(SymbolicExpression::Ref(r)) => sym_memory.stack_insert(
+                            Some(SymExpression::Ref(r)) => sym_memory.stack_insert(
                                 
                                 this_id,
-                                SymbolicExpression::Ref(r),
+                                SymExpression::Ref(r),
                             ),
                             Some(_) => panic_with_diagnostics(
                                 &format!("{} is not of type {}", id, class),
@@ -337,7 +330,7 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                                             field.clone(),
                                             (
                                                 Type::Classtype(class.to_string()),
-                                                SymbolicExpression::Ref((ty, r)),
+                                                SymExpression::Ref((ty, r)),
                                             ),
                                         );
                                     }
@@ -354,7 +347,7 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                         match lhs {
                             Lhs::Identifier(id) => {
                                 match sym_memory.stack_get( id) {
-                                    Some(SymbolicExpression::Ref((_, r))) => {sym_memory.heap_insert(r, ReferenceValue::Object((class.to_string(), fields)));},
+                                    Some(SymExpression::Ref((_, r))) => {sym_memory.heap_insert(r, ReferenceValue::Object((class.to_string(), fields)));},
                                     _ => panic_with_diagnostics(&format!("Can't initialize '{} {}' because no reference is declared on the stack", class, id), &sym_memory),
                                 };
                             }
