@@ -15,6 +15,7 @@ mod see;
 mod ast;
 mod shared;
 mod z3;
+mod sym_model;
 
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]

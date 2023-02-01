@@ -1,8 +1,6 @@
-use z3::Context;
-
 use crate::ast::*;
 use crate::shared::panic_with_diagnostics;
-use crate::z3::{expr_to_bool, expr_to_int, SymMemory, SymExpression, SymValue};
+use crate::sym_model::{SymExpression, SymMemory, SymValue};
 
 pub fn type_lhs<'ctx>(sym_memory: &mut SymMemory<'ctx>, lhs: &'ctx Lhs) -> Type {
     match lhs {
@@ -25,7 +23,6 @@ pub fn type_lhs<'ctx>(sym_memory: &mut SymMemory<'ctx>, lhs: &'ctx Lhs) -> Type 
 
 /// returns the symbolic expression rhs refers to
 pub fn parse_rhs<'a, 'b>(
-    ctx: &'a Context,
     sym_memory: &mut SymMemory<'a>,
     ty: &Type,
     rhs: &'a Rhs,
@@ -74,13 +71,12 @@ pub fn parse_rhs<'a, 'b>(
 
 /// assigns value from rhs to lhs
 pub fn lhs_from_rhs<'a>(
-    ctx: &'a Context,
     sym_memory: &mut SymMemory<'a>,
     lhs: &'a Lhs,
     rhs: &'a Rhs,
 ) -> () {
     let ty = type_lhs(sym_memory, lhs);
-    let var = parse_rhs(&ctx, sym_memory, &ty, rhs);
+    let var = parse_rhs(sym_memory, &ty, rhs);
     match lhs {
         Lhs::Accessfield(obj_name, field_name) => {
             sym_memory.heap_update_field(obj_name, field_name, var)
@@ -91,7 +87,6 @@ pub fn lhs_from_rhs<'a>(
 
 /// evaluates the parameters & arguments to a mapping id -> variable that can be added to a function scope
 pub fn params_to_vars<'ctx>(
-    ctx: &'ctx Context,
     sym_memory: &mut SymMemory<'ctx>,
     params: &'ctx Parameters,
     args: &'ctx Arguments,

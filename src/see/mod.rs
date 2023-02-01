@@ -14,13 +14,11 @@ use crate::cfg::{generate_cfg, generate_dot_cfg};
 use crate::cfg::types::{Action, Node};
 use crate::shared::ExitCode;
 use crate::shared::{Error, panic_with_diagnostics};
-use crate::z3::SymValue;
-use crate::z3::{
-    check_path, expr_to_bool, expr_to_int, fresh_bool, fresh_int, PathConstraint, ReferenceValue, SymMemory, SymExpression};
+use crate::sym_model::{SymExpression, SymMemory, SymValue, ReferenceValue};
+use crate::z3::{check_path, expr_to_bool,  PathConstraint};
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
 use uuid::Uuid;
-use z3::{Config, Context};
 
 use rustc_hash::FxHashMap;
 use std::collections::VecDeque;
@@ -112,15 +110,12 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
     let prog = parse_program(prog_string);
     let (start_node, cfg) = generate_cfg(prog.clone());
 
-    let z3_cfg = Config::new();
-    let ctx = Context::new(&z3_cfg);
-
     //init our bfs through the cfg
     let mut q: VecDeque<(SymMemory, Vec<PathConstraint>, Depth, NodeIndex)> =
         VecDeque::new();
 
     q.push_back((
-        SymMemory::new(prog.clone(), &ctx),
+        SymMemory::new(prog.clone()),
         vec![],
         d,
         start_node,
@@ -141,10 +136,10 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                 for p in parameters {
                     match p {
                         (Type::Int, id) => {
-                            sym_memory.stack_insert(&id, fresh_int(&ctx, id.clone()))
+                            sym_memory.stack_insert(&id, SymExpression::Int(SymValue::Free(id.clone())))
                         }
                         (Type::Bool, id) => {
-                            sym_memory.stack_insert(&id,  fresh_bool(&ctx, id.clone()))
+                            sym_memory.stack_insert(&id,  SymExpression::Bool(SymValue::Free(id.clone())))
                         },
                         (Type::Classtype(ty), id) => {
                             let r = Uuid::new_v4();
@@ -175,28 +170,29 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                         Type::Void => panic!("Panic should never trigger, parser doesn't accept void type in declaration"),
                     },
                     Statement::Assume(expr) => {
-                        let ast = expr_to_bool(&ctx, &sym_memory, &expr);
-                        pc.push(PathConstraint::Assume(ast));
+                        todo!(); //let ast = expr_to_bool(&ctx, &sym_memory, &expr);
+                        //pc.push(PathConstraint::Assume(ast));
                     }
 
                     // return err if is invalid else continue
                     Statement::Assert(expr) =>   {
-                        let ast = expr_to_bool(&ctx, &sym_memory, &expr);
+                        todo!();
+                        // let ast = expr_to_bool(&ctx, &sym_memory, &expr);
 
-                        diagnostics.z3_invocations = diagnostics.z3_invocations + 1;
+                        // diagnostics.z3_invocations = diagnostics.z3_invocations + 1;
 
-                        pc.push(PathConstraint::Assert(ast));
-                        match check_path(&ctx, &pc) {
-                            Err(why) => return Err(why),
-                            Ok(_) => (),
+                        // pc.push(PathConstraint::Assert(ast));
+                        // match check_path(&ctx, &pc) {
+                        //     Err(why) => return Err(why),
+                        //     Ok(_) => (),
                             
-                        }
+                        //}
                     },
                     Statement::Assignment((lhs, rhs)) => {
                         // get lhs type
                         // parse expression variable
                         // assign to id in stack
-                        lhs_from_rhs(&ctx, &mut sym_memory, lhs, rhs);
+                        lhs_from_rhs(&mut sym_memory, lhs, rhs);
                     }
                     Statement::Return(expr) => {
 
@@ -245,12 +241,12 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                             Type::Int => sym_memory.stack_insert(
                                 
                                 retval_id,
-                                fresh_int(&ctx, "retval".to_string()),
+                                SymExpression::Int(SymValue::Uninitialized),
                             ),
                             Type::Bool => sym_memory.stack_insert(
                                 
                                 retval_id,
-                                fresh_bool(&ctx, "retval".to_string()),
+                                SymExpression::Bool(SymValue::Uninitialized),
                             ),
                             Type::Classtype(ty) => sym_memory.stack_insert(
                                 
@@ -262,7 +258,7 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                     }
                     Action::AssignArgs { params, args } => {
                         let variables =
-                            params_to_vars(&ctx,  &mut sym_memory, &params, &args);
+                            params_to_vars(  &mut sym_memory, &params, &args);
 
                         for (id, var) in variables {
                             sym_memory.stack_insert( id, var);
@@ -304,16 +300,16 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                                             field.clone(),
                                             (
                                                 Type::Int,
-                                                crate::z3::fresh_int(&ctx, field.to_string()),
+                                                SymExpression::Int(SymValue::Uninitialized),
                                             ),
                                         );
                                     }
                                     Type::Bool => {
                                         (
-                                            Type::Bool,
+                                            
                                             fields.insert(
                                                 field.clone(),
-                                                (Type::Bool, fresh_bool(&ctx, field.to_string())),
+                                                (Type::Bool, SymExpression::Bool(SymValue::Uninitialized)),
                                             ),
                                         );
                                     }
@@ -379,12 +375,13 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                             match (specification, from_main_scope){
                                 // if require is called outside main scope we assert
                                 (Specification::Requires(expr), false) => {
-                                    let ast = expr_to_bool(&ctx, &sym_memory, expr);
+                                    todo!("")
+                                    // let ast = expr_to_bool(&ctx, &sym_memory, expr);
 
-                                    diagnostics.z3_invocations = diagnostics.z3_invocations + 1;
+                                    // diagnostics.z3_invocations = diagnostics.z3_invocations + 1;
             
-                                    pc.push(PathConstraint::Assert(ast));
-                                    check_path(&ctx, &pc)?;
+                                    // pc.push(PathConstraint::Assert(ast));
+                                    // check_path(&ctx, &pc)?;
                                 },
                                 // otherwise process we assume
                                 (spec, _) => {
@@ -392,8 +389,9 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                                         Specification::Requires(expr) => expr,
                                         Specification::Ensures(expr) => expr,
                                     };
-                                    let ast = expr_to_bool(&ctx, &sym_memory, expr);
-                                    pc.push(PathConstraint::Assume(ast)); 
+                                    todo!()
+                                    //let ast = expr_to_bool(&ctx, &sym_memory, expr);
+                                    //pc.push(PathConstraint::Assume(ast)); 
                                 }
                             };
                         }
