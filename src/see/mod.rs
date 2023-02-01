@@ -129,14 +129,8 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
             Node::EnteringMain(parameters) => {
                 for p in parameters {
                     match p {
-                        (Type::Int, id) => sym_memory.stack_insert(
-                            &id,
-                            SymExpression::Int(SymValue::Expr(Expression::Identifier(id.clone()))),
-                        ),
-                        (Type::Bool, id) => sym_memory.stack_insert(
-                            &id,
-                            SymExpression::Bool(SymValue::Expr(Expression::Identifier(id.clone()))),
-                        ),
+                        (Type::Int, id) => sym_memory.stack_insert_free_var(Type::Int, id),
+                        (Type::Bool, id) => sym_memory.stack_insert_free_var(Type::Bool, id),
                         (Type::Classtype(ty), id) => {
                             let r = Uuid::new_v4();
                             sym_memory.stack_insert(
@@ -178,7 +172,7 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
 
                          diagnostics.z3_invocations = diagnostics.z3_invocations + 1;
 
-                        let assertion = sym_memory.expr_to_assumption(expr.clone());
+                        let assertion = sym_memory.expr_to_assertion(expr.clone());
                         pc.push(assertion);
                          match verify_constraints(&pc, &sym_memory) {
                              Err(why) => return Err(why),
@@ -252,7 +246,7 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                     }
                     Action::AssignArgs { params, args } => {
                         let variables = params_to_vars(&mut sym_memory, &params, &args);
-
+                        
                         for (id, var) in variables {
                             sym_memory.stack_insert(id, var);
                         }
@@ -369,13 +363,10 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                             match (specification, from_main_scope) {
                                 // if require is called outside main scope we assert
                                 (Specification::Requires(expr), false) => {
-                                    todo!("")
-                                    // let ast = expr_to_bool(&ctx, &sym_memory, expr);
-
-                                    // diagnostics.z3_invocations = diagnostics.z3_invocations + 1;
-
-                                    // pc.push(PathConstraint::Assert(ast));
-                                    // check_path(&ctx, &pc)?;
+                                    diagnostics.z3_invocations = diagnostics.z3_invocations + 1;
+                                    let assertion = sym_memory.expr_to_assertion(expr.clone());
+                                    pc.push(assertion);
+                                    verify_constraints(&pc, &sym_memory)?;
                                 }
                                 // otherwise process we assume
                                 (spec, _) => {
@@ -383,9 +374,8 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                                         Specification::Requires(expr) => expr,
                                         Specification::Ensures(expr) => expr,
                                     };
-                                    todo!()
-                                    //let ast = expr_to_bool(&ctx, &sym_memory, expr);
-                                    //pc.push(PathConstraint::Assume(ast));
+                                    let assumption = sym_memory.expr_to_assumption(expr.clone());
+                                    pc.push(assumption);
                                 }
                             };
                         }
