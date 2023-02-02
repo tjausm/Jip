@@ -109,7 +109,7 @@ impl<'a> SymMemory<'a> {
     }
     /// Insert mapping `Identifier |-> SymbolicExpression` in top most frame of stack
     pub fn stack_insert(&mut self, id: &'a Identifier, sym_expr: SymExpression) -> () {
-        let subst_expr = self.substitute(sym_expr);
+        let subst_expr = self.substitute_sym_expr(sym_expr);
         if let Some(s) = self.stack.last_mut() {
             s.env.insert(id, subst_expr);
         }
@@ -117,7 +117,7 @@ impl<'a> SymMemory<'a> {
 
     /// Insert mapping `Identifier |-> SymbolicExpression` in frame below top most frame of stack
     pub fn stack_insert_below(&mut self, id: &'a Identifier, sym_expr: SymExpression) -> () {
-        let subst_expr = self.substitute(sym_expr);
+        let subst_expr = self.substitute_sym_expr(sym_expr);
         let below_index = self.stack.len() - 2;
         match self.stack.get_mut(below_index) {
             Some(frame) => {
@@ -270,7 +270,7 @@ impl<'a> SymMemory<'a> {
         field_name: &'a String,
         sym_expr: SymExpression,
     ) -> () {
-        let subt_expr = self.substitute(sym_expr);
+        let subt_expr = self.substitute_sym_expr(sym_expr);
 
         match self.stack_get(obj_name) {
             Some(SymExpression::Ref((_, r))) => match self.heap.get_mut(&r) {
@@ -308,8 +308,8 @@ impl<'a> SymMemory<'a> {
         PathConstraint::Assume(sub_expr)
     }
 
-    /// substitutes all variables in a `SymExpression`
-    pub fn substitute(&self, sym_expr: SymExpression) -> SymExpression {
+    /// substitutes all variables in the underlying `Expression`
+    pub fn substitute_sym_expr(&self, sym_expr: SymExpression) -> SymExpression {
         match sym_expr {
             SymExpression::Int(SymValue::Expr(expr)) => {
                 SymExpression::Int(SymValue::Expr(self.substitute_expr(expr).clone()))
@@ -320,7 +320,7 @@ impl<'a> SymMemory<'a> {
             _ => sym_expr,
         }
     }
-    /// helper function to substitute the underlying `Expression` in a SymExpression
+    /// substitutes all variables in the underlying `Expression`
     pub fn substitute_expr(&self, expr: Expression) -> Expression {
         match expr {
             Expression::Forall(id, r) => {
@@ -382,6 +382,140 @@ impl<'a> SymMemory<'a> {
                 Expression::Negative(Box::new(self.substitute_expr(*expr)))
             }
             Expression::Not(expr) => Expression::Not(Box::new(self.substitute_expr(*expr))),
+            Expression::Literal(_) => expr,
+            Expression::Identifier(id) => match self.stack_get(&id) {
+                Some(SymExpression::Bool(SymValue::Expr(expr))) => expr,
+                Some(SymExpression::Int(SymValue::Expr(expr))) => expr,
+                Some(sym_expr) => panic_with_diagnostics(
+                    &format!(
+                        "identifier {} with value {:?} can't be substituted",
+                        id, sym_expr
+                    ),
+                    self,
+                ),
+                None => panic_with_diagnostics(&format!("{} was not declared", id), self),
+            },
+            otherwise => {
+                panic_with_diagnostics(&format!("{:?} is not yet implemented", otherwise), &self)
+            }
+        }
+    }
+    /// substitutes all variables in the underlying `Expression`
+    pub fn simplify_expr(&self, expr: Expression) -> Expression {
+        match expr {
+            Expression::And(l_expr, r_expr) => match (self.simplify_expr(*l_expr), self.simplify_expr(*r_expr)) {
+                (Expression::Literal(Literal::Boolean(l_lit)), Expression::Literal(Literal::Boolean(r_lit))) => Expression::Literal(Literal::Boolean(l_lit && r_lit)),
+                (l_simple, r_simple) => Expression::And(Box::new(l_simple), Box::new(r_simple))
+            }
+            Expression::Or(l_expr, r_expr) => match (self.simplify_expr(*l_expr), self.simplify_expr(*r_expr)) {
+                (Expression::Literal(Literal::Boolean(l_lit)), Expression::Literal(Literal::Boolean(r_lit))) => Expression::Literal(Literal::Boolean(l_lit || r_lit)),
+                (l_simple, r_simple) => Expression::Or(Box::new(l_simple), Box::new(r_simple))
+            }
+            Expression::NE(l_expr, r_expr) => match (self.simplify_expr(*l_expr), self.simplify_expr(*r_expr)) {
+                (Expression::Literal(l_lit), Expression::Literal(r_lit)) => Expression::Literal(Literal::Boolean(l_lit == r_lit)),
+                (l_simple, r_simple) => Expression::EQ(Box::new(l_simple), Box::new(r_simple))
+            }
+            Expression::NE(l_expr, r_expr) => match (self.simplify_expr(*l_expr), self.simplify_expr(*r_expr)) {
+                (Expression::Literal(l_lit), Expression::Literal(r_lit)) => Expression::Literal(Literal::Boolean(l_lit != r_lit)),
+                (l_simple, r_simple) => Expression::NE(Box::new(l_simple), Box::new(r_simple))
+            }
+            Expression::LT(l_expr, r_expr) => {
+                match (self.simplify_expr(*l_expr), self.simplify_expr(*r_expr)) {
+                    (
+                        Expression::Literal(Literal::Integer(l_lit)),
+                        Expression::Literal(Literal::Integer(r_lit)),
+                    ) => Expression::Literal(Literal::Boolean(l_lit < r_lit)),
+                    (l_simple, r_simple) => Expression::LT(Box::new(l_simple), Box::new(r_simple)),
+                }
+            }
+            Expression::GT(l_expr, r_expr) => {
+                match (self.simplify_expr(*l_expr), self.simplify_expr(*r_expr)) {
+                    (
+                        Expression::Literal(Literal::Integer(l_lit)),
+                        Expression::Literal(Literal::Integer(r_lit)),
+                    ) => Expression::Literal(Literal::Boolean(l_lit > r_lit)),
+                    (l_simple, r_simple) => Expression::GT(Box::new(l_simple), Box::new(r_simple)),
+                }
+            }
+            Expression::GEQ(l_expr, r_expr) => {
+                match (self.simplify_expr(*l_expr), self.simplify_expr(*r_expr)) {
+                    (
+                        Expression::Literal(Literal::Integer(l_lit)),
+                        Expression::Literal(Literal::Integer(r_lit)),
+                    ) => Expression::Literal(Literal::Boolean(l_lit >=  r_lit)),
+                    (l_simple, r_simple) => Expression::GEQ(Box::new(l_simple), Box::new(r_simple)),
+                }
+            }
+
+            Expression::LEQ(l_expr, r_expr) => {
+                match (self.simplify_expr(*l_expr), self.simplify_expr(*r_expr)) {
+                    (
+                        Expression::Literal(Literal::Integer(l_lit)),
+                        Expression::Literal(Literal::Integer(r_lit)),
+                    ) => Expression::Literal(Literal::Boolean(l_lit <= r_lit)),
+                    (l_simple, r_simple) => Expression::LEQ(Box::new(l_simple), Box::new(r_simple)),
+                }
+            }
+
+            Expression::Plus(l_expr, r_expr) => {
+                match (self.simplify_expr(*l_expr), self.simplify_expr(*r_expr)) {
+                    (
+                        Expression::Literal(Literal::Integer(l_lit)),
+                        Expression::Literal(Literal::Integer(r_lit)),
+                    ) => Expression::Literal(Literal::Integer(l_lit + r_lit)),
+                    (l_simple, r_simple) => {
+                        Expression::Plus(Box::new(l_simple), Box::new(r_simple))
+                    }
+                }
+            }
+            Expression::Minus(l_expr, r_expr) => {
+                match (self.simplify_expr(*l_expr), self.simplify_expr(*r_expr)) {
+                    (
+                        Expression::Literal(Literal::Integer(l_lit)),
+                        Expression::Literal(Literal::Integer(r_lit)),
+                    ) => Expression::Literal(Literal::Integer(l_lit - r_lit)),
+                    (l_simple, r_simple) => {
+                        Expression::Minus(Box::new(l_simple), Box::new(r_simple))
+                    }
+                }
+            }
+            Expression::Multiply(l_expr, r_expr) => {
+                match (self.simplify_expr(*l_expr), self.simplify_expr(*r_expr)) {
+                    (
+                        Expression::Literal(Literal::Integer(l_lit)),
+                        Expression::Literal(Literal::Integer(r_lit)),
+                    ) => Expression::Literal(Literal::Integer(l_lit * r_lit)),
+                    (l_simple, r_simple) => {
+                        Expression::Multiply(Box::new(l_simple), Box::new(r_simple))
+                    }
+                }
+            }
+            Expression::Divide(l_expr, r_expr) => {
+                match (self.simplify_expr(*l_expr), self.simplify_expr(*r_expr)) {
+                    (
+                        Expression::Literal(Literal::Integer(l_lit)),
+                        Expression::Literal(Literal::Integer(r_lit)),
+                    ) => Expression::Literal(Literal::Integer(l_lit / r_lit)),
+                    (l_simple, r_simple) => {
+                        Expression::Divide(Box::new(l_simple), Box::new(r_simple))
+                    }
+                }
+            }
+            Expression::Mod(l_expr, r_expr) => {
+                match (self.simplify_expr(*l_expr), self.simplify_expr(*r_expr)) {
+                    (
+                        Expression::Literal(Literal::Integer(l_lit)),
+                        Expression::Literal(Literal::Integer(r_lit)),
+                    ) => Expression::Literal(Literal::Integer(l_lit % r_lit)),
+                    (l_simple, r_simple) => Expression::Mod(Box::new(l_simple), Box::new(r_simple)),
+                }
+            }
+            Expression::Not(expr) => match self.simplify_expr(*expr) {
+                Expression::Literal(Literal::Boolean(b)) => {
+                    Expression::Literal(Literal::Boolean(!b))
+                }
+                simple_expr => simple_expr,
+            },
             Expression::Literal(_) => expr,
             Expression::Identifier(id) => match self.stack_get(&id) {
                 Some(SymExpression::Bool(SymValue::Expr(expr))) => expr,

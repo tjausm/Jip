@@ -203,7 +203,7 @@ pub enum Expression {
     Literal(Literal),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Literal {
     Boolean(bool),
     Integer(i64),
