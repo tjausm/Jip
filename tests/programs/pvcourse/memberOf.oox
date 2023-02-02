@@ -22,8 +22,8 @@ class Main {
        }
 
        if (found) {
-         int v := a[k]; 
-         assert v == x; 
+         int val := a[k]; 
+         assert val == x; 
          } else ;
     }
 
