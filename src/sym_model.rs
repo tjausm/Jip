@@ -2,13 +2,11 @@
 //!
 use rustc_hash::FxHashMap;
 use std::fmt;
-use std::rc::Rc;
 use uuid::Uuid;
-use z3::ast::{Ast, Bool, Dynamic, Int};
-use z3::{ast, Context, SatResult, Solver};
+
 
 use crate::ast::*;
-use crate::shared::{panic_with_diagnostics, Error, Scope};
+use crate::shared::{panic_with_diagnostics, Scope, Error};
 
 //----------------------//
 // Symbolic expressions //
@@ -22,8 +20,8 @@ pub enum PathConstraint {
 impl fmt::Debug for PathConstraint {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            PathConstraint::Assume(pc) => write!(f, "{:?}", pc),
-            PathConstraint::Assert(pc) => write!(f, "{:?}", pc),
+            PathConstraint::Assume(pc) => write!(f, "{:?} =>", pc),
+            PathConstraint::Assert(pc) => write!(f, "{:?} &&", pc),
         }
     }
 }
@@ -400,24 +398,97 @@ impl<'a> SymMemory<'a> {
             }
         }
     }
-    /// substitutes all variables in the underlying `Expression`
-    pub fn simplify_expr(&self, expr: Expression) -> Expression {
+    
+    // verify constraints using front-end simplifier
+    pub fn verify_constraints(&self, path_constraints: &Vec<PathConstraint>) -> Result<(), Error>{
+        for constraint in path_constraints.iter() {
+            match constraint {
+                PathConstraint::Assert(assertion) => {
+                    match self.simplify_expr(assertion.clone()) {
+                        Expression::Literal(Literal::Boolean(false)) => {
+                            return Err(Error::Verification(format!(
+                                "Assertion {:?} evaluates to false in\n{:?}",
+                                assertion, path_constraints
+                            )))
+                        }
+                        Expression::Literal(Literal::Boolean(true)) => continue,
+                        _ => break,
+                    }
+                }
+                PathConstraint::Assume(assumption) => {
+                    match self.simplify_expr(assumption.clone()) {
+                        Expression::Literal(Literal::Boolean(false)) => {
+                            return Err(Error::Verification(format!(
+                                "Assumption {:?} evaluates to false in\n{:?}",
+                                assumption, path_constraints
+                            )))
+                        },
+                        _ => break,
+                    }
+                }
+            }
+        }
+        return Ok(())
+    }
+    
+    /// front end simplifier
+    fn simplify_expr(&self, expr: Expression) -> Expression {
         match expr {
-            Expression::And(l_expr, r_expr) => match (self.simplify_expr(*l_expr), self.simplify_expr(*r_expr)) {
-                (Expression::Literal(Literal::Boolean(l_lit)), Expression::Literal(Literal::Boolean(r_lit))) => Expression::Literal(Literal::Boolean(l_lit && r_lit)),
-                (l_simple, r_simple) => Expression::And(Box::new(l_simple), Box::new(r_simple))
+            Expression::And(l_expr, r_expr) => {
+                match (self.simplify_expr(*l_expr), self.simplify_expr(*r_expr)) {
+                    (Expression::Literal(Literal::Boolean(false)), _) => {
+                        Expression::Literal(Literal::Boolean(false))
+                    }
+                    (_, Expression::Literal(Literal::Boolean(false))) => {
+                        Expression::Literal(Literal::Boolean(false))
+                    }
+                    (
+                        Expression::Literal(Literal::Boolean(true)),
+                        Expression::Literal(Literal::Boolean(true)),
+                    ) => Expression::Literal(Literal::Boolean(true)),
+                    (l_simple, r_simple) => Expression::And(Box::new(l_simple), Box::new(r_simple)),
+                }
             }
-            Expression::Or(l_expr, r_expr) => match (self.simplify_expr(*l_expr), self.simplify_expr(*r_expr)) {
-                (Expression::Literal(Literal::Boolean(l_lit)), Expression::Literal(Literal::Boolean(r_lit))) => Expression::Literal(Literal::Boolean(l_lit || r_lit)),
-                (l_simple, r_simple) => Expression::Or(Box::new(l_simple), Box::new(r_simple))
+            Expression::Or(l_expr, r_expr) => {
+                match (self.simplify_expr(*l_expr), self.simplify_expr(*r_expr)) {
+                    (Expression::Literal(Literal::Boolean(true)), _) => {
+                        Expression::Literal(Literal::Boolean(true))
+                    }
+                    (_, Expression::Literal(Literal::Boolean(true))) => {
+                        Expression::Literal(Literal::Boolean(true))
+                    }
+                    (l_simple, r_simple) => Expression::Or(Box::new(l_simple), Box::new(r_simple)),
+                }
             }
-            Expression::NE(l_expr, r_expr) => match (self.simplify_expr(*l_expr), self.simplify_expr(*r_expr)) {
-                (Expression::Literal(l_lit), Expression::Literal(r_lit)) => Expression::Literal(Literal::Boolean(l_lit == r_lit)),
-                (l_simple, r_simple) => Expression::EQ(Box::new(l_simple), Box::new(r_simple))
+            Expression::Implies(l_expr, r_expr) => {
+                match (self.simplify_expr(*l_expr), self.simplify_expr(*r_expr)) {
+                    (Expression::Literal(Literal::Boolean(false)), _) => {
+                        Expression::Literal(Literal::Boolean(true))
+                    }
+                    (_, Expression::Literal(Literal::Boolean(true))) => {
+                        Expression::Literal(Literal::Boolean(true))
+                    }
+                    (Expression::Literal(Literal::Boolean(_)), Expression::Literal(Literal::Boolean(_))) => {
+                        Expression::Literal(Literal::Boolean(false))
+                    }
+                    (l_simple, r_simple) => Expression::Implies(Box::new(l_simple), Box::new(r_simple)),
+                }
             }
-            Expression::NE(l_expr, r_expr) => match (self.simplify_expr(*l_expr), self.simplify_expr(*r_expr)) {
-                (Expression::Literal(l_lit), Expression::Literal(r_lit)) => Expression::Literal(Literal::Boolean(l_lit != r_lit)),
-                (l_simple, r_simple) => Expression::NE(Box::new(l_simple), Box::new(r_simple))
+            Expression::EQ(l_expr, r_expr) => {
+                match (self.simplify_expr(*l_expr), self.simplify_expr(*r_expr)) {
+                    (Expression::Literal(l_lit), Expression::Literal(r_lit)) => {
+                        Expression::Literal(Literal::Boolean(l_lit == r_lit))
+                    }
+                    (l_simple, r_simple) => Expression::EQ(Box::new(l_simple), Box::new(r_simple)),
+                }
+            }
+            Expression::NE(l_expr, r_expr) => {
+                match (self.simplify_expr(*l_expr), self.simplify_expr(*r_expr)) {
+                    (Expression::Literal(l_lit), Expression::Literal(r_lit)) => {
+                        Expression::Literal(Literal::Boolean(l_lit != r_lit))
+                    }
+                    (l_simple, r_simple) => Expression::NE(Box::new(l_simple), Box::new(r_simple)),
+                }
             }
             Expression::LT(l_expr, r_expr) => {
                 match (self.simplify_expr(*l_expr), self.simplify_expr(*r_expr)) {
@@ -442,7 +513,7 @@ impl<'a> SymMemory<'a> {
                     (
                         Expression::Literal(Literal::Integer(l_lit)),
                         Expression::Literal(Literal::Integer(r_lit)),
-                    ) => Expression::Literal(Literal::Boolean(l_lit >=  r_lit)),
+                    ) => Expression::Literal(Literal::Boolean(l_lit >= r_lit)),
                     (l_simple, r_simple) => Expression::GEQ(Box::new(l_simple), Box::new(r_simple)),
                 }
             }

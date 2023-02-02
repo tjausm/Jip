@@ -5,27 +5,26 @@ use std::fmt;
 use std::rc::Rc;
 use uuid::Uuid;
 use z3::ast::{Ast, Bool, Dynamic, Int};
-use z3::{ast, Context, SatResult, Solver, Config};
+use z3::{ast, Config, Context, SatResult, Solver};
 
 use crate::ast::*;
 use crate::shared::{panic_with_diagnostics, Error};
-use crate::sym_model::{SymMemory, SymExpression, PathConstraint};
+use crate::sym_model::{PathConstraint, SymExpression, SymMemory};
 
 //--------------//
 // z3 bindings //
 //-------------//
 
-
-/// Combine the constraints in reversed order and check correctness
+/// Combine the constraints in reversed order and check correctness using z3
 /// `solve_constraints(ctx, vec![assume x, assert y, assume z] = x -> (y && z)`
 pub fn verify_constraints<'a>(
     path_constraints: &Vec<PathConstraint>,
-    sym_memory: &SymMemory<'a>
+    sym_memory: &SymMemory<'a>,
 ) -> Result<(), Error> {
+
     //initialise fresh context
     let z3_cfg = Config::new();
     let ctx = Context::new(&z3_cfg);
-
 
     let mut constraints = Bool::from_bool(&ctx, true);
 
@@ -34,11 +33,12 @@ pub fn verify_constraints<'a>(
         match constraint {
             PathConstraint::Assert(assertion) => {
                 let assertion_ast = expr_to_bool(&ctx, sym_memory, assertion);
-                constraints = Bool::and(&ctx, &[&assertion_ast, &constraints])},
+                constraints = Bool::and(&ctx, &[&assertion_ast, &constraints])
+            }
             PathConstraint::Assume(assumption) => {
                 let assumption_ast = expr_to_bool(&ctx, sym_memory, assumption);
                 constraints = Bool::implies(&assumption_ast, &constraints)
-            },
+            }
         }
     }
 
@@ -184,10 +184,13 @@ fn expr_to_dynamic<'ctx, 'a>(
             return Dynamic::from(expr.not());
         }
         // type variable using stack or substitute one level deep??
-        Expression::Identifier(id) => match sym_memory.stack_get(id){
+        Expression::Identifier(id) => match sym_memory.stack_get(id) {
             Some(SymExpression::Bool(_)) => Dynamic::from(Bool::new_const(ctx, id.clone())),
             Some(SymExpression::Int(_)) => Dynamic::from(Int::new_const(ctx, id.clone())),
-            Some(sym_expr) => panic_with_diagnostics(&format!("{:?} is not parseable to a z3 ast", sym_expr), &sym_memory),
+            Some(sym_expr) => panic_with_diagnostics(
+                &format!("{:?} is not parseable to a z3 ast", sym_expr),
+                &sym_memory,
+            ),
             None => panic_with_diagnostics(&format!("{} is undeclared", id), &sym_memory),
         },
         Expression::Literal(Literal::Integer(n)) => Dynamic::from(ast::Int::from_i64(ctx, *n)),

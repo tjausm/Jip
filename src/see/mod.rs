@@ -16,7 +16,7 @@ use crate::shared::ExitCode;
 use crate::shared::{panic_with_diagnostics, Error};
 use crate::sym_model::PathConstraint;
 use crate::sym_model::{ReferenceValue, SymExpression, SymMemory, SymValue};
-use crate::z3::verify_constraints;
+use crate::z3;
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
 use uuid::Uuid;
@@ -165,6 +165,11 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                     Statement::Assume(expr) => {
                         let assumption = sym_memory.expr_to_assumption(expr.clone());
                         pc.push(assumption);
+                        match sym_memory.verify_constraints(&pc) {
+                            Err(_) => continue,
+                            Ok(_) => (),
+                            
+                        }
                     }
 
                     // return err if is invalid else continue
@@ -174,7 +179,7 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
 
                         let assertion = sym_memory.expr_to_assertion(expr.clone());
                         pc.push(assertion);
-                         match verify_constraints(&pc, &sym_memory) {
+                         match z3::verify_constraints(&pc, &sym_memory) {
                              Err(why) => return Err(why),
                              Ok(_) => (),
                         }
@@ -375,7 +380,7 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                                     diagnostics.z3_invocations = diagnostics.z3_invocations + 1;
                                     let assertion = sym_memory.expr_to_assertion(expr.clone());
                                     pc.push(assertion);
-                                    verify_constraints(&pc, &sym_memory)?;
+                                    z3::verify_constraints(&pc, &sym_memory)?;
                                 }
                                 // otherwise process we assume
                                 (spec, _) => {
