@@ -2,26 +2,40 @@
 //!
 use rustc_hash::FxHashMap;
 use std::fmt;
+use std::path::Path;
 use uuid::Uuid;
 
-
 use crate::ast::*;
-use crate::shared::{panic_with_diagnostics, Scope, Error};
+use crate::shared::{panic_with_diagnostics, Error, Scope};
 
 //----------------------//
 // Symbolic expressions //
 //----------------------//
+
 #[derive(Clone)]
-pub enum PathConstraint {
-    Assume(Expression),
-    Assert(Expression),
+pub struct PathConstraints {
+    constraints: Constraint,
 }
 
-impl fmt::Debug for PathConstraint {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            PathConstraint::Assume(pc) => write!(f, "{:?} =>", pc),
-            PathConstraint::Assert(pc) => write!(f, "{:?} &&", pc),
+#[derive(Clone)]
+enum Constraint {
+    Assert(Expression),
+    Assume(Expression),
+}
+
+impl Default for PathConstraints {
+    fn default() -> Self {
+        PathConstraints {
+            constraints: Constraint::Assert(Expression::Literal(Literal::Boolean(true))),
+        }
+    }
+}
+
+impl PathConstraints {
+    pub fn get_constraints<'a>(&'a self) -> &'a Expression {
+        match &self.constraints {
+            Constraint::Assert(expr) => expr,
+            Constraint::Assume(expr) => expr,
         }
     }
 }
@@ -76,9 +90,9 @@ pub struct SymMemory<'ctx> {
 }
 
 impl<'ctx> SymMemory<'ctx> {
-    pub fn new(p: Program) -> Self {
+    pub fn new(program: Program, simplify: bool) -> Self {
         SymMemory {
-            program: p,
+            program,
             stack: vec![Frame {
                 scope: Scope { id: None },
                 env: FxHashMap::default(),
@@ -105,6 +119,35 @@ impl<'a> SymMemory<'a> {
             };
         };
     }
+
+    /// generates a new PathConstraint from the subtituted assumption and the current constraints
+    pub fn add_assert(&self, assertion: Expression, pc: &PathConstraints) -> PathConstraints {
+        let subt_assertion = self.substitute_expr(assertion);
+        let updated_pc = match &pc.constraints {
+            Constraint::Assert(expr) => Expression::And(Box::new(expr.clone()), Box::new(subt_assertion)),
+            Constraint::Assume(expr) => {
+                Expression::Implies(Box::new(expr.clone()), Box::new(subt_assertion))
+            }
+        };
+        PathConstraints {
+            constraints: Constraint::Assert(updated_pc),
+        }
+    }
+
+    /// generates a new PathConstraint from the subtituted assumption and the current constraints
+    pub fn add_assume(&self, assumption: Expression, pc: &PathConstraints) -> PathConstraints {
+        let subt_assertion = self.substitute_expr(assumption);
+        let updated_pc = match &pc.constraints {
+            Constraint::Assert(expr) => Expression::And(Box::new(expr.clone()), Box::new(subt_assertion)),
+            Constraint::Assume(expr) => {
+                Expression::Implies(Box::new(expr.clone()), Box::new(subt_assertion))
+            }
+        };
+        PathConstraints {
+            constraints: Constraint::Assume(updated_pc),
+        }
+    }
+
     /// Insert mapping `Identifier |-> SymbolicExpression` in top most frame of stack
     pub fn stack_insert(&mut self, id: &'a Identifier, sym_expr: SymExpression) -> () {
         let subst_expr = self.substitute_sym_expr(sym_expr);
@@ -296,18 +339,8 @@ impl<'a> SymMemory<'a> {
         }
     }
 
-    pub fn expr_to_assertion(&self, expr: Expression) -> PathConstraint {
-        let sub_expr = self.substitute_expr(expr.clone());
-        PathConstraint::Assert(sub_expr)
-    }
-
-    pub fn expr_to_assumption(&self, expr: Expression) -> PathConstraint {
-        let sub_expr = self.substitute_expr(expr.clone());
-        PathConstraint::Assume(sub_expr)
-    }
-
     /// substitutes all variables in the underlying `Expression`
-    pub fn substitute_sym_expr(&self, sym_expr: SymExpression) -> SymExpression {
+    fn substitute_sym_expr(&self, sym_expr: SymExpression) -> SymExpression {
         match sym_expr {
             SymExpression::Int(SymValue::Expr(expr)) => {
                 SymExpression::Int(SymValue::Expr(self.substitute_expr(expr).clone()))
@@ -319,7 +352,7 @@ impl<'a> SymMemory<'a> {
         }
     }
     /// substitutes all variables in the underlying `Expression`
-    pub fn substitute_expr(&self, expr: Expression) -> Expression {
+    fn substitute_expr(&self, expr: Expression) -> Expression {
         match expr {
             Expression::Forall(id, r) => {
                 Expression::Forall(id.clone(), Box::new(self.substitute_expr(*r)))
@@ -398,41 +431,20 @@ impl<'a> SymMemory<'a> {
             }
         }
     }
-    
-    // verify constraints using front-end simplifier
-    pub fn verify_constraints(&self, path_constraints: &Vec<PathConstraint>) -> Result<(), Error>{
-        for constraint in path_constraints.iter() {
-            match constraint {
-                PathConstraint::Assert(assertion) => {
-                    match self.simplify_expr(assertion.clone()) {
-                        Expression::Literal(Literal::Boolean(false)) => {
-                            return Err(Error::Verification(format!(
-                                "Assertion {:?} evaluates to false in\n{:?}",
-                                assertion, path_constraints
-                            )))
-                        }
-                        Expression::Literal(Literal::Boolean(true)) => continue,
-                        _ => break,
-                    }
-                }
-                PathConstraint::Assume(assumption) => {
-                    match self.simplify_expr(assumption.clone()) {
-                        Expression::Literal(Literal::Boolean(false)) => {
-                            return Err(Error::Verification(format!(
-                                "Assumption {:?} evaluates to false in\n{:?}",
-                                assumption, path_constraints
-                            )))
-                        },
-                        _ => break,
-                    }
-                }
-            }
+
+    pub fn simplify_pc(&self, pc: &PathConstraints) -> PathConstraints {
+        match &pc.constraints {
+            Constraint::Assert(expr) => PathConstraints {
+                constraints: Constraint::Assert(self.simplify_expr(expr.clone())),
+            },
+            Constraint::Assume(expr) => PathConstraints {
+                constraints: Constraint::Assume(self.simplify_expr(expr.clone())),
+            },
         }
-        return Ok(())
     }
-    
+
     /// front end simplifier
-    fn simplify_expr(&self, expr: Expression) -> Expression {
+    pub fn simplify_expr(&self, expr: Expression) -> Expression {
         match expr {
             Expression::And(l_expr, r_expr) => {
                 match (self.simplify_expr(*l_expr), self.simplify_expr(*r_expr)) {
@@ -468,10 +480,13 @@ impl<'a> SymMemory<'a> {
                     (_, Expression::Literal(Literal::Boolean(true))) => {
                         Expression::Literal(Literal::Boolean(true))
                     }
-                    (Expression::Literal(Literal::Boolean(_)), Expression::Literal(Literal::Boolean(_))) => {
-                        Expression::Literal(Literal::Boolean(false))
+                    (
+                        Expression::Literal(Literal::Boolean(_)),
+                        Expression::Literal(Literal::Boolean(_)),
+                    ) => Expression::Literal(Literal::Boolean(false)),
+                    (l_simple, r_simple) => {
+                        Expression::Implies(Box::new(l_simple), Box::new(r_simple))
                     }
-                    (l_simple, r_simple) => Expression::Implies(Box::new(l_simple), Box::new(r_simple)),
                 }
             }
             Expression::EQ(l_expr, r_expr) => {

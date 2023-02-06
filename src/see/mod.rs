@@ -12,9 +12,10 @@ use crate::see::utils::*;
 use crate::ast::*;
 use crate::cfg::types::{Action, Node};
 use crate::cfg::{generate_cfg, generate_dot_cfg};
+use crate::shared::Config;
 use crate::shared::ExitCode;
-use crate::shared::{panic_with_diagnostics, Error};
-use crate::sym_model::PathConstraint;
+use crate::shared::{panic_with_diagnostics, Diagnostics, Error};
+use crate::sym_model::PathConstraints;
 use crate::sym_model::{ReferenceValue, SymExpression, SymMemory, SymValue};
 use crate::z3;
 use petgraph::graph::NodeIndex;
@@ -28,10 +29,9 @@ use std::time::Instant;
 
 const PROG_CORRECT: &'static str = "Program is correct";
 
-pub fn bench(program: &str, start: Depth, end: Option<Depth>, step: i32) -> (ExitCode, String) {
+pub fn bench(program: &str, start: Depth, end: Option<Depth>, step: i32, config: Config) -> (ExitCode, String) {
     let end = end.unwrap_or(start) + 1;
     let depths = (start..end).step_by(step.try_into().unwrap());
-
     println!("d        time");
 
     for d in depths {
@@ -39,7 +39,7 @@ pub fn bench(program: &str, start: Depth, end: Option<Depth>, step: i32) -> (Exi
 
         // Code block to measure.
         {
-            match print_verification(program, d, false) {
+            match print_verification(program, d, config.clone(), false) {
                 (ExitCode::Error, e) => return (ExitCode::Error, e),
                 _ => (),
             }
@@ -76,10 +76,10 @@ pub fn print_cfg(program: &str) -> (ExitCode, String) {
     (ExitCode::Valid, generate_dot_cfg(program))
 }
 
-pub fn print_verification(program: &str, d: Depth, verbose: bool) -> (ExitCode, String) {
+pub fn print_verification(program: &str, d: Depth, config: Config, verbose: bool) -> (ExitCode, String) {
     let print_diagnostics = |d: Result<Diagnostics, _>| match d {
         Ok(Diagnostics {
-            paths,
+            paths_explored: paths,
             z3_invocations,
         }) => format!(
             "\nPaths checked    {}\nZ3 invocations   {}",
@@ -87,7 +87,7 @@ pub fn print_verification(program: &str, d: Depth, verbose: bool) -> (ExitCode, 
         ),
         _ => "".to_string(),
     };
-    let result = verify_program(program, d);
+    let result = verify_program(program, d, config);
     let (ec, r) = print_result(result.clone());
 
     if verbose {
@@ -96,12 +96,9 @@ pub fn print_verification(program: &str, d: Depth, verbose: bool) -> (ExitCode, 
     return (ec, r);
 }
 
-fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
+fn verify_program(prog_string: &str, d: Depth, config: Config) -> Result<Diagnostics, Error> {
     //init diagnostic info
-    let mut diagnostics = Diagnostics {
-        paths: 0,
-        z3_invocations: 0,
-    };
+    let mut diagnostics = Diagnostics::default();
 
     // init retval and this such that it outlives env
     let retval_id = &"retval".to_string();
@@ -111,9 +108,8 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
     let (start_node, cfg) = generate_cfg(prog.clone());
 
     //init our bfs through the cfg
-    let mut q: VecDeque<(SymMemory, Vec<PathConstraint>, Depth, NodeIndex)> = VecDeque::new();
-
-    q.push_back((SymMemory::new(prog.clone()), vec![], d, start_node));
+    let mut q: VecDeque<(SymMemory, PathConstraints, Depth, NodeIndex)> = VecDeque::new();
+    q.push_back((SymMemory::new(prog.clone(), config.simplify), PathConstraints::default(), d, start_node));
 
     // Assert -> build & verify z3 formula, return error if disproven
     // Assume -> build & verify z3 formula, stop evaluating pad if disproven
@@ -162,32 +158,32 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                         },
                         Type::Void => panic!("Panic should never trigger, parser doesn't accept void type in declaration"),
                     },
-                    Statement::Assume(expr) => {
-                        let assumption = sym_memory.expr_to_assumption(expr.clone());
-                        pc.push(assumption);
-                        match sym_memory.verify_constraints(&pc) {
-                            Err(_) => continue,
-                            Ok(_) => (),
-                            
-                        }
-                    }
+                    Statement::Assume(assumption) => {
+                        
+                        pc = sym_memory.add_assume(assumption.clone(), &pc);
+                        if config.simplify {pc = sym_memory.simplify_pc(&pc)};
 
+                        match pc.get_constraints() {
+                                Expression::Literal(Literal::Boolean(false)) => continue,
+                                _ => ()
+                            }
+                        },
                     // return err if is invalid else continue
-                    Statement::Assert(expr) =>   {
+                    Statement::Assert(assertion) =>   {
+                        
+                        pc = sym_memory.add_assert(assertion.clone(), &pc);
+                        if config.simplify {pc = sym_memory.simplify_pc(&pc)};
 
-                         diagnostics.z3_invocations = diagnostics.z3_invocations + 1;
-
-                        let assertion = sym_memory.expr_to_assertion(expr.clone());
-                        pc.push(assertion);
-                         match z3::verify_constraints(&pc, &sym_memory) {
-                             Err(why) => return Err(why),
-                             Ok(_) => (),
-                        }
-                    },
+                        match pc.get_constraints() {
+                                Expression::Literal(Literal::Boolean(false)) => return Err(Error::Verification(format!("Path constraints:\n{:?}\nEvaluated to false", pc.get_constraints()))),
+                                Expression::Literal(Literal::Boolean(true)) => (),
+                                _ => {
+                                    diagnostics.z3_invocations = diagnostics.z3_invocations + 1;
+                                    z3::verify_constraints(&pc, &sym_memory)?;
+                                }
+                                }
+                            },
                     Statement::Assignment((lhs, rhs)) => {
-                        // get lhs type
-                        // parse expression variable
-                        // assign to id in stack
                         lhs_from_rhs(&mut sym_memory, lhs, rhs);
                     }
                     Statement::Return(expr) => {
@@ -228,7 +224,7 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                     _ => (),
                 }
             }
-            Node::End => diagnostics.paths = diagnostics.paths + 1,
+            Node::End => diagnostics.paths_explored = diagnostics.paths_explored + 1,
             _ => (),
         }
 
@@ -376,20 +372,18 @@ fn verify_program(prog_string: &str, d: Depth) -> Result<Diagnostics, Error> {
                         for specification in specifications {
                             match (specification, from_main_scope) {
                                 // if require is called outside main scope we assert
-                                (Specification::Requires(expr), false) => {
+                                (Specification::Requires(assertion), false) => {
                                     diagnostics.z3_invocations = diagnostics.z3_invocations + 1;
-                                    let assertion = sym_memory.expr_to_assertion(expr.clone());
-                                    pc.push(assertion);
+                                    let pc = sym_memory.add_assert(assertion.clone(), &pc);
                                     z3::verify_constraints(&pc, &sym_memory)?;
                                 }
                                 // otherwise process we assume
                                 (spec, _) => {
-                                    let expr = match spec {
+                                    let assumption = match spec {
                                         Specification::Requires(expr) => expr,
                                         Specification::Ensures(expr) => expr,
                                     };
-                                    let assumption = sym_memory.expr_to_assumption(expr.clone());
-                                    pc.push(assumption);
+                                    let pc = sym_memory.add_assume(assumption.clone(), &pc);
                                 }
                             };
                         }

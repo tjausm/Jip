@@ -69,7 +69,8 @@ pub fn parse_rhs<'a, 'b>(
     }
 }
 
-/// assigns value from rhs to lhs
+
+// gets type of lhs, parses expression on rhs and assign value of rhs to lhs on stack / heap
 pub fn lhs_from_rhs<'a>(
     sym_memory: &mut SymMemory<'a>,
     lhs: &'a Lhs,

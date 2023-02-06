@@ -9,7 +9,7 @@ use z3::{ast, Config, Context, SatResult, Solver};
 
 use crate::ast::*;
 use crate::shared::{panic_with_diagnostics, Error};
-use crate::sym_model::{PathConstraint, SymExpression, SymMemory};
+use crate::sym_model::{PathConstraints, SymExpression, SymMemory};
 
 //--------------//
 // z3 bindings //
@@ -18,31 +18,17 @@ use crate::sym_model::{PathConstraint, SymExpression, SymMemory};
 /// Combine the constraints in reversed order and check correctness using z3
 /// `solve_constraints(ctx, vec![assume x, assert y, assume z] = x -> (y && z)`
 pub fn verify_constraints<'a>(
-    path_constraints: &Vec<PathConstraint>,
+    path_constraints: &PathConstraints,
     sym_memory: &SymMemory<'a>,
 ) -> Result<(), Error> {
 
     //initialise fresh context
     let z3_cfg = Config::new();
     let ctx = Context::new(&z3_cfg);
+    let constraint_expr = path_constraints.get_constraints();
+    let mut constraints = expr_to_bool(&ctx, sym_memory, &constraint_expr);
 
-    let mut constraints = Bool::from_bool(&ctx, true);
-
-    //reverse loop and combine constraints
-    for constraint in path_constraints.iter().rev() {
-        match constraint {
-            PathConstraint::Assert(assertion) => {
-                let assertion_ast = expr_to_bool(&ctx, sym_memory, assertion);
-                constraints = Bool::and(&ctx, &[&assertion_ast, &constraints])
-            }
-            PathConstraint::Assume(assumption) => {
-                let assumption_ast = expr_to_bool(&ctx, sym_memory, assumption);
-                constraints = Bool::implies(&assumption_ast, &constraints)
-            }
-        }
-    }
-
-    //println!("{}", constraints.not());
+    println!("{:?}", Expression::Not(Box::new(path_constraints.get_constraints().clone())));
 
     let solver = Solver::new(&ctx);
     solver.assert(&constraints.not());
@@ -106,6 +92,12 @@ fn expr_to_dynamic<'ctx, 'a>(
             let r = unwrap_as_bool(expr_to_dynamic(ctx, sym_memory, r_expr));
 
             return Dynamic::from(Bool::or(ctx, &[&l, &r]));
+        }
+        Expression::Implies(l_expr, r_expr) => {
+            let l = unwrap_as_bool(expr_to_dynamic(ctx, Rc::clone(&sym_memory), l_expr));
+            let r = unwrap_as_bool(expr_to_dynamic(ctx, sym_memory, r_expr));
+
+            return Dynamic::from(l.implies(&r));
         }
         Expression::EQ(l_expr, r_expr) => {
             let l = expr_to_dynamic(ctx, Rc::clone(&sym_memory), l_expr);

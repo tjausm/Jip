@@ -1,8 +1,8 @@
 //! Share types and functions between modules
 //!
 //!
-use std::panic;
 use std::fmt::Debug;
+use std::panic;
 use std::process::exit;
 use uuid::Uuid;
 
@@ -25,9 +25,29 @@ pub struct Scope {
     pub id: Option<Uuid>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct Config {
+    pub simplify: bool,
+}
+
+#[derive(Clone)]
+pub struct Diagnostics {
+    pub paths_explored: i32,
+    pub z3_invocations: i32,
+}
+
+impl Default for Diagnostics {
+    fn default() -> Self {
+        return Diagnostics {
+            paths_explored: 0,
+            z3_invocations: 0,
+        };
+    }
+}
+
 /// Panics with passed message and passed datastructure (intended for SymMemory)
 #[track_caller]
-pub fn panic_with_diagnostics<D : Debug>(msg: &str, sym_memory: &D) -> ! {
+pub fn panic_with_diagnostics<D: Debug>(msg: &str, sym_memory: &D) -> ! {
     //get location of panic call
     let panic_loc = panic::Location::caller();
 
@@ -48,4 +68,3 @@ With error:
 
     exit(ExitCode::Error as i32);
 }
-
