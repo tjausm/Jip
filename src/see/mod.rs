@@ -109,7 +109,7 @@ fn verify_program(prog_string: &str, d: Depth, config: Config) -> Result<Diagnos
 
     //init our bfs through the cfg
     let mut q: VecDeque<(SymMemory, PathConstraints, Depth, NodeIndex)> = VecDeque::new();
-    q.push_back((SymMemory::new(prog.clone(), config.simplify), PathConstraints::default(), d, start_node));
+    q.push_back((SymMemory::new(prog.clone()), PathConstraints::default(), d, start_node));
 
     // Assert -> build & verify z3 formula, return error if disproven
     // Assume -> build & verify z3 formula, stop evaluating pad if disproven

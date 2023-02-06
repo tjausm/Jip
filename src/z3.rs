@@ -25,22 +25,11 @@ pub fn verify_constraints<'a>(
     let z3_cfg = Config::new();
     let ctx = Context::new(&z3_cfg);
 
-    // combine constraints over true
-    let lit_true = Box::new(Expression::Literal(Literal::Boolean(true)));
-    let constraint_expr = match path_constraints.get_constraints() {
-        Expression::Implies(l_expr, r_expr) => {
-            Expression::Implies(l_expr, Box::new(Expression::And(r_expr, lit_true)))
-        }
-        Expression::And(l_expr, r_expr) => {
-            Expression::And(l_expr, Box::new(Expression::And(r_expr, lit_true)))
-        }
-        otherwise => otherwise,
-    };
-
     //transform too z3 boolean
+    let constraint_expr = path_constraints.get_constraints();
     let constraints = expr_to_bool(&ctx, sym_memory, &constraint_expr);
 
-    println!("{}", constraints.not());
+    //println!("{}", constraints.not());
 
     let solver = Solver::new(&ctx);
     solver.assert(&constraints.not());

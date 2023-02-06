@@ -101,7 +101,7 @@ pub struct SymMemory<'ctx> {
 }
 
 impl<'ctx> SymMemory<'ctx> {
-    pub fn new(program: Program, simplify: bool) -> Self {
+    pub fn new(program: Program) -> Self {
         SymMemory {
             program,
             stack: vec![Frame {
