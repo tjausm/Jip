@@ -14,11 +14,11 @@ use crate::shared::{panic_with_diagnostics, Error, Scope};
 
 #[derive(Clone)]
 pub struct PathConstraints {
-    constraints: Constraint,
+    constraints: Vec<PathConstraint>,
 }
 
 #[derive(Clone)]
-enum Constraint {
+enum PathConstraint {
     Assert(Expression),
     Assume(Expression),
 }
@@ -26,17 +26,28 @@ enum Constraint {
 impl Default for PathConstraints {
     fn default() -> Self {
         PathConstraints {
-            constraints: Constraint::Assert(Expression::Literal(Literal::Boolean(true))),
+            constraints: vec![],
         }
     }
 }
 
 impl PathConstraints {
-    pub fn get_constraints<'a>(&'a self) -> &'a Expression {
-        match &self.constraints {
-            Constraint::Assert(expr) => expr,
-            Constraint::Assume(expr) => expr,
+    pub fn get_constraints<'a>(&'a self) -> Expression {
+        let mut constraints = Expression::Literal(Literal::Boolean(true));
+
+        for constraint in self.constraints.iter().rev() {
+            match constraint {
+                PathConstraint::Assert(assertion) => {
+                    constraints =
+                        Expression::And(Box::new(assertion.clone()), Box::new(constraints));
+                }
+                PathConstraint::Assume(assumption) => {
+                    constraints =
+                        Expression::Implies(Box::new(assumption.clone()), Box::new(constraints));
+                }
+            }
         }
+        return constraints;
     }
 }
 
@@ -121,31 +132,16 @@ impl<'a> SymMemory<'a> {
     }
 
     /// generates a new PathConstraint from the subtituted assumption and the current constraints
-    pub fn add_assert(&self, assertion: Expression, pc: &PathConstraints) -> PathConstraints {
+    pub fn add_assert(&self, assertion: Expression, pc: &mut PathConstraints) {
         let subt_assertion = self.substitute_expr(assertion);
-        let updated_pc = match &pc.constraints {
-            Constraint::Assert(expr) => Expression::And(Box::new(expr.clone()), Box::new(subt_assertion)),
-            Constraint::Assume(expr) => {
-                Expression::Implies(Box::new(expr.clone()), Box::new(subt_assertion))
-            }
-        };
-        PathConstraints {
-            constraints: Constraint::Assert(updated_pc),
-        }
+
+        pc.constraints.push(PathConstraint::Assert(subt_assertion));
     }
 
     /// generates a new PathConstraint from the subtituted assumption and the current constraints
-    pub fn add_assume(&self, assumption: Expression, pc: &PathConstraints) -> PathConstraints {
+    pub fn add_assume(&self, assumption: Expression, pc: &mut PathConstraints) {
         let subt_assertion = self.substitute_expr(assumption);
-        let updated_pc = match &pc.constraints {
-            Constraint::Assert(expr) => Expression::And(Box::new(expr.clone()), Box::new(subt_assertion)),
-            Constraint::Assume(expr) => {
-                Expression::Implies(Box::new(expr.clone()), Box::new(subt_assertion))
-            }
-        };
-        PathConstraints {
-            constraints: Constraint::Assume(updated_pc),
-        }
+        pc.constraints.push(PathConstraint::Assume(subt_assertion));
     }
 
     /// Insert mapping `Identifier |-> SymbolicExpression` in top most frame of stack
@@ -432,15 +428,45 @@ impl<'a> SymMemory<'a> {
         }
     }
 
+    /// todo change vec in place
+    /// a -> b
     pub fn simplify_pc(&self, pc: &PathConstraints) -> PathConstraints {
-        match &pc.constraints {
-            Constraint::Assert(expr) => PathConstraints {
-                constraints: Constraint::Assert(self.simplify_expr(expr.clone())),
-            },
-            Constraint::Assume(expr) => PathConstraints {
-                constraints: Constraint::Assume(self.simplify_expr(expr.clone())),
-            },
-        }
+        // simplify all constraints
+        let simplify_constraint = |constraint : &PathConstraint| match &constraint {
+            PathConstraint::Assert(expr) => {
+                PathConstraint::Assert(self.simplify_expr(expr.clone()))
+            }
+            PathConstraint::Assume(expr) => {
+                PathConstraint::Assume(self.simplify_expr(expr.clone()))
+            }
+        };
+        let mut simplified_constraints = pc.constraints
+            .iter()
+            .map(simplify_constraint)
+            .collect::<Vec<_>>();
+
+        // throw redundant constrains out
+        let mut delete_remaining = false;
+        simplified_constraints.retain(|constraint| {
+            if delete_remaining {
+                return false;
+            };
+            match constraint {
+                PathConstraint::Assert(expr) => match expr {
+                    Expression::Literal(Literal::Boolean(true)) => false, // if assertion is true we throw it away
+                    otherwise => true,
+                },
+                PathConstraint::Assume(expr) => match expr {
+                    Expression::Literal(Literal::Boolean(false)) => {
+                        delete_remaining = true;
+                        true
+                    }
+                    otherwise => true,
+                },
+            }
+        });
+
+        PathConstraints{ constraints: simplified_constraints}
     }
 
     /// front end simplifier

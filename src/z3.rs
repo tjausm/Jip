@@ -1,8 +1,8 @@
 //! Transforms a program path to a logical formula and test satisfiability using theorem prover Z3
 //!
 
-use std::fmt;
 use std::rc::Rc;
+use std::{fmt, path};
 use uuid::Uuid;
 use z3::ast::{Ast, Bool, Dynamic, Int};
 use z3::{ast, Config, Context, SatResult, Solver};
@@ -21,14 +21,26 @@ pub fn verify_constraints<'a>(
     path_constraints: &PathConstraints,
     sym_memory: &SymMemory<'a>,
 ) -> Result<(), Error> {
-
     //initialise fresh context
     let z3_cfg = Config::new();
     let ctx = Context::new(&z3_cfg);
-    let constraint_expr = path_constraints.get_constraints();
-    let mut constraints = expr_to_bool(&ctx, sym_memory, &constraint_expr);
 
-    println!("{:?}", Expression::Not(Box::new(path_constraints.get_constraints().clone())));
+    // combine constraints over true
+    let lit_true = Box::new(Expression::Literal(Literal::Boolean(true)));
+    let constraint_expr = match path_constraints.get_constraints() {
+        Expression::Implies(l_expr, r_expr) => {
+            Expression::Implies(l_expr, Box::new(Expression::And(r_expr, lit_true)))
+        }
+        Expression::And(l_expr, r_expr) => {
+            Expression::And(l_expr, Box::new(Expression::And(r_expr, lit_true)))
+        }
+        otherwise => otherwise,
+    };
+
+    //transform too z3 boolean
+    let constraints = expr_to_bool(&ctx, sym_memory, &constraint_expr);
+
+    println!("{}", constraints.not());
 
     let solver = Solver::new(&ctx);
     solver.assert(&constraints.not());

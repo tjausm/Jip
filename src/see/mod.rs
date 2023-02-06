@@ -160,7 +160,7 @@ fn verify_program(prog_string: &str, d: Depth, config: Config) -> Result<Diagnos
                     },
                     Statement::Assume(assumption) => {
                         
-                        pc = sym_memory.add_assume(assumption.clone(), &pc);
+                        sym_memory.add_assume(assumption.clone(), &mut pc);
                         if config.simplify {pc = sym_memory.simplify_pc(&pc)};
 
                         match pc.get_constraints() {
@@ -171,7 +171,7 @@ fn verify_program(prog_string: &str, d: Depth, config: Config) -> Result<Diagnos
                     // return err if is invalid else continue
                     Statement::Assert(assertion) =>   {
                         
-                        pc = sym_memory.add_assert(assertion.clone(), &pc);
+                        sym_memory.add_assert(assertion.clone(), &mut pc);
                         if config.simplify {pc = sym_memory.simplify_pc(&pc)};
 
                         match pc.get_constraints() {
@@ -374,7 +374,7 @@ fn verify_program(prog_string: &str, d: Depth, config: Config) -> Result<Diagnos
                                 // if require is called outside main scope we assert
                                 (Specification::Requires(assertion), false) => {
                                     diagnostics.z3_invocations = diagnostics.z3_invocations + 1;
-                                    let pc = sym_memory.add_assert(assertion.clone(), &pc);
+                                    sym_memory.add_assert(assertion.clone(), &mut pc);
                                     z3::verify_constraints(&pc, &sym_memory)?;
                                 }
                                 // otherwise process we assume
@@ -383,7 +383,7 @@ fn verify_program(prog_string: &str, d: Depth, config: Config) -> Result<Diagnos
                                         Specification::Requires(expr) => expr,
                                         Specification::Ensures(expr) => expr,
                                     };
-                                    let pc = sym_memory.add_assume(assumption.clone(), &pc);
+                                    let pc = sym_memory.add_assume(assumption.clone(), &mut pc);
                                 }
                             };
                         }
