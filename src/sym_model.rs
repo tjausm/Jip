@@ -428,46 +428,7 @@ impl<'a> SymMemory<'a> {
         }
     }
 
-    /// todo change vec in place
-    /// a -> b
-    pub fn simplify_pc(&self, pc: &PathConstraints) -> PathConstraints {
-        // simplify all constraints
-        let simplify_constraint = |constraint : &PathConstraint| match &constraint {
-            PathConstraint::Assert(expr) => {
-                PathConstraint::Assert(self.simplify_expr(expr.clone()))
-            }
-            PathConstraint::Assume(expr) => {
-                PathConstraint::Assume(self.simplify_expr(expr.clone()))
-            }
-        };
-        let mut simplified_constraints = pc.constraints
-            .iter()
-            .map(simplify_constraint)
-            .collect::<Vec<_>>();
-
-        // throw redundant constrains out
-        let mut delete_remaining = false;
-        simplified_constraints.retain(|constraint| {
-            if delete_remaining {
-                return false;
-            };
-            match constraint {
-                PathConstraint::Assert(expr) => match expr {
-                    Expression::Literal(Literal::Boolean(true)) => false, // if assertion is true we throw it away
-                    otherwise => true,
-                },
-                PathConstraint::Assume(expr) => match expr {
-                    Expression::Literal(Literal::Boolean(false)) => {
-                        delete_remaining = true;
-                        true
-                    }
-                    otherwise => true,
-                },
-            }
-        });
-
-        PathConstraints{ constraints: simplified_constraints}
-    }
+    
 
     /// front end simplifier
     pub fn simplify_expr(&self, expr: Expression) -> Expression {

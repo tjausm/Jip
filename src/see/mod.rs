@@ -161,9 +161,10 @@ fn verify_program(prog_string: &str, d: Depth, config: Config) -> Result<Diagnos
                     Statement::Assume(assumption) => {
                         
                         sym_memory.add_assume(assumption.clone(), &mut pc);
-                        if config.simplify {pc = sym_memory.simplify_pc(&pc)};
+                        let mut constraints = pc.get_constraints();
+                        if config.simplify {constraints = sym_memory.simplify_expr(constraints)};
 
-                        match pc.get_constraints() {
+                        match constraints {
                                 Expression::Literal(Literal::Boolean(false)) => continue,
                                 _ => ()
                             }
@@ -172,9 +173,10 @@ fn verify_program(prog_string: &str, d: Depth, config: Config) -> Result<Diagnos
                     Statement::Assert(assertion) =>   {
                         
                         sym_memory.add_assert(assertion.clone(), &mut pc);
-                        if config.simplify {pc = sym_memory.simplify_pc(&pc)};
+                        let mut constraints = pc.get_constraints();
+                        if config.simplify {constraints = sym_memory.simplify_expr(constraints)};
 
-                        match pc.get_constraints() {
+                        match constraints {
                                 Expression::Literal(Literal::Boolean(false)) => return Err(Error::Verification(format!("Path constraints:\n{:?}\nEvaluated to false", pc.get_constraints()))),
                                 Expression::Literal(Literal::Boolean(true)) => (),
                                 _ => {
