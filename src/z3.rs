@@ -26,8 +26,8 @@ pub fn verify_constraints<'a>(
     let ctx = Context::new(&z3_cfg);
 
     //transform too z3 boolean
-    let constraint_expr = path_constraints.get_constraints();
-    let constraints = expr_to_bool(&ctx, sym_memory, &constraint_expr);
+    let constraint_expr = path_constraints.combine();
+    let constraints = expr_to_bool(&ctx, sym_memory, &constraint_expr.0);
 
     //println!("{}", constraints.not());
 

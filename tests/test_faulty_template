@@ -6,6 +6,7 @@ fn {name}() {{
         .arg("file")
         .arg(r#"{path}"#)
         .arg("verify")
+        .arg("-s")
         .assert();
     assert
         .code(1);

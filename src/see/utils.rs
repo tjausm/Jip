@@ -2,7 +2,7 @@ use crate::ast::*;
 use crate::shared::Error;
 use crate::z3;
 use crate::shared::{panic_with_diagnostics, Diagnostics};
-use crate::sym_model::{SymExpression, SymMemory, SymValue, PathConstraints};
+use crate::sym_model::{SymExpression, SymMemory, SymValue, PathConstraints, Substituted, PathConstraint};
 
 pub fn type_lhs<'ctx>(sym_memory: &mut SymMemory<'ctx>, lhs: &'ctx Lhs) -> Type {
     match lhs {
@@ -31,9 +31,9 @@ pub fn parse_rhs<'a, 'b>(sym_memory: &mut SymMemory<'a>, ty: &Type, rhs: &'a Rhs
         }
 
         Rhs::Expression(expr) => match ty {
-            Type::Int => SymExpression::Int(SymValue::Expr(expr.clone())),
+            Type::Int => SymExpression::Int(SymValue::Expr(sym_memory.substitute_expr(expr.clone()))),
 
-            Type::Bool => SymExpression::Bool(SymValue::Expr(expr.clone())),
+            Type::Bool => SymExpression::Bool(SymValue::Expr(sym_memory.substitute_expr(expr.clone()))),
             Type::Classtype(class) => match expr {
                 Expression::Identifier(id) => match sym_memory.stack_get(id) {
                     Some(SymExpression::Ref((ty, r))) => SymExpression::Ref((ty, r)),
@@ -88,10 +88,10 @@ pub fn params_to_vars<'ctx>(
     loop {
         match (params_iter.next(), args_iter.next()) {
             (Some((Type::Int, arg_id)), Some(expr)) => {
-                variables.push((arg_id, SymExpression::Int(SymValue::Expr(expr.clone()))));
+                variables.push((arg_id, SymExpression::Int(SymValue::Expr(sym_memory.substitute_expr(expr.clone())))));
             }
             (Some((Type::Bool, arg_id)), Some(expr)) => {
-                variables.push((arg_id, SymExpression::Bool(SymValue::Expr(expr.clone()))));
+                variables.push((arg_id, SymExpression::Bool(SymValue::Expr(sym_memory.substitute_expr(expr.clone())))));
             }
             (Some((Type::Classtype(class), arg_id)), Some(expr)) => {
                 let err = |class, arg_id, expr| {
@@ -140,51 +140,49 @@ pub fn params_to_vars<'ctx>(
 /// handles the assertion in the SEE (used in `assert` and `require` statements)
 pub fn assert(simplify: bool, sym_memory: &mut SymMemory, assertion: &Expression, pc: &mut PathConstraints, diagnostics: &mut Diagnostics) -> Result<(), Error>{
 
+    let subt_assertion = sym_memory.substitute_expr(assertion.clone());
+
     // add (simplified) assertion
     if simplify {
-        let simple_assertion = sym_memory.simplify_expr(assertion.clone());
+        let simple_assertion = sym_memory.simplify_expr(subt_assertion);
         //let simple_assertion = assertion;
         match simple_assertion {
-            Expression::Literal(Literal::Boolean(true)) => (),
-            _ => sym_memory.add_assert(simple_assertion.clone(), pc),
-            _ => {
-                //sym_memory.add_assert(simple_assertion.clone(), pc);
-                sym_memory.add_assert(simple_assertion, pc);
-                diagnostics.z3_invocations = diagnostics.z3_invocations + 1;
-                z3::verify_constraints(&pc, &sym_memory)?;
-            }
+            Substituted(Expression::Literal(Literal::Boolean(true))) => (),
+            _ => pc.push_assertion(simple_assertion),
             }
         }
     else{
-        sym_memory.add_assert(assertion.clone(), pc);
+        pc.push_assertion(subt_assertion);
     };
 
     // calculate (simplified) constraints
-    let mut constraints = pc.get_constraints();
+    let mut constraints = pc.combine();
     if simplify {constraints = sym_memory.simplify_expr(constraints)};
     match constraints {
-        Expression::Literal(Literal::Boolean(true)) => return Ok(()),
+        Substituted(Expression::Literal(Literal::Boolean(true))) => return Ok(()),
         _ => (),
     }
 
-    // if we have not solved them, invoke z3
+    // if we have not solved by now, invoke z3
     diagnostics.z3_invocations = diagnostics.z3_invocations + 1;
     z3::verify_constraints(&pc, &sym_memory)
 }
 /// handles the assume in the SEE (used in `assume`, `require` and `ensure` statements)
 /// returns false if assumption is infeasible and can be dropped
 pub fn assume(simplify: bool, sym_memory: &mut SymMemory, assumption: &Expression, pc: &mut PathConstraints) -> bool{
+    let subt_assumption = sym_memory.substitute_expr(assumption.clone());
+
     if simplify {
-        let simple_assumption = sym_memory.simplify_expr(assumption.clone());
+        let simple_assumption = sym_memory.simplify_expr(subt_assumption);
         match simple_assumption{
-            Expression::Literal(Literal::Boolean(false)) => return false,
-            Expression::Literal(Literal::Boolean(true)) => (),
+            Substituted(Expression::Literal(Literal::Boolean(false))) => return false,
+            Substituted(Expression::Literal(Literal::Boolean(true))) => (),
             //_ => sym_memory.add_assume(simple_assumption.clone(), pc),
-            _ => sym_memory.add_assume(simple_assumption, pc),
+            _ => pc.push_assumption(simple_assumption),
 
         };
     } else {
-        sym_memory.add_assume(assumption.clone(), pc);
+        pc.push_assumption(subt_assumption);
     };
     return true
 }
