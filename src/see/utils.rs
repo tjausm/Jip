@@ -139,38 +139,14 @@ pub fn params_to_vars<'ctx>(
 
 /// handles the assertion in the SEE (used in `assert` and `require` statements)
 pub fn assert(simplify: bool, sym_memory: &mut SymMemory, assertion: &Expression, pc: &mut PathConstraints, diagnostics: &mut Diagnostics) -> Result<(), Error>{
-    println!("{:?}", pc.get_constraints());
+
+    // add (simplified) assertion
     if simplify {
         let simple_assertion = sym_memory.simplify_expr(assertion.clone());
         //let simple_assertion = assertion;
         match simple_assertion {
-            Expression::Literal(Literal::Boolean(false)) => {
-                sym_memory.add_assert(simple_assertion.clone(), pc);
-                match z3::verify_constraints(&pc, &sym_memory) {
-                    Ok(_) => 
-                        panic_with_diagnostics(
-                            &format!(
-"Oh no, the front end simplifier simplified the following to false:
-
-Pathconstraints:
-{:?}
-
-Simplified Pathconstraints
-{:?}
-
-Expression:
-{:?}
-
-But z3 was not able to find a counterexample",
-                                    pc.get_constraints(),
-                                    sym_memory.simplify_expr(pc.get_constraints()),
-                                    assertion
-                                ), 
-                            &sym_memory),
-                    Err(err) => return Err(err),
-                }
-            },
             Expression::Literal(Literal::Boolean(true)) => (),
+            _ => sym_memory.add_assert(simple_assertion.clone(), pc),
             _ => {
                 //sym_memory.add_assert(simple_assertion.clone(), pc);
                 sym_memory.add_assert(simple_assertion, pc);
@@ -181,15 +157,23 @@ But z3 was not able to find a counterexample",
         }
     else{
         sym_memory.add_assert(assertion.clone(), pc);
-        diagnostics.z3_invocations = diagnostics.z3_invocations + 1;
-        z3::verify_constraints(&pc, &sym_memory)?;
     };
-    Ok(())
+
+    // calculate (simplified) constraints
+    let mut constraints = pc.get_constraints();
+    if simplify {constraints = sym_memory.simplify_expr(constraints)};
+    match constraints {
+        Expression::Literal(Literal::Boolean(true)) => return Ok(()),
+        _ => (),
+    }
+
+    // if we have not solved them, invoke z3
+    diagnostics.z3_invocations = diagnostics.z3_invocations + 1;
+    z3::verify_constraints(&pc, &sym_memory)
 }
 /// handles the assume in the SEE (used in `assume`, `require` and `ensure` statements)
 /// returns false if assumption is infeasible and can be dropped
 pub fn assume(simplify: bool, sym_memory: &mut SymMemory, assumption: &Expression, pc: &mut PathConstraints) -> bool{
-    println!("{:?}", pc.get_constraints());
     if simplify {
         let simple_assumption = sym_memory.simplify_expr(assumption.clone());
         match simple_assumption{
