@@ -356,18 +356,14 @@ fn verify_program(prog_string: &str, d: Depth, config: Config) -> Result<Diagnos
                         for specification in specifications {
                             match (specification, from_main_scope) {
                                 // if require is called outside main scope we assert
-                                (Specification::Requires(assertion), false) => {
-                                    diagnostics.z3_invocations = diagnostics.z3_invocations + 1;
-                                    sym_memory.add_assert(assertion.clone(), &mut pc);
-                                    z3::verify_constraints(&pc, &sym_memory)?;
-                                }
+                                (Specification::Requires(assertion), false) => assert(config.simplify, &mut sym_memory, assertion, &mut pc, &mut diagnostics)?,
                                 // otherwise process we assume
                                 (spec, _) => {
                                     let assumption = match spec {
                                         Specification::Requires(expr) => expr,
                                         Specification::Ensures(expr) => expr,
                                     };
-                                    let pc = sym_memory.add_assume(assumption.clone(), &mut pc);
+                                    if !assume(config.simplify, &mut sym_memory, assumption, &mut pc) {continue};
                                 }
                             };
                         }
