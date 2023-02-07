@@ -29,6 +29,7 @@ features = [
 ]
 
 [profile.release]
+debug=true # only turn on for profiling
 lto = true
 codegen-units = 1 # this is a heuristic
 panic = "abort" # not tested since performance increase is small
