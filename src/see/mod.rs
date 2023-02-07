@@ -29,7 +29,13 @@ use std::time::Instant;
 
 const PROG_CORRECT: &'static str = "Program is correct";
 
-pub fn bench(program: &str, start: Depth, end: Option<Depth>, step: i32, config: Config) -> (ExitCode, String) {
+pub fn bench(
+    program: &str,
+    start: Depth,
+    end: Option<Depth>,
+    step: i32,
+    config: Config,
+) -> (ExitCode, String) {
     let end = end.unwrap_or(start) + 1;
     let depths = (start..end).step_by(step.try_into().unwrap());
     println!("d        time");
@@ -76,7 +82,12 @@ pub fn print_cfg(program: &str) -> (ExitCode, String) {
     (ExitCode::Valid, generate_dot_cfg(program))
 }
 
-pub fn print_verification(program: &str, d: Depth, config: Config, verbose: bool) -> (ExitCode, String) {
+pub fn print_verification(
+    program: &str,
+    d: Depth,
+    config: Config,
+    verbose: bool,
+) -> (ExitCode, String) {
     let print_diagnostics = |d: Result<Diagnostics, _>| match d {
         Ok(Diagnostics {
             paths_explored: paths,
@@ -89,7 +100,6 @@ pub fn print_verification(program: &str, d: Depth, config: Config, verbose: bool
     };
     let result = verify_program(program, d, config);
     let (ec, r) = print_result(result.clone());
-
     if verbose {
         return (ec, format!("{}{}", r, print_diagnostics(result)));
     }
@@ -109,7 +119,12 @@ fn verify_program(prog_string: &str, d: Depth, config: Config) -> Result<Diagnos
 
     //init our bfs through the cfg
     let mut q: VecDeque<(SymMemory, PathConstraints, Depth, NodeIndex)> = VecDeque::new();
-    q.push_back((SymMemory::new(prog.clone()), PathConstraints::default(), d, start_node));
+    q.push_back((
+        SymMemory::new(prog.clone()),
+        PathConstraints::default(),
+        d,
+        start_node,
+    ));
 
     // Assert -> build & verify z3 formula, return error if disproven
     // Assume -> build & verify z3 formula, stop evaluating pad if disproven
@@ -143,7 +158,7 @@ fn verify_program(prog_string: &str, d: Depth, config: Config) -> Result<Diagnos
                 }
             }
 
-            Node::Statement(stmt) => {
+                Node::Statement(stmt) => {
                 match stmt {
                     Statement::Declaration((ty, id)) => match ty {
                         Type::Int => {
@@ -158,33 +173,8 @@ fn verify_program(prog_string: &str, d: Depth, config: Config) -> Result<Diagnos
                         },
                         Type::Void => panic!("Panic should never trigger, parser doesn't accept void type in declaration"),
                     },
-                    Statement::Assume(assumption) => {
-                        
-                        sym_memory.add_assume(assumption.clone(), &mut pc);
-                        let mut constraints = pc.get_constraints();
-                        if config.simplify {constraints = sym_memory.simplify_expr(constraints)};
-
-                        match constraints {
-                                Expression::Literal(Literal::Boolean(false)) => continue,
-                                _ => ()
-                            }
-                        },
-                    // return err if is invalid else continue
-                    Statement::Assert(assertion) =>   {
-                        
-                        sym_memory.add_assert(assertion.clone(), &mut pc);
-                        let mut constraints = pc.get_constraints();
-                        if config.simplify {constraints = sym_memory.simplify_expr(constraints)};
-
-                        match constraints {
-                                Expression::Literal(Literal::Boolean(false)) => return Err(Error::Verification(format!("Path constraints:\n{:?}\nEvaluated to false", pc.get_constraints()))),
-                                Expression::Literal(Literal::Boolean(true)) => (),
-                                _ => {
-                                    diagnostics.z3_invocations = diagnostics.z3_invocations + 1;
-                                    z3::verify_constraints(&pc, &sym_memory)?;
-                                }
-                                }
-                            },
+                    Statement::Assume(assumption) => if !assume(config.simplify, &mut sym_memory, assumption, &mut pc) {continue},
+                    Statement::Assert(assertion) =>   assert(config.simplify, &mut sym_memory, assertion, &mut pc, &mut diagnostics)?,
                     Statement::Assignment((lhs, rhs)) => {
                         lhs_from_rhs(&mut sym_memory, lhs, rhs);
                     }
@@ -206,20 +196,12 @@ fn verify_program(prog_string: &str, d: Depth, config: Config) -> Result<Diagnos
                                 }
                             },
                             Some(SymExpression::Bool(_)) => {
-                                
-                                sym_memory.stack_insert(
-                                    retval_id,
-                                    SymExpression::Int(SymValue::Expr(expr.clone())),
-                                );
-                            
-                            },
-                            Some(SymExpression::Int(_)) => {
-                                
                                 sym_memory.stack_insert(
                                     retval_id,
                                     SymExpression::Int(SymValue::Expr(expr.clone())),
                                 );
                             },
+                            Some(SymExpression::Int(_)) => {sym_memory.stack_insert(retval_id,SymExpression::Int(SymValue::Expr(expr.clone())),);},
                             None => panic_with_diagnostics(&format!("retval is undeclared in expression 'return {:?}'", expr), &sym_memory),  
                         }
                     }
@@ -258,7 +240,7 @@ fn verify_program(prog_string: &str, d: Depth, config: Config) -> Result<Diagnos
                     }
                     Action::AssignArgs { params, args } => {
                         let variables = params_to_vars(&mut sym_memory, &params, &args);
-                        
+
                         for (id, var) in variables {
                             sym_memory.stack_insert(id, var);
                         }
