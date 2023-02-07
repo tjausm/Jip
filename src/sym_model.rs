@@ -428,8 +428,6 @@ impl<'a> SymMemory<'a> {
         }
     }
 
-    
-
     /// front end simplifier
     pub fn simplify_expr(&self, expr: Expression) -> Expression {
         match expr {
@@ -587,7 +585,7 @@ impl<'a> SymMemory<'a> {
                 Expression::Literal(Literal::Boolean(b)) => {
                     Expression::Literal(Literal::Boolean(!b))
                 }
-                simple_expr => simple_expr,
+                simple_expr => Expression::Not(Box::new(simple_expr)),
             },
             Expression::Literal(_) => expr,
             Expression::Identifier(id) => match self.stack_get(&id) {
