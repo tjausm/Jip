@@ -6,8 +6,18 @@ fn {name}() {{
         .arg("file")
         .arg(r#"{path}"#)
         .arg("verify")
-        .arg("-s")
         .assert();
     assert
+        .code(0);
+
+    // repeat test with simplifier
+    let mut cmd_simple = Command::cargo_bin("jip").unwrap();
+    let assert_simple = cmd_simple
+        .arg("file")
+        .arg(r#"{path}"#)
+        .arg("verify")
+        .arg("-s")
+        .assert();
+    assert_simple
         .code(0);
 }}
