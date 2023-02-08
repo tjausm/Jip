@@ -8,6 +8,7 @@ use clap::{ArgEnum, Parser, Subcommand};
 use see::types::Depth;
 use shared::{Config, ExitCode};
 use std::process::exit;
+use std::thread;
 // module declarations
 mod ast;
 mod cfg;
@@ -70,6 +71,7 @@ enum LoadMode {
 }
 
 fn main() {
+
     let cli = Cli::parse();
     let exit = |(exit_code, result): (ExitCode, String)| {
         println!("{}", result);
