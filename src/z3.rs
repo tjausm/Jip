@@ -1,323 +1,33 @@
 //! Transforms a program path to a logical formula and test satisfiability using theorem prover Z3
 //!
 
-extern crate z3;
-
-use rustc_hash::FxHashMap;
-use std::fmt;
 use std::rc::Rc;
+use std::{fmt, path};
 use uuid::Uuid;
 use z3::ast::{Ast, Bool, Dynamic, Int};
-use z3::{ast, Context, SatResult, Solver};
+use z3::{ast, Config, Context, SatResult, Solver};
 
 use crate::ast::*;
-use crate::shared::{panic_with_diagnostics, Error, Scope};
-
-//----------------------//
-// Symbolic expressions //
-//----------------------//
-pub type Reference = Uuid;
-
-#[derive(Debug, Clone)]
-pub enum SymbolicExpression<'a> {
-    Int(Int<'a>),
-    Bool(Bool<'a>),
-    Ref((Type, Reference)),
-}
-
-/// Consists of `identifier` (= classname) and a hashmap describing it's fields
-pub type Object<'a> = (
-    Identifier,
-    FxHashMap<Identifier, (Type, SymbolicExpression<'a>)>,
-);
-
-pub type _Array<'a> = (Type, Vec<SymbolicExpression<'a>>);
-
-#[derive(Debug, Clone)]
-pub enum ReferenceValue<'a> {
-    Object(Object<'a>),
-    //Array(Array<'a>),
-    /// Takes classname as input
-    UninitializedObj(Identifier),
-}
-
-//-----------------//
-// Symbolic memory //
-//-----------------//
-
-#[derive(Debug, Clone)]
-struct Frame<'a> {
-    pub scope: Scope,
-    pub env: FxHashMap<&'a Identifier, SymbolicExpression<'a>>,
-}
-
-type SymStack<'a> = Vec<Frame<'a>>;
-
-type SymHeap<'a> = FxHashMap<Reference, ReferenceValue<'a>>;
-
-#[derive(Clone)]
-pub struct SymMemory<'ctx> {
-    program: Program,
-    ctx: &'ctx Context,
-    stack: SymStack<'ctx>,
-    heap: SymHeap<'ctx>,
-}
-
-impl<'ctx> SymMemory<'ctx> {
-    pub fn new(p: Program, ctx: &'ctx Context) -> Self {
-        SymMemory {
-            program: p,
-            ctx,
-            stack: vec![Frame {
-                scope: Scope { id: None },
-                env: FxHashMap::default(),
-            }],
-            heap: FxHashMap::default(),
-        }
-    }
-}
-
-
-impl<'a> SymMemory<'a> {
-    /// Insert mapping `Identifier |-> SymbolicExpression` in top most frame of stack
-    pub fn stack_insert(&mut self, id: &'a Identifier, var: SymbolicExpression<'a>) -> () {
-        if let Some(s) = self.stack.last_mut() {
-            s.env.insert(id, var);
-        }
-    }
-
-    /// Insert mapping `Identifier |-> SymbolicExpression` in frame below top most frame of stack
-    pub fn stack_insert_below(&mut self, id: &'a Identifier, var: SymbolicExpression<'a>) -> () {
-        let below_index = self.stack.len() - 2;
-        match self.stack.get_mut(below_index) {
-            Some(frame) => {
-                frame.env.insert(id, var);
-            }
-            _ => (),
-        }
-    }
-
-    /// Iterate over frames from stack returning the first variable with given `id`
-    pub fn stack_get(&self, id: &'a Identifier) -> Option<SymbolicExpression<'a>> {
-        if id == "null" {
-            return Some(SymbolicExpression::Ref((Type::Void, Uuid::nil())));
-        };
-
-        for s in self.stack.iter().rev() {
-            match s.env.get(&id) {
-                Some(var) => return Some(var.clone()),
-                None => (),
-            }
-        }
-        return None;
-    }
-
-    // Push new frame with given scope
-    pub fn stack_push(&mut self, scope: Scope) -> () {
-        self.stack.push(Frame {
-            scope: scope.clone(),
-            env: FxHashMap::default(),
-        })
-    }
-    pub fn stack_pop(&mut self) -> () {
-        self.stack.pop();
-    }
-
-    /// Returns scope indexed from the top of the stack `get_scope(0) == top_scope`
-    pub fn get_scope(&self, index: usize) -> &Scope {
-        let position = self.stack.len() - (1 + index);
-        match self.stack.get(position) {
-            Some(frame) => &frame.scope,
-            None => {
-                panic_with_diagnostics(&format!("No scope exists at position {}", position), &self)
-            }
-        }
-    }
-
-    /// Insert mapping `Reference |-> ReferenceValue` into heap
-    pub fn heap_insert(&mut self, r: Reference, v: ReferenceValue<'a>) -> () {
-        self.heap.insert(r, v);
-    }
-
-    /// Get symbolic value of the object's field, panics if something goes wrong
-    pub fn heap_get_field(
-        &mut self,
-        obj_name: &String,
-        field_name: &String,
-    ) -> SymbolicExpression<'a> {
-        match self.stack_get(obj_name) {
-            Some(SymbolicExpression::Ref((_, r))) => {
-                let ref_val = self.heap.get(&r).map(|s| s.clone());
-                match ref_val {
-                    Some(ReferenceValue::Object((_, fields))) => match fields.get(field_name) {
-                        Some((_, expr)) => expr.clone(),
-                        None => panic_with_diagnostics(
-                            &format!("Field {} does not exist on {}", field_name, obj_name),
-                            &self,
-                        ),
-                    },
-
-                    Some(ReferenceValue::UninitializedObj(class_name)) => {
-                        let mut new_fields = FxHashMap::default();
-
-                        // initialize newObj lazily
-                        let members = self.program.get_class(&class_name).1.clone();
-                        for member in members {
-                            if let Member::Field((ty, field_name)) = member {
-                                match ty {
-                                    Type::Int => {
-                                        new_fields.insert(
-                                            field_name.clone(),
-                                            (Type::Int, fresh_int(self.ctx, field_name.clone())),
-                                        );
-                                    }
-                                    Type::Bool => {
-                                        new_fields.insert(
-                                            field_name.clone(),
-                                            (Type::Bool, fresh_bool(self.ctx, field_name.clone())),
-                                        );
-                                    }
-                                    Type::Classtype(n) => {
-                                        // add new unitializedObject to the heap
-                                        let next_r = Uuid::new_v4();
-                                        self.heap_insert(
-                                            next_r,
-                                            ReferenceValue::UninitializedObj(n.clone()),
-                                        );
-
-                                        // insert unitialized object in the object's fields
-                                        new_fields.insert(
-                                            field_name.clone(),
-                                            (
-                                                Type::Classtype(n.clone()),
-                                                SymbolicExpression::Ref((
-                                                    Type::Classtype(n.clone()),
-                                                    next_r,
-                                                )),
-                                            ),
-                                        );
-                                    }
-                                    Type::Void => {
-                                        panic_with_diagnostics("Panic should never trigger", &self)
-                                    }
-                                }
-                            }
-                        }
-
-                        // push new object under original reference to heap and recurse
-                        let new_obj = ReferenceValue::Object((class_name.clone(), new_fields));
-                        self.heap_insert(r, new_obj);
-                        self.heap_get_field(obj_name, field_name)
-                    }
-
-                    _ => panic_with_diagnostics(
-                        &format!("Reference of {} not found on heap", obj_name),
-                        &self,
-                    ),
-                }
-            }
-            _ => panic_with_diagnostics(&format!("{} is not a reference", obj_name), &self),
-        }
-    }
-    /// Update symbolic value of the object's field, panics if something goes wrong
-    pub fn heap_update_field(
-        &mut self,
-        obj_name: &String,
-        field_name: &'a String,
-        var: SymbolicExpression<'a>,
-    ) -> () {
-        match self.stack_get(obj_name) {
-            Some(SymbolicExpression::Ref((_, r))) => match self.heap.get_mut(&r) {
-                Some(ReferenceValue::Object((_, fields))) => {
-                    let ty = match fields.get(field_name) {
-                        Some(field) => field,
-                        None => panic_with_diagnostics(
-                            &format!("Field {} does not exist on {}", field_name, obj_name),
-                            &self,
-                        ),
-                    }
-                    .0
-                    .clone();
-                    fields.insert(field_name.clone(), (ty, var));
-                }
-                _ => panic_with_diagnostics(
-                    &format!(
-                        "Reference of {} not found on heap while doing assignment '{}.{} := {:?}'",
-                        obj_name, obj_name, field_name, var
-                    ),
-                    &self,
-                ),
-            },
-            _ => panic_with_diagnostics(&format!("{} is not a reference", obj_name), &self),
-        }
-    }
-}
-
-impl fmt::Debug for SymMemory<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "
-State of Sym-Stack:
-{:?}
-
-State of Sym-Heap:
-{:?}",
-            self.stack, self.heap
-        )
-    }
-}
+use crate::shared::{panic_with_diagnostics, Error};
+use crate::sym_model::{PathConstraints, SymExpression, SymMemory};
 
 //--------------//
 // z3 bindings //
 //-------------//
-#[derive(Clone)]
-pub enum PathConstraint<'a> {
-    Assume(Bool<'a>),
-    Assert(Bool<'a>),
-}
 
-impl fmt::Debug for PathConstraint<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            PathConstraint::Assume(pc) => write!(f, "{}", pc),
-            PathConstraint::Assert(pc) => write!(f, "{}", pc),
-        }
-    }
-}
-
-/// casts `SymbolicExpression` to dynamic z3 ast value from stack
-pub fn sym_expr_to_dyn<'a>(ctx: &'a Context, expr: SymbolicExpression<'a>) -> Dynamic<'a> {
-    match expr {
-        SymbolicExpression::Int(i) => Dynamic::from(i),
-        SymbolicExpression::Bool(b) => Dynamic::from(b),
-        SymbolicExpression::Ref((_, r)) => Dynamic::from(Int::from_u64(ctx, r.as_u64_pair().0)),
-    }
-}
-
-pub fn fresh_int<'ctx>(ctx: &'ctx Context, id: String) -> SymbolicExpression<'ctx> {
-    return SymbolicExpression::Int(Int::new_const(&ctx, id));
-}
-
-pub fn fresh_bool<'ctx>(ctx: &'ctx Context, id: String) -> SymbolicExpression<'ctx> {
-    return SymbolicExpression::Bool(Bool::new_const(&ctx, id));
-}
-
-/// Combine the constraints in reversed order and check correctness
+/// Combine the constraints in reversed order and check correctness using z3
 /// `solve_constraints(ctx, vec![assume x, assert y, assume z] = x -> (y && z)`
-pub fn check_path<'ctx>(
-    ctx: &'ctx Context,
-    path_constraints: &Vec<PathConstraint<'ctx>>,
+pub fn verify_constraints<'a>(
+    path_constraints: &PathConstraints,
+    sym_memory: &SymMemory<'a>,
 ) -> Result<(), Error> {
-    let mut constraints = Bool::from_bool(ctx, true);
+    //initialise fresh context
+    let z3_cfg = Config::new();
+    let ctx = Context::new(&z3_cfg);
 
-    //reverse loop and combine constraints
-    for constraint in path_constraints.iter().rev() {
-        match constraint {
-            PathConstraint::Assert(c) => constraints = Bool::and(&ctx, &[&c, &constraints]),
-            PathConstraint::Assume(c) => constraints = Bool::implies(&c, &constraints),
-        }
-    }
+    //transform too z3 boolean
+    let constraint_expr = path_constraints.combine();
+    let constraints = expr_to_bool(&ctx, sym_memory, &constraint_expr.0);
 
     //println!("{}", constraints.not());
 
@@ -344,7 +54,7 @@ pub fn check_path<'ctx>(
     };
 }
 
-pub fn expr_to_int<'ctx>(
+fn expr_to_int<'ctx>(
     ctx: &'ctx Context,
     env: &SymMemory<'ctx>,
     expr: &'ctx Expression,
@@ -352,7 +62,7 @@ pub fn expr_to_int<'ctx>(
     return unwrap_as_int(expr_to_dynamic(&ctx, Rc::new(env), expr));
 }
 
-pub fn expr_to_bool<'ctx>(
+fn expr_to_bool<'ctx>(
     ctx: &'ctx Context,
     env: &SymMemory<'ctx>,
     expr: &'ctx Expression,
@@ -360,10 +70,10 @@ pub fn expr_to_bool<'ctx>(
     return unwrap_as_bool(expr_to_dynamic(&ctx, Rc::new(env), expr));
 }
 
-fn expr_to_dynamic<'ctx, 'b>(
+fn expr_to_dynamic<'ctx, 'a>(
     ctx: &'ctx Context,
-    sym_memory: Rc<&SymMemory<'ctx>>,
-    expr: &'ctx Expression,
+    sym_memory: Rc<&SymMemory<'a>>,
+    expr: &'a Expression,
 ) -> Dynamic<'ctx> {
     match expr {
         Expression::Exists(id, expr) => {
@@ -383,6 +93,12 @@ fn expr_to_dynamic<'ctx, 'b>(
             let r = unwrap_as_bool(expr_to_dynamic(ctx, sym_memory, r_expr));
 
             return Dynamic::from(Bool::or(ctx, &[&l, &r]));
+        }
+        Expression::Implies(l_expr, r_expr) => {
+            let l = unwrap_as_bool(expr_to_dynamic(ctx, Rc::clone(&sym_memory), l_expr));
+            let r = unwrap_as_bool(expr_to_dynamic(ctx, sym_memory, r_expr));
+
+            return Dynamic::from(l.implies(&r));
         }
         Expression::EQ(l_expr, r_expr) => {
             let l = expr_to_dynamic(ctx, Rc::clone(&sym_memory), l_expr);
@@ -460,9 +176,15 @@ fn expr_to_dynamic<'ctx, 'b>(
 
             return Dynamic::from(expr.not());
         }
+        // type variable using stack or substitute one level deep??
         Expression::Identifier(id) => match sym_memory.stack_get(id) {
-            Some(sym_expr) => sym_expr_to_dyn(ctx, sym_expr),
-            None => panic_with_diagnostics(&format!("Variable {} is undeclared", id), &sym_memory),
+            Some(SymExpression::Bool(_)) => Dynamic::from(Bool::new_const(ctx, id.clone())),
+            Some(SymExpression::Int(_)) => Dynamic::from(Int::new_const(ctx, id.clone())),
+            Some(sym_expr) => panic_with_diagnostics(
+                &format!("{:?} is not parseable to a z3 ast", sym_expr),
+                &sym_memory,
+            ),
+            None => panic_with_diagnostics(&format!("{} is undeclared", id), &sym_memory),
         },
         Expression::Literal(Literal::Integer(n)) => Dynamic::from(ast::Int::from_i64(ctx, *n)),
         Expression::Literal(Literal::Boolean(b)) => Dynamic::from(ast::Bool::from_bool(ctx, *b)),

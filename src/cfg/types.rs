@@ -1,7 +1,7 @@
-use rustc_hash::FxHashMap;
-use petgraph::graph::{Graph, NodeIndex};
 use crate::{ast::*, shared::Scope};
-use std::{hash::Hash};
+use petgraph::graph::{Graph, NodeIndex};
+use rustc_hash::FxHashMap;
+use std::hash::Hash;
 
 pub enum Node {
     // From this node we initialize our fresh parameters & the base scope
@@ -44,10 +44,10 @@ pub enum Action {
         from: Scope,
     },
     /// From main a `require` functions as an `assume`, from all 'deeper' scopes the `require` functions as an `assert`.
-    /// The `ensure` statement always functions like an `assume`. 
+    /// The `ensure` statement always functions like an `assume`.
     /// (check specifications before leaving scope to ensure it knows it's leaving from main scope)
     CheckSpecifications {
-        specifications: Specifications
+        specifications: Specifications,
     },
 }
 
@@ -80,11 +80,7 @@ impl Default for TypeStack {
 }
 
 impl TypeStack {
-    pub fn insert(
-        &mut self,
-        obj_name: Identifier,
-        value: Class,
-    ) -> () {
+    pub fn insert(&mut self, obj_name: Identifier, value: Class) -> () {
         match self.0.last_mut() {
             Some(env) => {
                 env.insert(obj_name, value);
@@ -92,11 +88,8 @@ impl TypeStack {
             None => (),
         };
     }
-    
-    pub fn get(
-        &self,
-        id: &Identifier
-    ) -> Option<Class> {
+
+    pub fn get(&self, id: &Identifier) -> Option<Class> {
         for frame in self.0.iter().rev() {
             match frame.get(id) {
                 Some(class) => return Some(class.clone()),
