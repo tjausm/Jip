@@ -2,8 +2,6 @@ use std::fmt;
 
 use crate::shared::panic_with_diagnostics;
 /*
-use non_empty_vec::NonEmpty;
-
 //naming convention:
 // - syntactical labels are taken as is from Stefan's thesis
 // - each syntactical label's first symbol is transformed to uppercase (program -> Program)

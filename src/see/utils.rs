@@ -1,3 +1,5 @@
+use std::path::Path;
+use std::sync::mpsc::Sender;
 use std::thread;
 
 use crate::ast::*;
@@ -15,7 +17,7 @@ use uuid::Uuid;
 
 use rustc_hash::FxHashMap;
 
-use super::types::Depth;
+use super::types::{Depth, Msg, PathState};
 
 pub fn type_lhs<'ctx>(sym_memory: &mut SymMemory<'ctx>, lhs: &'ctx Lhs) -> Type {
     match lhs {
@@ -225,18 +227,20 @@ pub fn assume(
 // assignment -> evaluate rhs and update env
 // then we enque all connected nodes, till d=0 or we reach end of cfg
 pub fn explore_path<'a>(
+    tx: Sender<Msg<'a>>,
     cfg: &'a Graph<Node, Vec<Action>>,
     config: &Config,
     (retval_id, this_id): (&'a String, &'a String),
     mut diagnostics: Diagnostics,
-    mut sym_memory: SymMemory<'a>,
-    mut pc: PathConstraints,
-    d: Depth,
-    curr_node: NodeIndex,
-) -> thread::Result<Result<Diagnostics, Error>> {
-
+    PathState {
+        mut sym_memory,
+        mut pc,
+        d,
+        curr_node,
+    }: PathState<'a>,
+) {
     if d == 0 {
-        return Ok(Ok(diagnostics));
+        return;
     }
 
     match &cfg[curr_node] {
@@ -275,9 +279,17 @@ pub fn explore_path<'a>(
                         },
                         Type::Void => panic!("Panic should never trigger, parser doesn't accept void type in declaration"),
                     },
-                    Statement::Assume(assumption) => if !assume(config.simplify, &mut sym_memory, assumption, &mut pc) {return Ok(Ok(diagnostics))},
+                    Statement::Assume(assumption) => 
+                        if !assume(config.simplify, &mut sym_memory, assumption, &mut pc) 
+                            {
+                                tx.send(Msg::FinishedPath(diagnostics)); 
+                                return;
+                            },
                     Statement::Assert(assertion) =>  match assert(config.simplify, &mut sym_memory, assertion, &mut pc, &mut diagnostics) {
-                        Err(err) => return Ok(Err(err)),
+                        Err(err) => {
+                            tx.send(Msg::Err(err)); 
+                            return
+                        },
                         _ => ()
                     },
                     Statement::Assignment((lhs, rhs)) => {
@@ -458,7 +470,10 @@ pub fn explore_path<'a>(
                                 &mut pc,
                                 &mut diagnostics,
                             ) {
-                                Err(err) => return Ok(Err(err)),
+                                Err(err) => {
+                                    tx.send(Msg::Err(err));
+                                    return;
+                                },
                                 _ => (),
                             },
                             // otherwise process we assume
@@ -477,7 +492,7 @@ pub fn explore_path<'a>(
             }
         }
         let next = edge.target();
-        //q.push_back((sym_memory, pc.clone(), d - 1, next));
-    };
-    return Ok(Ok(diagnostics));
+        tx.send(Msg::NewState(PathState { sym_memory, pc: pc.clone(), d: d - 1, curr_node: next }));
+    }
+    tx.send(Msg::FinishedPath(diagnostics));
 }

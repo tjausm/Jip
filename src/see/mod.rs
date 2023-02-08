@@ -16,15 +16,21 @@ use crate::shared::Config;
 use crate::shared::ExitCode;
 use crate::shared::{panic_with_diagnostics, Diagnostics, Error};
 use crate::sym_model::PathConstraints;
-use crate::sym_model::{ReferenceValue, SymExpression, SymMemory, SymValue};
-use crate::z3;
-use petgraph::graph::NodeIndex;
-use petgraph::visit::EdgeRef;
-use uuid::Uuid;
+use crate::sym_model::SymMemory;
 
-use rustc_hash::FxHashMap;
+use crossbeam_queue::SegQueue;
+use petgraph::graph::NodeIndex;
+use threadpool::ThreadPool;
+
 use std::collections::VecDeque;
 use std::fs;
+use std::num::NonZeroI32;
+use std::num::NonZeroUsize;
+use std::sync::mpsc;
+use std::sync::mpsc::Receiver;
+use std::sync::mpsc::Sender;
+use std::sync::Arc;
+use std::thread;
 use std::time::Instant;
 
 const PROG_CORRECT: &'static str = "Program is correct";
@@ -117,15 +123,58 @@ fn verify_program(prog_string: &str, d: Depth, config: Config) -> Result<Diagnos
     let prog = parse_program(prog_string);
     let (start_node, cfg) = generate_cfg(prog.clone());
 
-    //init our bfs through the cfg
-    let mut q: VecDeque<(SymMemory, PathConstraints, Depth, NodeIndex)> = VecDeque::new();
-    q.push_back((
-        SymMemory::new(prog.clone()),
-        PathConstraints::default(),
-        d,
-        start_node,
-    ));
+    //init our concurrent bfs through the cfg
 
+    // create n threads for all n cores (or 4 if we don't know how many cores there are)
+    let default = 4;
+    let max_threads = // this fuckery is necesarry to transform NonZeroUsize to i32.....
+        thread::available_parallelism()
+        .map(|i| NonZeroI32::try_from(i))
+        .unwrap_or(Ok(NonZeroI32::new(default).unwrap()))
+        .map(|i| i32::from(i))
+        .unwrap_or(default);
+    let pool = ThreadPool::new(max_threads.try_into().unwrap());
+
+    let mut q: VecDeque<PathState> = VecDeque::new();
+    q.push_back(PathState {
+        sym_memory: SymMemory::new(prog.clone()),
+        pc: PathConstraints::default(),
+        d,
+        curr_node: start_node,
+    });
+
+    // build transmitter and receiver to communicate info back to main thread
+    let (tx, rx): (Sender<Msg>, Receiver<Msg>) = mpsc::channel();
+
+
+    while !q.is_empty() || pool.active_count() > 0 {
+        
+        //copy transmitter to pass to closure
+        if let Some(path_state) = q.pop_front() {
+            // clone necesary data to prevent drops
+            let tx1 = tx.clone();
+            let diagnostics1 = diagnostics.clone();
+
+            // make Arcs of cfg and config
+            let cfg = todo!();
+            let çonfig = todo!();
+
+            pool.execute(move || {
+
+                explore_path(tx1, cfg, &config, (retval_id, this_id), diagnostics1, path_state)
+            });
+
+        };
+
+        
+
+        match rx.recv() {
+            Ok(Msg::FinishedPath(_)) => println!("finishedppath"),
+            Ok(Msg::NewState(_)) => println!("new state"),
+            Ok(Msg::Err(_)) => println!("err"),
+            otherwise => println!("Error"),
+        }
+    }
 
     return Ok(diagnostics);
 }

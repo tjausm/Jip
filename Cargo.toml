@@ -19,7 +19,7 @@ clap = { version = "3.1.18", features = ["derive"] }
 assert_cmd = "2.0.4" #integration testing through cmd line
 rustc-hash = "1.1.0" #more efficient hashmap/hashset
 crossbeam-queue = "0.3.8" #use for concurrency in SEE
-
+threadpool = "1.0" #use for concurrency in SEE
 [dependencies.uuid]
 version = "1.2.1"
 features = [

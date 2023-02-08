@@ -30,7 +30,7 @@ pub struct Config {
     pub simplify: bool,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Diagnostics {
     pub paths_explored: i32,
     pub z3_invocations: i32,
