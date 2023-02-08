@@ -45,6 +45,12 @@ impl Default for Diagnostics {
     }
 }
 
+impl Diagnostics {
+    pub fn merge(&self, d : Diagnostics) -> Diagnostics{
+        Diagnostics { paths_explored: self.paths_explored + d.paths_explored, z3_invocations: self.z3_invocations + d.z3_invocations }
+    }
+}
+
 /// Panics with passed message and passed datastructure (intended for SymMemory)
 #[track_caller]
 pub fn panic_with_diagnostics<D: Debug>(msg: &str, sym_memory: &D) -> ! {

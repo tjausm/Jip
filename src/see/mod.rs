@@ -111,74 +111,79 @@ pub fn print_verification(
 }
 
 fn verify_program(prog_string: &str, d: Depth, config: Config) -> Result<Diagnostics, Error> {
-    //init diagnostic info
-    let mut diagnostics = Diagnostics::default();
-
-    // init retval and this such that it outlives env
-    let retval_id = &"retval".to_string();
-    let this_id = &"retval".to_string();
-    let retval_id  = Arc::new(retval_id);
-    let this_id = Arc::new(this_id);
-
     let prog = parse_program(prog_string);
     let (start_node, cfg) = generate_cfg(prog.clone());
-    
-    // initialise atomic references
+
+    // init Arcs for usage in the rayon::scope
+    let retval_id = &"retval".to_string();
+    let this_id = &"retval".to_string();
+    let retval_id = Arc::new(retval_id);
+    let this_id = Arc::new(this_id);
     let arc_cfg = Arc::new(&cfg);
     let arc_config = Arc::new(&config);
 
-    //init our concurrent bfs through the cfg
+    //init diagnostic info and error placeholder
+    let mut diagnostics = Diagnostics::default();
+    let mut maybe_err: Option<Error> = None;
 
-    // create threadpool with n threads for all n cores (or 4 if we don't know how many cores there are)
-    let max_threads = // this fuckery is necesarry to transform NonZeroUsize to i32.....
-        thread::available_parallelism()
-        .map(|i| usize::from(i))
-        .unwrap_or(4_usize);
-    let pool = rayon::ThreadPoolBuilder::new().num_threads(max_threads).build().unwrap();;
+    // create threadpool with n threads for all n cores (depends an wath Rayon chooses)
+    let pool = rayon::ThreadPoolBuilder::new()
+        .build()
+        .unwrap();
 
-    let mut q: VecDeque<PathState> = VecDeque::new();
-    q.push_back(PathState {
-        sym_memory: SymMemory::new(prog.clone()),
-        pc: PathConstraints::default(),
-        d,
-        curr_node: start_node,
-    });
+    // do concurrent bfs search using the threadpool in a rayon::scope
+    // this guarantees that cfg/config/retval_id/this_id outlive the spawned threads
+    rayon::scope(|s| {
+        let mut q: VecDeque<PathState> = VecDeque::new();
+        q.push_back(PathState {
+            sym_memory: SymMemory::new(prog.clone()),
+            pc: PathConstraints::default(),
+            d,
+            curr_node: start_node,
+        });
 
-    
-
-    rayon::scope(|s|{
         // build transmitter and receiver to communicate info back to main thread
         let (tx, rx): (Sender<Msg>, Receiver<Msg>) = mpsc::channel();
-        while !q.is_empty() || pool.current_num_threads() > 0 {
-        
+        while !(q.is_empty() && pool.current_num_threads() == 0) {
+            println!("{} {}", q.is_empty(), pool.nu);
+
             //copy transmitter to pass to closure
             if let Some(path_state) = q.pop_front() {
-    
                 // clone necesary data to prevent drops
                 let tx = tx.clone();
                 let diagnostics = diagnostics.clone();
                 let arc_cfg = Arc::clone(&arc_cfg);
                 let arc_config = Arc::clone(&arc_config);
                 let (retval_id, this_id) = (Arc::clone(&retval_id), Arc::clone(&this_id));
-    
-                s.spawn(move |_| {
-                    explore_path(tx, arc_cfg, arc_config, (retval_id, this_id), diagnostics, path_state)
+
+                pool.install(move || {
+                    explore_path(
+                        tx,
+                        arc_cfg,
+                        arc_config,
+                        (retval_id, this_id),
+                        diagnostics,
+                        path_state,
+                    )
                 });
-    
             };
-    
-            
-    
+
             match rx.recv() {
-                Ok(Msg::FinishedPath(_)) => println!("finishedppath"),
-                Ok(Msg::NewState(_)) => println!("new state"),
-                Ok(Msg::Err(_)) => println!("err"),
+                Ok(Msg::FinishedPath(d)) => diagnostics = diagnostics.merge(d),
+                Ok(Msg::NewState(state)) => q.push_back(state),
+                Ok(Msg::Err(err)) => {
+                    maybe_err = Some(err);
+                    return;
+                }
+                Err(err) => println!("{}", err),
                 otherwise => println!("Error"),
             }
-        }
+        };
     });
 
-
+    if let Some(err) = maybe_err {
+        return Err(err);
+    }
     return Ok(diagnostics);
 }
 
