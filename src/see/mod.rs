@@ -18,9 +18,7 @@ use crate::shared::{panic_with_diagnostics, Diagnostics, Error};
 use crate::sym_model::PathConstraints;
 use crate::sym_model::SymMemory;
 
-use crossbeam_queue::SegQueue;
-use petgraph::graph::NodeIndex;
-use threadpool::ThreadPool;
+use rayon::ThreadPool;
 
 use std::collections::VecDeque;
 use std::fs;
@@ -118,22 +116,25 @@ fn verify_program(prog_string: &str, d: Depth, config: Config) -> Result<Diagnos
 
     // init retval and this such that it outlives env
     let retval_id = &"retval".to_string();
-    let this_id = &"this".to_string();
+    let this_id = &"retval".to_string();
+    let retval_id  = Arc::new(retval_id);
+    let this_id = Arc::new(this_id);
 
     let prog = parse_program(prog_string);
     let (start_node, cfg) = generate_cfg(prog.clone());
+    
+    // initialise atomic references
+    let arc_cfg = Arc::new(&cfg);
+    let arc_config = Arc::new(&config);
 
     //init our concurrent bfs through the cfg
 
-    // create n threads for all n cores (or 4 if we don't know how many cores there are)
-    let default = 4;
+    // create threadpool with n threads for all n cores (or 4 if we don't know how many cores there are)
     let max_threads = // this fuckery is necesarry to transform NonZeroUsize to i32.....
         thread::available_parallelism()
-        .map(|i| NonZeroI32::try_from(i))
-        .unwrap_or(Ok(NonZeroI32::new(default).unwrap()))
-        .map(|i| i32::from(i))
-        .unwrap_or(default);
-    let pool = ThreadPool::new(max_threads.try_into().unwrap());
+        .map(|i| usize::from(i))
+        .unwrap_or(4_usize);
+    let pool = rayon::ThreadPoolBuilder::new().num_threads(max_threads).build().unwrap();;
 
     let mut q: VecDeque<PathState> = VecDeque::new();
     q.push_back(PathState {
@@ -143,38 +144,40 @@ fn verify_program(prog_string: &str, d: Depth, config: Config) -> Result<Diagnos
         curr_node: start_node,
     });
 
-    // build transmitter and receiver to communicate info back to main thread
-    let (tx, rx): (Sender<Msg>, Receiver<Msg>) = mpsc::channel();
+    
 
-
-    while !q.is_empty() || pool.active_count() > 0 {
+    rayon::scope(|s|{
+        // build transmitter and receiver to communicate info back to main thread
+        let (tx, rx): (Sender<Msg>, Receiver<Msg>) = mpsc::channel();
+        while !q.is_empty() || pool.current_num_threads() > 0 {
         
-        //copy transmitter to pass to closure
-        if let Some(path_state) = q.pop_front() {
-            // clone necesary data to prevent drops
-            let tx1 = tx.clone();
-            let diagnostics1 = diagnostics.clone();
-
-            // make Arcs of cfg and config
-            let cfg = todo!();
-            let çonfig = todo!();
-
-            pool.execute(move || {
-
-                explore_path(tx1, cfg, &config, (retval_id, this_id), diagnostics1, path_state)
-            });
-
-        };
-
-        
-
-        match rx.recv() {
-            Ok(Msg::FinishedPath(_)) => println!("finishedppath"),
-            Ok(Msg::NewState(_)) => println!("new state"),
-            Ok(Msg::Err(_)) => println!("err"),
-            otherwise => println!("Error"),
+            //copy transmitter to pass to closure
+            if let Some(path_state) = q.pop_front() {
+    
+                // clone necesary data to prevent drops
+                let tx = tx.clone();
+                let diagnostics = diagnostics.clone();
+                let arc_cfg = Arc::clone(&arc_cfg);
+                let arc_config = Arc::clone(&arc_config);
+                let (retval_id, this_id) = (Arc::clone(&retval_id), Arc::clone(&this_id));
+    
+                s.spawn(move |_| {
+                    explore_path(tx, arc_cfg, arc_config, (retval_id, this_id), diagnostics, path_state)
+                });
+    
+            };
+    
+            
+    
+            match rx.recv() {
+                Ok(Msg::FinishedPath(_)) => println!("finishedppath"),
+                Ok(Msg::NewState(_)) => println!("new state"),
+                Ok(Msg::Err(_)) => println!("err"),
+                otherwise => println!("Error"),
+            }
         }
-    }
+    });
+
 
     return Ok(diagnostics);
 }

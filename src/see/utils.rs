@@ -1,9 +1,10 @@
 use std::path::Path;
+use std::sync::Arc;
 use std::sync::mpsc::Sender;
 use std::thread;
 
 use crate::ast::*;
-use crate::cfg::types::{Action, Node};
+use crate::cfg::types::{Action, Node, CFG};
 use crate::shared::{panic_with_diagnostics, Diagnostics};
 use crate::shared::{Config, Error};
 use crate::sym_model::{
@@ -222,15 +223,14 @@ pub fn assume(
     return true;
 }
 
-// Assert -> build & verify z3 formula, return error if disproven
-// Assume -> build & verify z3 formula, stop evaluating pad if disproven
-// assignment -> evaluate rhs and update env
-// then we enque all connected nodes, till d=0 or we reach end of cfg
+// Assert -> build & verify z3 formula, send error to main thread
+// Assume -> build & verify simplified formula, stop evaluating node if disproven
+// then we send the updated pathstate back to main thread
 pub fn explore_path<'a>(
     tx: Sender<Msg<'a>>,
-    cfg: &'a Graph<Node, Vec<Action>>,
-    config: &Config,
-    (retval_id, this_id): (&'a String, &'a String),
+    cfg: Arc<&'a CFG>,
+    config: Arc<&Config>,
+    (retval_id, this_id): (Arc<&'a String>, Arc<&'a String>),
     mut diagnostics: Diagnostics,
     PathState {
         mut sym_memory,
@@ -301,11 +301,11 @@ pub fn explore_path<'a>(
                         if sym_memory.get_scope(0).id == None {};
 
                         // evaluate return expression with type of retval and add to stack
-                        match sym_memory.stack_get(retval_id) {
+                        match sym_memory.stack_get(&retval_id) {
                             Some(SymExpression::Ref(_)) => {
                                 match expr {
                                     Expression::Identifier(id) => match sym_memory.stack_get( id) {
-                                        Some(SymExpression::Ref(r)) => sym_memory.stack_insert(retval_id, SymExpression::Ref(r)),
+                                        Some(SymExpression::Ref(r)) => sym_memory.stack_insert(&retval_id, SymExpression::Ref(r)),
                                         Some(expr) => panic_with_diagnostics(&format!("Can't return '{:?}' as a referencevalue", expr), &sym_memory),
                                         None => panic_with_diagnostics(&format!("{} is undeclared", id), &sym_memory),
                                     },
@@ -314,11 +314,11 @@ pub fn explore_path<'a>(
                             },
                             Some(SymExpression::Bool(_)) => {
                                 sym_memory.stack_insert(
-                                    retval_id,
+                                    &retval_id,
                                     SymExpression::Int(SymValue::Expr(sym_memory.substitute_expr(expr.clone()))),
                                 );
                             },
-                            Some(SymExpression::Int(_)) => {sym_memory.stack_insert(retval_id,SymExpression::Int(SymValue::Expr(sym_memory.substitute_expr(expr.clone()))),);},
+                            Some(SymExpression::Int(_)) => {sym_memory.stack_insert(&retval_id,SymExpression::Int(SymValue::Expr(sym_memory.substitute_expr(expr.clone()))),);},
                             None => panic_with_diagnostics(&format!("retval is undeclared in expression 'return {:?}'", expr), &sym_memory),  
                         }
                     }
@@ -341,11 +341,11 @@ pub fn explore_path<'a>(
                     // declare retval with correct type in new scope
                     match ty {
                         Type::Int => sym_memory
-                            .stack_insert(retval_id, SymExpression::Int(SymValue::Uninitialized)),
+                            .stack_insert(&retval_id, SymExpression::Int(SymValue::Uninitialized)),
                         Type::Bool => sym_memory
-                            .stack_insert(retval_id, SymExpression::Bool(SymValue::Uninitialized)),
+                            .stack_insert(&retval_id, SymExpression::Bool(SymValue::Uninitialized)),
                         Type::Classtype(ty) => sym_memory.stack_insert(
-                            retval_id,
+                            &retval_id,
                             SymExpression::Ref((Type::Classtype(ty.clone()), Uuid::nil())),
                         ),
                         Type::Void => panic!("Cannot declare retval of type void"),
@@ -361,7 +361,7 @@ pub fn explore_path<'a>(
                 Action::DeclareThis { class, obj } => match obj {
                     Lhs::Identifier(id) => match sym_memory.stack_get(id) {
                         Some(SymExpression::Ref(r)) => {
-                            sym_memory.stack_insert(this_id, SymExpression::Ref(r))
+                            sym_memory.stack_insert(&this_id, SymExpression::Ref(r))
                         }
                         Some(_) => panic_with_diagnostics(
                             &format!("{} is not of type {}", id, class),
@@ -437,8 +437,8 @@ pub fn explore_path<'a>(
                 }
                 // lift retval 1 scope up
                 Action::LiftRetval => {
-                    match sym_memory.stack_get(retval_id) {
-                        Some(retval) => sym_memory.stack_insert_below(retval_id, retval),
+                    match sym_memory.stack_get(&retval_id) {
+                        Some(retval) => sym_memory.stack_insert_below(&retval_id, retval),
                         None => panic_with_diagnostics(
                             "Can't lift retval to a higher scope",
                             &sym_memory,
