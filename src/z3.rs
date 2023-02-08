@@ -18,12 +18,10 @@ use crate::sym_model::{PathConstraints, SymExpression, SymMemory};
 /// Combine the constraints in reversed order and check correctness using z3
 /// `solve_constraints(ctx, vec![assume x, assert y, assume z] = x -> (y && z)`
 pub fn verify_constraints<'a>(
+    ctx: &'a Context,
     path_constraints: &PathConstraints,
     sym_memory: &SymMemory<'a>,
 ) -> Result<(), Error> {
-    //initialise fresh context
-    let z3_cfg = Config::new();
-    let ctx = Context::new(&z3_cfg);
 
     //transform too z3 boolean
     let constraint_expr = path_constraints.combine();

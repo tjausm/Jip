@@ -1,3 +1,5 @@
+use ::z3::Context;
+
 use crate::ast::*;
 use crate::shared::Error;
 use crate::z3;
@@ -138,7 +140,7 @@ pub fn params_to_vars<'ctx>(
 }
 
 /// handles the assertion in the SEE (used in `assert` and `require` statements)
-pub fn assert(simplify: bool, sym_memory: &mut SymMemory, assertion: &Expression, pc: &mut PathConstraints, diagnostics: &mut Diagnostics) -> Result<(), Error>{
+pub fn assert<'a>(ctx: &'a Context, simplify: bool, sym_memory: &mut SymMemory<'a>, assertion: &Expression, pc: &mut PathConstraints, diagnostics: &mut Diagnostics) -> Result<(), Error>{
 
     let subt_assertion = sym_memory.substitute_expr(assertion.clone());
 
@@ -165,7 +167,7 @@ pub fn assert(simplify: bool, sym_memory: &mut SymMemory, assertion: &Expression
 
     // if we have not solved by now, invoke z3
     diagnostics.z3_invocations = diagnostics.z3_invocations + 1;
-    z3::verify_constraints(&pc, &sym_memory)
+    z3::verify_constraints(ctx, &pc, &sym_memory)
 }
 /// handles the assume in the SEE (used in `assume`, `require` and `ensure` statements)
 /// returns false if assumption is infeasible and can be dropped
