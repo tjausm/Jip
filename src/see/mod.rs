@@ -17,7 +17,7 @@ use crate::shared::ExitCode;
 use crate::shared::{panic_with_diagnostics, Diagnostics, Error};
 use crate::sym_model::PathConstraints;
 use crate::sym_model::{ReferenceValue, SymExpression, SymMemory, SymValue};
-use crate::z3;
+use crate::z3::build_ctx;
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
 use uuid::Uuid;
@@ -107,6 +107,10 @@ pub fn print_verification(
 }
 
 fn verify_program(prog_string: &str, d: Depth, config: Config) -> Result<Diagnostics, Error> {
+
+    // init global z3 context
+    let (_, ctx) = build_ctx();
+
     //init diagnostic info
     let mut diagnostics = Diagnostics::default();
 
@@ -174,7 +178,7 @@ fn verify_program(prog_string: &str, d: Depth, config: Config) -> Result<Diagnos
                         Type::Void => panic!("Panic should never trigger, parser doesn't accept void type in declaration"),
                     },
                     Statement::Assume(assumption) => if !assume(config.simplify, &mut sym_memory, assumption, &mut pc) {continue},
-                    Statement::Assert(assertion) =>   assert(config.simplify, &mut sym_memory, assertion, &mut pc, &mut diagnostics)?,
+                    Statement::Assert(assertion) =>   assert(&ctx, config.simplify, &mut sym_memory, assertion, &mut pc, &mut diagnostics)?,
                     Statement::Assignment((lhs, rhs)) => {
                         lhs_from_rhs(&mut sym_memory, lhs, rhs);
                     }
@@ -356,7 +360,7 @@ fn verify_program(prog_string: &str, d: Depth, config: Config) -> Result<Diagnos
                         for specification in specifications {
                             match (specification, from_main_scope) {
                                 // if require is called outside main scope we assert
-                                (Specification::Requires(assertion), false) => assert(config.simplify, &mut sym_memory, assertion, &mut pc, &mut diagnostics)?,
+                                (Specification::Requires(assertion), false) => assert(&ctx, config.simplify, &mut sym_memory, assertion, &mut pc, &mut diagnostics)?,
                                 // otherwise process we assume
                                 (spec, _) => {
                                     let assumption = match spec {

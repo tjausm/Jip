@@ -2,11 +2,10 @@
 //!
 use rustc_hash::FxHashMap;
 use std::fmt;
-use std::path::Path;
 use uuid::Uuid;
 
 use crate::ast::*;
-use crate::shared::{panic_with_diagnostics, Error, Scope};
+use crate::shared::{panic_with_diagnostics,  Scope};
 
 //----------------------//
 // Symbolic expressions //
