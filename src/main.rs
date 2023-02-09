@@ -1,19 +1,19 @@
 //! Binary 'jip' is a cmd-line tool for performing static analysis on programs written in the OOX language.
 //!
 
-
 #[macro_use]
 extern crate lalrpop_util;
 
 use clap::{ArgEnum, Parser, Subcommand};
-use see::types::{Depth};
-use shared::ExitCode;
+use see::types::Depth;
+use shared::{Config, ExitCode};
 use std::process::exit;
 // module declarations
+mod ast;
 mod cfg;
 mod see;
-mod ast;
 mod shared;
+mod sym_model;
 mod z3;
 
 #[derive(Parser)]
@@ -39,6 +39,9 @@ enum Mode {
         /// Up to which depth program is evaluated
         #[clap(default_value_t = 40)]
         depth: Depth,
+        /// Turns on the front end simplifier
+        #[clap(short, long)]
+        simplifier: bool,
         /// Report diagnostic information after succesful program verification
         #[clap(short, long)]
         verbose: bool,
@@ -54,6 +57,9 @@ enum Mode {
         /// Given interval i we measure verification time for each depth between s and e with intervals of i
         #[clap(default_value_t = 5)]
         interval: Depth,
+        /// Turns on the front end simplifier
+        #[clap(short, long)]
+        simplifier: bool,
     },
 }
 
@@ -70,7 +76,6 @@ fn main() {
         exit(exit_code as i32);
     };
 
-
     // attempt to load program, and exit with exitcode and error if fails
     let program = match cli.load_mode {
         LoadMode::File => match see::load_program(cli.program) {
@@ -83,11 +88,26 @@ fn main() {
     // if program loaded execute function corresponding to cmd and exit with the result
     match cli.mode {
         Mode::PrintCFG => exit(see::print_cfg(&program)),
-        Mode::Verify { depth, verbose } => exit(see::print_verification(&program, depth, verbose)),
+        Mode::Verify {
+            depth,
+            simplifier,
+            verbose,
+        } => {
+            let config = Config {
+                simplify: simplifier,
+            };
+            exit(see::print_verification(&program, depth, config, verbose))
+        }
         Mode::Bench {
             start,
             end,
             interval,
-        } => exit(see::bench(&program, start, end, interval)),
+            simplifier,
+        } => {
+            let config = Config {
+                simplify: simplifier,
+            };
+            exit(see::bench(&program, start, end, interval, config))
+        }
     };
 }

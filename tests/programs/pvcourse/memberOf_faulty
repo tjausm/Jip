@@ -1,0 +1,36 @@
+// The program checks if x is an element of the array a.
+
+// N is an experiment parameter; replace it with a concrete value in [2..10].
+// Below I will use maximum N, namely 10.
+
+class Main {
+
+    static void main(int x, int[] a)
+       requires(a != null && #a>0)
+       {
+       // N is an experiment parameter,
+       // setting to max N=10:
+       int N := 10 ;
+
+       
+       bool found := false ;
+       int atPosition := 0;
+
+       int k := 0 ;
+       while (k<#a - 1) { // deliberately iterating till the end of array
+          int v := a[k] ;
+          if (v==x) {
+            found := true ;
+            atPosition := k ;
+            } else ;
+          k := k+1 ;
+       }
+
+       if (found) {
+         int val := a[k]; 
+         assert val == x; 
+         } else ;
+    }
+
+
+}

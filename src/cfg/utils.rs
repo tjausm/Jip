@@ -1,10 +1,8 @@
 use std::fmt;
 
-use crate::shared::{Scope};
 use crate::ast::*;
 use crate::cfg::types::*;
-
-
+use crate::shared::Scope;
 
 /// print the first 4 symbols of a scope id
 pub fn print_short_id(scope: &Scope) -> String {
@@ -18,12 +16,11 @@ pub fn print_short_id(scope: &Scope) -> String {
     }
 }
 
-
-
 /// given an object or class name, return class name
 /// e.g. if we call `o.f()`, where object `o` is of class `C` then `get_class(o) = C`
 pub fn get_classname<'a>(object_or_class: &'a String, ty_stack: &TypeStack) -> String {
-    ty_stack.get(&object_or_class)
+    ty_stack
+        .get(&object_or_class)
         .map(|t| t.0)
         .unwrap_or(object_or_class.clone())
 }
@@ -38,7 +35,7 @@ pub fn get_routine_content<'a>(
             (params, specs, stmts)
         }
         Routine::Method { class, method } => {
-            let (_, _, params, specs, stmts) = prog.get_methodcontent( class, method);
+            let (_, _, params, specs, stmts) = prog.get_methodcontent(class, method);
             (params, specs, stmts)
         }
     }
@@ -86,7 +83,9 @@ impl fmt::Debug for Action {
             }
             Action::LiftRetval => write!(f, "Lifting retval"),
             Action::DeclareRetval { ty } => write!(f, "Declaring '{:?} retval'", ty),
-            Action::CheckSpecifications { specifications} => write!(f, "Checking specifications: {:?}", specifications)
+            Action::CheckSpecifications { specifications } => {
+                write!(f, "Checking specifications: {:?}", specifications)
+            }
         }
     }
 }

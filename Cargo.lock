@@ -360,7 +360,6 @@ dependencies = [
  "clap 3.1.18",
  "lalrpop",
  "lalrpop-util",
- "non-empty-vec",
  "petgraph",
  "regex",
  "rustc-hash",
@@ -468,12 +467,6 @@ dependencies = [
  "memchr",
  "version_check",
 ]
-
-[[package]]
-name = "non-empty-vec"
-version = "0.2.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ceeba69aa8d4c53cdceeac8f17eb2656bb88b468bbe6c0889d34edfdea26ec8b"
 
 [[package]]
 name = "once_cell"

@@ -17,10 +17,7 @@ use uuid::Uuid;
 
 /// Transform node to unannotated start
 fn to_start(node: NodeIndex) -> Start {
-    Start {
-        node,
-        edge: vec![],
-    }
+    Start { node, edge: vec![] }
 }
 
 /// Generates cfg in vizualizable Dot format (visualizable at http://viz-js.com/)

@@ -1,9 +1,9 @@
 extern crate lalrpop;
 use std::env;
-use std::fs::ReadDir;
 use std::fs::read_dir;
 use std::fs::DirEntry;
 use std::fs::File;
+use std::fs::ReadDir;
 use std::io::Write;
 use std::path::Path;
 
@@ -20,25 +20,25 @@ fn main() {
     // writes test file header, put `use`, `const` etc there
     write_header(&mut test_file);
 
-    
     let test_folder = read_dir("./tests/programs").unwrap();
     build_test_from_directory(&mut test_file, test_folder, "")
 }
 
 /// recursively build test for each oox program in folder and all it's child folders
-fn build_test_from_directory(test_file: &mut File, directory: ReadDir, parent: &str){
-
+fn build_test_from_directory(test_file: &mut File, directory: ReadDir, parent: &str) {
     for entry in directory {
-
         let entry = entry.unwrap();
 
-        // if is directory recurse and pass directory name 
+        // if is directory recurse and pass directory name
         if entry.file_type().unwrap().is_dir() {
-            build_test_from_directory(test_file, read_dir(entry.path()).unwrap(), &format!("{}{}_", parent, entry.file_name().to_string_lossy()))
-        } 
-
+            build_test_from_directory(
+                test_file,
+                read_dir(entry.path()).unwrap(),
+                &format!("{}{}_", parent, entry.file_name().to_string_lossy()),
+            )
+        }
         // if is .oox file write test
-        else if entry.path().extension().map(|ext| ext == "oox" ) == Some(true) {
+        else if entry.path().extension().map(|ext| ext == "oox") == Some(true) {
             write_test(test_file, &entry, parent);
         }
     }
@@ -50,7 +50,11 @@ fn build_test_from_directory(test_file: &mut File, directory: ReadDir, parent: &
 fn write_test(test_file: &mut File, entry: &DirEntry, parent: &str) {
     let entry = entry.path().canonicalize().unwrap();
     let path = entry.display();
-    let faulty = entry.file_stem().unwrap().to_string_lossy().ends_with("faulty");
+    let faulty = entry
+        .file_stem()
+        .unwrap()
+        .to_string_lossy()
+        .ends_with("faulty");
     let test_name = format!("{}{}", parent, entry.file_stem().unwrap().to_string_lossy());
 
     if faulty {
