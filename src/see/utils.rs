@@ -226,7 +226,7 @@ pub fn assume(
 // Assert -> build & verify z3 formula, send error to main thread
 // Assume -> build & verify simplified formula, stop evaluating node if disproven
 // then we send the updated pathstate back to main thread
-pub fn explore_path<'a>(
+pub fn explore_node<'a>(
     tx: Sender<Msg<'a>>,
     cfg: Arc<&'a CFG>,
     config: Arc<&Config>,
@@ -240,6 +240,7 @@ pub fn explore_path<'a>(
     }: PathState<'a>,
 ) {
     if d == 0 {
+        tx.send(Msg::FinishedPath(diagnostics)); 
         return;
     }
 

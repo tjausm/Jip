@@ -3,6 +3,7 @@
 //!
 use std::fmt::Debug;
 use std::panic;
+use std::ops::Add;
 use std::process::exit;
 use uuid::Uuid;
 
@@ -30,7 +31,7 @@ pub struct Config {
     pub simplify: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct Diagnostics {
     pub paths_explored: i32,
     pub z3_invocations: i32,
@@ -45,9 +46,13 @@ impl Default for Diagnostics {
     }
 }
 
-impl Diagnostics {
-    pub fn merge(&self, d : Diagnostics) -> Diagnostics{
-        Diagnostics { paths_explored: self.paths_explored + d.paths_explored, z3_invocations: self.z3_invocations + d.z3_invocations }
+
+impl Add for Diagnostics {
+    type Output = Self;
+
+    fn add(self, d: Self) -> Self {
+        Self { paths_explored: self.paths_explored + d.paths_explored, z3_invocations: self.z3_invocations + d.z3_invocations }
+
     }
 }
 

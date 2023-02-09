@@ -126,14 +126,18 @@ fn verify_program(prog_string: &str, d: Depth, config: Config) -> Result<Diagnos
     let mut diagnostics = Diagnostics::default();
     let mut maybe_err: Option<Error> = None;
 
-    // create threadpool with n threads for all n cores (depends an wath Rayon chooses)
-    let pool = rayon::ThreadPoolBuilder::new()
-        .build()
-        .unwrap();
+    // max n threads for all n cores (or 4 if we don't know how many cores there are)
+    let max_threads = // this fuckery is necesarry to transform NonZeroUsize to i32.....
+        thread::available_parallelism()
+        .map(|i| usize::from(i))
+        .unwrap_or(4_usize);
+    let mut curr_threads = 0;
 
     // do concurrent bfs search using the threadpool in a rayon::scope
     // this guarantees that cfg/config/retval_id/this_id outlive the spawned threads
     rayon::scope(|s| {
+
+        // push initial PathState
         let mut q: VecDeque<PathState> = VecDeque::new();
         q.push_back(PathState {
             sym_memory: SymMemory::new(prog.clone()),
@@ -144,39 +148,43 @@ fn verify_program(prog_string: &str, d: Depth, config: Config) -> Result<Diagnos
 
         // build transmitter and receiver to communicate info back to main thread
         let (tx, rx): (Sender<Msg>, Receiver<Msg>) = mpsc::channel();
-        while !(q.is_empty() && pool.current_num_threads() == 0) {
-            println!("{} {}", q.is_empty(), pool.nu);
+        while !(q.is_empty() && curr_threads == 0) {
+            //println!("{} {}", q.is_empty(), curr_threads);
 
             //copy transmitter to pass to closure
             if let Some(path_state) = q.pop_front() {
                 // clone necesary data to prevent drops
                 let tx = tx.clone();
-                let diagnostics = diagnostics.clone();
                 let arc_cfg = Arc::clone(&arc_cfg);
                 let arc_config = Arc::clone(&arc_config);
                 let (retval_id, this_id) = (Arc::clone(&retval_id), Arc::clone(&this_id));
 
-                pool.install(move || {
-                    explore_path(
+                curr_threads += 1;
+                s.spawn(move |_| {
+                    
+                    explore_node(
                         tx,
                         arc_cfg,
                         arc_config,
                         (retval_id, this_id),
-                        diagnostics,
+                        Diagnostics::default(),
                         path_state,
                     )
                 });
             };
 
             match rx.recv() {
-                Ok(Msg::FinishedPath(d)) => diagnostics = diagnostics.merge(d),
+                Ok(Msg::FinishedPath(new_diagnostics)) => {
+                    diagnostics = diagnostics + new_diagnostics;
+                    curr_threads -= 1;
+                    
+                },
                 Ok(Msg::NewState(state)) => q.push_back(state),
                 Ok(Msg::Err(err)) => {
                     maybe_err = Some(err);
                     return;
                 }
                 Err(err) => println!("{}", err),
-                otherwise => println!("Error"),
             }
         };
     });
