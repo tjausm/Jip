@@ -18,7 +18,7 @@ use crate::shared::{panic_with_diagnostics, Diagnostics, Error};
 use crate::sym_model::PathConstraints;
 use crate::sym_model::SymMemory;
 
-use rayon::ThreadPool;
+use z3;
 
 use std::collections::VecDeque;
 use std::fs;
@@ -30,6 +30,7 @@ use std::sync::mpsc::Sender;
 use std::sync::Arc;
 use std::thread;
 use std::time::Instant;
+
 
 const PROG_CORRECT: &'static str = "Program is correct";
 
@@ -122,6 +123,8 @@ fn verify_program(prog_string: &str, d: Depth, config: Config) -> Result<Diagnos
     let arc_cfg = Arc::new(&cfg);
     let arc_config = Arc::new(&config);
 
+
+
     //init diagnostic info and error placeholder
     let mut diagnostics = Diagnostics::default();
     let mut maybe_err: Option<Error> = None;
@@ -137,6 +140,8 @@ fn verify_program(prog_string: &str, d: Depth, config: Config) -> Result<Diagnos
     // this guarantees that cfg/config/retval_id/this_id outlive the spawned threads
     rayon::scope(|s| {
 
+
+
         // push initial PathState
         let mut q: VecDeque<PathState> = VecDeque::new();
         q.push_back(PathState {
@@ -149,36 +154,42 @@ fn verify_program(prog_string: &str, d: Depth, config: Config) -> Result<Diagnos
         // build transmitter and receiver to communicate info back to main thread
         let (tx, rx): (Sender<Msg>, Receiver<Msg>) = mpsc::channel();
         while !(q.is_empty() && curr_threads == 0) {
-            //println!("{} {}", q.is_empty(), curr_threads);
 
-            //copy transmitter to pass to closure
-            if let Some(path_state) = q.pop_front() {
-                // clone necesary data to prevent drops
-                let tx = tx.clone();
-                let arc_cfg = Arc::clone(&arc_cfg);
-                let arc_config = Arc::clone(&arc_config);
-                let (retval_id, this_id) = (Arc::clone(&retval_id), Arc::clone(&this_id));
+            
+            if curr_threads < (max_threads - 1).max(1) {
+                if let Some(path_state) = q.pop_front() {
 
-                curr_threads += 1;
-                s.spawn(move |_| {
                     
-                    explore_node(
-                        tx,
-                        arc_cfg,
-                        arc_config,
-                        (retval_id, this_id),
-                        Diagnostics::default(),
-                        path_state,
-                    )
-                });
+                    // clone necesary data to prevent drops
+                    let tx = tx.clone();
+                    let arc_cfg = Arc::clone(&arc_cfg);
+                    let arc_config = Arc::clone(&arc_config);
+                    let (retval_id, this_id) = (Arc::clone(&retval_id), Arc::clone(&this_id));
+
+                    curr_threads += 1;
+                    s.spawn(move |_| {
+                        //initialise fresh z3 context for thread
+                        let z3_cfg = z3::Config::new();
+                        let ctx = z3::Context::new(&z3_cfg);
+
+                        explore_path(
+                            &ctx,
+                            tx,
+                            arc_cfg,
+                            arc_config,
+                            (retval_id, this_id),
+                            Diagnostics::default(),
+                            path_state,
+                        )
+                    });
+                };
             };
 
             match rx.recv() {
                 Ok(Msg::FinishedPath(new_diagnostics)) => {
                     diagnostics = diagnostics + new_diagnostics;
                     curr_threads -= 1;
-                    
-                },
+                }
                 Ok(Msg::NewState(state)) => q.push_back(state),
                 Ok(Msg::Err(err)) => {
                     maybe_err = Some(err);
@@ -186,7 +197,7 @@ fn verify_program(prog_string: &str, d: Depth, config: Config) -> Result<Diagnos
                 }
                 Err(err) => println!("{}", err),
             }
-        };
+        }
     });
 
     if let Some(err) = maybe_err {

@@ -1,4 +1,5 @@
-use std::path::Path;
+use std::collections::VecDeque;
+use std::path::{Path, self};
 use std::sync::Arc;
 use std::sync::mpsc::Sender;
 use std::thread;
@@ -17,7 +18,7 @@ use petgraph::Graph;
 use uuid::Uuid;
 
 use rustc_hash::FxHashMap;
-
+use ::z3::{Context};
 use super::types::{Depth, Msg, PathState};
 
 pub fn type_lhs<'ctx>(sym_memory: &mut SymMemory<'ctx>, lhs: &'ctx Lhs) -> Type {
@@ -165,6 +166,7 @@ pub fn params_to_vars<'ctx>(
 
 /// handles the assertion in the SEE (used in `assert` and `require` statements)
 pub fn assert(
+    ctx: &Context,
     simplify: bool,
     sym_memory: &mut SymMemory,
     assertion: &Expression,
@@ -197,7 +199,7 @@ pub fn assert(
 
     // if we have not solved by now, invoke z3
     diagnostics.z3_invocations = diagnostics.z3_invocations + 1;
-    z3::verify_constraints(&pc, &sym_memory)
+    z3::verify_constraints(&ctx, &pc, &sym_memory)
 }
 /// handles the assume in the SEE (used in `assume`, `require` and `ensure` statements)
 /// returns false if assumption is infeasible and can be dropped
@@ -226,25 +228,26 @@ pub fn assume(
 // Assert -> build & verify z3 formula, send error to main thread
 // Assume -> build & verify simplified formula, stop evaluating node if disproven
 // then we send the updated pathstate back to main thread
-pub fn explore_node<'a>(
+pub fn explore_path<'a>(
+    ctx: &Context,
     tx: Sender<Msg<'a>>,
     cfg: Arc<&'a CFG>,
     config: Arc<&Config>,
     (retval_id, this_id): (Arc<&'a String>, Arc<&'a String>),
     mut diagnostics: Diagnostics,
-    PathState {
-        mut sym_memory,
-        mut pc,
-        d,
-        curr_node,
-    }: PathState<'a>,
+    path_state: PathState<'a>,
 ) {
-    if d == 0 {
-        tx.send(Msg::FinishedPath(diagnostics)); 
-        return;
-    }
+    let mut q: VecDeque<PathState> = VecDeque::new();
+    q.push_back(path_state);
 
-    match &cfg[curr_node] {
+    while let Some(PathState {mut sym_memory, mut pc, d, curr_node}) = q.pop_front(){ 
+        
+        if d == 0 {
+            tx.send(Msg::FinishedPath(diagnostics)); 
+            return;
+        }
+    
+        match &cfg[curr_node] {
         // add all parameters of main as free variables to env
         Node::EnteringMain(parameters) => {
             for p in parameters {
@@ -281,12 +284,12 @@ pub fn explore_node<'a>(
                         Type::Void => panic!("Panic should never trigger, parser doesn't accept void type in declaration"),
                     },
                     Statement::Assume(assumption) => 
-                        if !assume(config.simplify, &mut sym_memory, assumption, &mut pc) 
+                        if !assume( config.simplify, &mut sym_memory, assumption, &mut pc) 
                             {
                                 tx.send(Msg::FinishedPath(diagnostics)); 
                                 return;
                             },
-                    Statement::Assert(assertion) =>  match assert(config.simplify, &mut sym_memory, assertion, &mut pc, &mut diagnostics) {
+                    Statement::Assert(assertion) =>  match assert(ctx, config.simplify, &mut sym_memory, assertion, &mut pc, &mut diagnostics) {
                         Err(err) => {
                             tx.send(Msg::Err(err)); 
                             return
@@ -465,6 +468,7 @@ pub fn explore_node<'a>(
                         match (specification, from_main_scope) {
                             // if require is called outside main scope we assert
                             (Specification::Requires(assertion), false) => match assert(
+                                ctx,
                                 config.simplify,
                                 &mut sym_memory,
                                 assertion,
@@ -492,8 +496,17 @@ pub fn explore_node<'a>(
                 }
             }
         }
+
+        // keep node in thread if queue is empty, otherwise send back to main
         let next = edge.target();
-        tx.send(Msg::NewState(PathState { sym_memory, pc: pc.clone(), d: d - 1, curr_node: next }));
-    }
+        let ps = PathState { sym_memory, pc: pc.clone(), d: d - 1, curr_node: next };
+        if q.is_empty(){
+            q.push_back(ps);
+        } else{
+            tx.send(Msg::NewState(ps));
+        }
+        
+        
+    }}
     tx.send(Msg::FinishedPath(diagnostics));
 }
