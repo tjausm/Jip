@@ -2,8 +2,6 @@
 //!
 
 use std::rc::Rc;
-use std::{fmt, path};
-use uuid::Uuid;
 use z3::ast::{Ast, Bool, Dynamic, Int};
 use z3::{ast, Config, Context, SatResult, Solver};
 
@@ -14,6 +12,12 @@ use crate::sym_model::{PathConstraints, SymExpression, SymMemory};
 //--------------//
 // z3 bindings //
 //-------------//
+
+pub fn build_ctx() -> (Config, Context) {
+    let z3_cfg = z3::Config::new();
+    let ctx = z3::Context::new(&z3_cfg);
+    (z3_cfg, ctx)
+}
 
 /// Combine the constraints in reversed order and check correctness using z3
 /// `solve_constraints(ctx, vec![assume x, assert y, assume z] = x -> (y && z)`
@@ -50,14 +54,6 @@ pub fn verify_constraints<'a>(
             ))
         }
     };
-}
-
-fn expr_to_int<'ctx>(
-    ctx: &'ctx Context,
-    env: &SymMemory<'ctx>,
-    expr: &'ctx Expression,
-) -> Int<'ctx> {
-    return unwrap_as_int(expr_to_dynamic(&ctx, Rc::new(env), expr));
 }
 
 fn expr_to_bool<'ctx>(

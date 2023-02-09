@@ -4,7 +4,7 @@ use crate::ast::*;
 use crate::shared::Error;
 use crate::z3;
 use crate::shared::{panic_with_diagnostics, Diagnostics};
-use crate::sym_model::{SymExpression, SymMemory, SymValue, PathConstraints, Substituted, PathConstraint};
+use crate::sym_model::{SymExpression, SymMemory, SymValue, PathConstraints, Substituted};
 
 pub fn type_lhs<'ctx>(sym_memory: &mut SymMemory<'ctx>, lhs: &'ctx Lhs) -> Type {
     match lhs {

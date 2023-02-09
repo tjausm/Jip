@@ -17,12 +17,12 @@ use crate::shared::ExitCode;
 use crate::shared::{panic_with_diagnostics, Diagnostics, Error};
 use crate::sym_model::PathConstraints;
 use crate::sym_model::{ReferenceValue, SymExpression, SymMemory, SymValue};
+use crate::z3::build_ctx;
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
 use uuid::Uuid;
 
 use rustc_hash::FxHashMap;
-use ::z3;
 use std::collections::VecDeque;
 use std::fs;
 use std::time::Instant;
@@ -109,8 +109,7 @@ pub fn print_verification(
 fn verify_program(prog_string: &str, d: Depth, config: Config) -> Result<Diagnostics, Error> {
 
     // init global z3 context
-    let z3_cfg = z3::Config::new();
-    let ctx = z3::Context::new(&z3_cfg);
+    let (_, ctx) = build_ctx();
 
     //init diagnostic info
     let mut diagnostics = Diagnostics::default();
