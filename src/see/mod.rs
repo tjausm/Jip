@@ -116,7 +116,7 @@ fn verify_program(prog_string: &str, d: Depth, config: Config) -> Result<Diagnos
 
     // init Arcs for usage in the rayon::scope
     let retval_id = &"retval".to_string();
-    let this_id = &"retval".to_string();
+    let this_id = &"this".to_string();
     let retval_id = Arc::new(retval_id);
     let this_id = Arc::new(this_id);
     let arc_cfg = Arc::new(&cfg);
