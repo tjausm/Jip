@@ -65,6 +65,11 @@ impl PathConstraints {
 #[derive(Debug, Clone)]
 pub struct Substituted(pub Expression);
 
+/// Containertype containing normalized expression. 
+/// Given 3 expressions `e1 = 1+2+3`, `e2 = 3+2+1` and `e1 = 2+3+1` 
+/// then `Normalized(e1) == Normalized(e2)`, `Normalized(e2) == Normalized(e3)` and so on
+pub struct Normalized(pub Substituted);
+
 pub type Reference = Uuid;
 
 #[derive(Debug, Clone)]
@@ -107,6 +112,8 @@ struct Frame<'a> {
 type SymStack<'a> = Vec<Frame<'a>>;
 
 type SymHeap = FxHashMap<Reference, ReferenceValue>;
+
+type Test = FxHashMap<Substituted, Substituted>;
 
 #[derive(Clone)]
 pub struct SymMemory<'ctx> {
@@ -270,7 +277,7 @@ impl<'a> SymMemory<'a> {
 
 
         //get array type, array and length
-        let (_, _, length)= match self.stack_get(&arr_name){
+        let (l_expr, r_expr, length)= match self.stack_get(&arr_name){
             Some(SymExpression::Ref((_, r))) => match self.heap.get(&r){
                 Some(ReferenceValue::Array((ty, arr, length))) => (ty, arr, length),
                 otherwise => panic_with_diagnostics(&format!("{:?} is not an array and can't be assigned to in assignment '{}[{:?}] := {:?}'", otherwise, arr_name, subt_index, var), &self),
@@ -300,7 +307,7 @@ impl<'a> SymMemory<'a> {
     pub fn heap_get_length(&self, arr_name: &Identifier) -> SymExpression {
         match self.stack_get(&arr_name){
         Some(SymExpression::Ref((_, r))) => match self.heap.get(&r){
-            Some(ReferenceValue::Array((_, _, length))) => SymExpression::Int(SymValue::Expr(length.clone())),
+            Some(ReferenceValue::Array((l_expr, r_expr, length))) => SymExpression::Int(SymValue::Expr(length.clone())),
             otherwise => panic_with_diagnostics(&format!("Can't return length of {} since the value it references to ({:?}) is not an array", arr_name, otherwise), &self),
         },
         _ => panic_with_diagnostics(&format!("{} is not a reference", arr_name), &self),
@@ -659,6 +666,11 @@ impl<'a> SymMemory<'a> {
         }
     }
 }
+
+
+
+
+
 impl fmt::Debug for SymMemory<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(

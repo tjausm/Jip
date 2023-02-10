@@ -1,6 +1,8 @@
-use std::fmt;
-
 use crate::shared::panic_with_diagnostics;
+use std::cmp::Ordering;
+use std::collections::hash_map::DefaultHasher;
+use std::fmt;
+use std::hash::{Hash, Hasher};
 /*
 use non_empty_vec::NonEmpty;
 
@@ -134,7 +136,7 @@ pub enum Type {
     Int,
     Bool,
     ClassType(Identifier),
-    ArrayType(Box<Type>)
+    ArrayType(Box<Type>),
 }
 
 pub type Assignment = (Lhs, Rhs);
@@ -143,7 +145,7 @@ pub type Assignment = (Lhs, Rhs);
 pub enum Lhs {
     Identifier(String),
     AccessField(Identifier, Identifier),
-    AccessArray(Identifier, Expression)
+    AccessArray(Identifier, Expression),
 }
 
 #[derive(Clone)]
@@ -153,7 +155,7 @@ pub enum Rhs {
     AccessArray(Identifier, Expression),
     Invocation(Invocation),
     Newobject(Identifier, Arguments),
-    NewArray(Type, Expression)
+    NewArray(Type, Expression),
 }
 
 //TODO: add args hier
@@ -166,7 +168,7 @@ pub struct Skip;
 
 pub type Ite = (Expression, Box<Statement>, Box<Statement>);
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub enum Expression {
     //expression1
     Forall(Identifier, Box<Expression>),
@@ -205,16 +207,198 @@ pub enum Expression {
     //expression9
     Identifier(Identifier),
     Literal(Literal),
-    ArrLength(Identifier)
+    ArrLength(Identifier),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Literal {
     Boolean(bool),
     Integer(i64),
 }
 
 pub type Identifier = String;
+
+/// Given 3 expressions `e1 = 1+2+3`, `e2 = 3+2+1` and `e1 = 2+3+1`
+/// then `normalize(e1) == normalize(e2)`, `normalize(e2) == normalize(e3)` and so on
+fn normalize(expr: Expression) -> Expression {
+    match expr {
+        // recurse as long as subexpressions are ::And, sort collected subexpressions, and rebuilt conjunction
+        Expression::And(l_expr, r_expr) => {
+            let nl_expr = normalize(*l_expr);
+            let nr_expr = normalize(*r_expr);
+
+            todo!()
+        }
+        // sort normalized expressions and return sorted equality expression
+        Expression::EQ(l_expr, r_expr) => {
+            let mut nl_expr = normalize(*l_expr);
+            let mut nr_expr = normalize(*r_expr);
+
+            if (nl_expr > nr_expr) {
+                let temp = nl_expr;
+                nl_expr = nr_expr;
+                nr_expr = temp
+            };
+            Expression::EQ(Box::new(nl_expr), Box::new(nr_expr))
+        }
+
+        // recurse as long as subexpressions are ::Plus, sort collected subexpressions, and rebuilt expression
+        Expression::Plus(l_expr, r_expr) => {
+            let nl_expr = normalize(*l_expr);
+            let nr_expr = normalize(*r_expr);
+
+            todo!()
+        }
+
+        // change a - b to a + (- b)
+        Expression::Minus(l_expr, r_expr) => normalize(Expression::Plus(
+            Box::new(normalize(*l_expr)),
+            Box::new(Expression::Negative(Box::new(normalize(*r_expr)))),
+        )),
+
+        // change to ! (!l_expr && !r_expr) and !(l_expr == r_expr),
+        // meaning we map || and != to == and &&
+        Expression::Or(l_expr, r_expr) => {
+            normalize(Expression::Not(Box::new(normalize(Expression::And(
+                Box::new(Expression::Not(Box::new(*l_expr))),
+                Box::new(Expression::Not(Box::new(*r_expr))),
+            )))))
+        }
+        Expression::NE(l_expr, r_expr) => normalize(Expression::Not(Box::new(normalize(
+            Expression::EQ(Box::new(*l_expr), Box::new((*r_expr))),
+        )))),
+
+        // Stefan's normalization
+        Expression::LT(l_expr, r_expr) => normalize(Expression::LT(
+            Box::new(normalize(*l_expr)),
+            Box::new(normalize(*r_expr)),
+        )),
+        Expression::GT(l_expr, r_expr) => normalize(Expression::LT(
+            Box::new(normalize(*r_expr)),
+            Box::new(normalize(*l_expr)),
+        )),
+        Expression::GEQ(l_expr, r_expr) => normalize(Expression::Not(Box::new(Expression::LT(
+            Box::new(normalize(*l_expr)),
+            Box::new(normalize(*r_expr)),
+        )))),
+        Expression::LEQ(l_expr, r_expr) => normalize(Expression::Not(Box::new(Expression::LT(
+            Box::new(normalize(*r_expr)),
+            Box::new(normalize(*l_expr)),
+        )))),
+
+        // normalize l and r
+        Expression::Multiply(l_expr, r_expr) => {
+            Expression::Multiply(Box::new(normalize(*l_expr)), Box::new(normalize(*r_expr)))
+        }
+        Expression::Divide(l_expr, r_expr) => {
+            Expression::Multiply(Box::new(normalize(*l_expr)), Box::new(normalize(*r_expr)))
+        }
+        Expression::Mod(l_expr, r_expr) => {
+            Expression::Multiply(Box::new(normalize(*l_expr)), Box::new(normalize(*r_expr)))
+        }
+
+        // normalize inner
+        Expression::Negative(expr) => Expression::Negative(Box::new(normalize(*expr))),
+        Expression::Not(expr) => Expression::Not(Box::new(normalize(*expr))),
+
+        // identity function
+        Expression::Identifier(_) => expr,
+        Expression::Literal(_) => expr,
+        Expression::ArrLength(_) => expr,
+
+        _ => todo!(),
+    };
+    todo!()
+}
+
+impl Hash for Expression {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        let normalized_expr = normalize(self.clone());
+        format!("{:?}", normalized_expr).hash(state);
+    }
+}
+
+// give an arbitrary number to expressions to sort them in a predictable manner
+fn order_expr(expr: &Expression) -> u128 {
+    let mut hasher = DefaultHasher::new();
+    match expr {
+        Expression::And(_, _) => 0,
+        Expression::EQ(_, _) => 1,
+        Expression::LT(_, _) => 2,
+        Expression::Plus(_, _) => 3,
+        Expression::Multiply(_, _) => 4,
+        Expression::Divide(_, _) => 5,
+        Expression::Mod(_, _) => 6,
+        Expression::Negative(_) => 7,
+        Expression::Not(_) => 8,
+        Expression::Literal(Literal::Boolean(true)) => 9,
+        Expression::Literal(Literal::Boolean(false)) => 10,
+        Expression::Literal(Literal::Integer(n)) => u64::MAX as u128 + *n as u128,
+        Expression::Identifier(id) => {
+            id.hash(&mut hasher);
+            hasher.finish() as u128
+        }
+        Expression::ArrLength(id) => {
+            // write some data into this hasher to make result different than Identifier
+            hasher.write_u8(100);
+            id.hash(&mut hasher);
+            hasher.finish() as u128
+        }
+        _ => panic_with_diagnostics(
+            &format!("Only use normalized expressions in the partial order function"),
+            &(),
+        ),
+    }
+}
+
+fn get_inner_exprs(expr: &Expression) -> (&Expression, Option<&Expression>) {
+    match expr {
+        Expression::Implies(l_expr, r_expr) => (l_expr, Some(r_expr)),
+        Expression::And(l_expr, r_expr) => (l_expr, Some(r_expr)),
+        Expression::Or(l_expr, r_expr) => (l_expr, Some(r_expr)),
+        Expression::EQ(l_expr, r_expr) => (l_expr, Some(r_expr)),
+        Expression::NE(l_expr, r_expr) => (l_expr, Some(r_expr)),
+        Expression::LT(l_expr, r_expr) => (l_expr, Some(r_expr)),
+        Expression::GT(l_expr, r_expr) => (l_expr, Some(r_expr)),
+        Expression::GEQ(l_expr, r_expr) => (l_expr, Some(r_expr)),
+        Expression::LEQ(l_expr, r_expr) => (l_expr, Some(r_expr)),
+        Expression::Plus(l_expr, r_expr) => (l_expr, Some(r_expr)),
+        Expression::Minus(l_expr, r_expr) => (l_expr, Some(r_expr)),
+        Expression::Multiply(l_expr, r_expr) => (l_expr, Some(r_expr)),
+        Expression::Divide(l_expr, r_expr) => (l_expr, Some(r_expr)),
+        Expression::Mod(l_expr, r_expr) => (l_expr, Some(r_expr)),
+        Expression::Forall(_, r_expr) => (r_expr, None),
+        Expression::Exists(_, r_expr) => (r_expr, None),
+        _ => (expr, None),
+    }
+}
+
+impl PartialOrd for Expression {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        match order_expr(self).partial_cmp(&order_expr(other)) {
+            // outerexpression is the same
+            Some(Ordering::Equal) => {
+                let ((le1, le2), (re1, re2)) = (get_inner_exprs(self), get_inner_exprs(other));
+
+                match le1.partial_cmp(re1) {
+                    Some(Ordering::Equal) => match (le2, re2) {
+                        (Some(le2), Some(re2)) => le2.partial_cmp(re2),
+                        _ => panic_with_diagnostics("Why is partial ordering not working??", &()),
+                    },
+                    Some(ordering) => Some(ordering),
+                    None => panic_with_diagnostics("Why is partial ordering not working??", &()),
+                }
+            }
+            Some(ordering) => Some(ordering),
+            None => panic_with_diagnostics("Why is partial ordering not working??", &()),
+        }
+    }
+}
+impl Ord for Expression {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.partial_cmp(other).unwrap()
+    }
+}
 
 impl fmt::Debug for Statement {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -264,7 +448,7 @@ impl fmt::Debug for Expression {
             Expression::Identifier(id) => write!(f, "{}", id),
             Expression::Literal(Literal::Boolean(val)) => write!(f, "{:?}", val),
             Expression::Literal(Literal::Integer(val)) => write!(f, "{:?}", val),
-            Expression::ArrLength(id) => write!(f, "#{:?}", id)
+            Expression::ArrLength(id) => write!(f, "#{:?}", id),
         }
     }
 }
@@ -298,5 +482,72 @@ impl fmt::Debug for Type {
             Type::ClassType(name) => write!(f, "{}", name),
             Type::ArrayType(ty) => write!(f, "{:?}[]", ty),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    lalrpop_mod!(pub parser);
+
+    fn parse(i: &str) -> Expression {
+        return parser::VerificationExpressionParser::new()
+            .parse(i)
+            .unwrap();
+    }
+
+    #[test]
+    fn sort_expressions() {
+        let one = parse("1");
+        let id = parse("id");
+        let conjunction = parse("test && true");
+        let negative = parse("-1");
+        let three = parse("0+1+2*3/3");
+        let onwaar = parse("!true && false || false");
+
+        // construct some random arrays with these expressions
+        let mut arr1 = [
+            onwaar.clone(),
+            onwaar.clone(),
+            onwaar.clone(),
+            conjunction.clone(),
+            id.clone(),
+            one.clone(),
+        ];
+        let mut arr2 = [
+            one.clone(),
+            id.clone(),
+            conjunction.clone(),
+            onwaar.clone(),
+            onwaar.clone(),
+            onwaar.clone(),
+        ];
+        let mut arr3 = [
+            onwaar.clone(),
+            one.clone(),
+            onwaar.clone(),
+            conjunction.clone(),
+            onwaar.clone(),
+            id.clone(),
+        ];
+        let mut arr4 = [id, onwaar, conjunction, negative, one, three];
+
+        arr1.sort();
+        arr2.sort();
+        arr3.sort();
+        arr4.sort();
+
+        // check if arrays are equal after sorting
+        assert!(arr1 == arr2);
+        assert!(arr1 == arr3);
+        assert!(arr1 == arr4);
+    }
+
+    #[test]
+    fn expr_in_fxhashmap() {
+        let e1 = parse("1+2+3");
+        let e2 = parse("3+2+1");
+        assert!(normalize(e1) == normalize(e2));
     }
 }
