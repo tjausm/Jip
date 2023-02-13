@@ -6,7 +6,8 @@ use z3::{ast, Config, Context, SatResult, Solver};
 
 use crate::ast::*;
 use crate::shared::{panic_with_diagnostics, Error};
-use crate::sym_model::{PathConstraints, SymExpression, SymMemory, Substituted};
+use crate::symbolic::model::{PathConstraints, SymExpression, Substituted};
+use crate::symbolic::memory::SymMemory;
 
 //--------------//
 // z3 bindings //

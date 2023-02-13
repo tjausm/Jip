@@ -13,7 +13,7 @@ mod ast;
 mod cfg;
 mod see;
 mod shared;
-mod sym_model;
+mod symbolic;
 mod z3;
 
 #[derive(Parser)]

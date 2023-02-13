@@ -4,7 +4,8 @@ use uuid::Uuid;
 use crate::ast::*;
 use crate::shared::Error;
 use crate::shared::{panic_with_diagnostics, Diagnostics};
-use crate::sym_model::{PathConstraints, Substituted, SymExpression, SymMemory, SymValue};
+use crate::symbolic::model::{PathConstraints, Substituted, SymExpression, SymValue};
+use crate::symbolic::memory::SymMemory;
 use crate::z3;
 
 pub fn type_lhs<'ctx>(sym_memory: &mut SymMemory<'ctx>, lhs: &'ctx Lhs) -> Type {

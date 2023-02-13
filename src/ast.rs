@@ -1,5 +1,4 @@
 use crate::shared::panic_with_diagnostics;
-use std::cmp::Ordering;
 use std::collections::hash_map::DefaultHasher;
 use std::fmt;
 use std::hash::{Hash, Hasher};
@@ -219,15 +218,11 @@ pub enum Literal {
 pub type Identifier = String;
 
 pub enum NormExpression {
-    And(Vec<NormExpression>),
     Plus(Vec<NormExpression>),
-    EQ(Box<NormExpression>, Box<NormExpression>),
-    LT(Box<NormExpression>, Box<NormExpression>),
     Multiply(Box<NormExpression>, Box<NormExpression>),
     Divide(Box<NormExpression>, Box<NormExpression>),
     Mod(Box<NormExpression>, Box<NormExpression>),
     Negative(Box<NormExpression>),
-    Not(Box<NormExpression>),
     Identifier(Identifier),
     Literal(Literal),
     ArrLength(Identifier),
@@ -262,8 +257,7 @@ fn normalize(expr: Expression) -> NormExpression {
 
     match expr {
         // for both the summation and conjunction we collect all parts
-        Expression::And(_, _) => NormExpression::And(collect_conjunction(expr)),
-        Expression::Plus(_, _) => NormExpression::And(collect_summation(expr)),
+        Expression::Plus(_, _) => NormExpression::Plus(collect_summation(expr)),
 
         Expression::EQ(l_expr, r_expr) => {
             let mut nl_expr = normalize(*l_expr);
@@ -289,22 +283,6 @@ fn normalize(expr: Expression) -> NormExpression {
             Box::new((*r_expr)),
         )))),
 
-        // Stefan's normalization
-        Expression::LT(l_expr, r_expr) => {
-            NormExpression::LT(Box::new(normalize(*l_expr)), Box::new(normalize(*r_expr)))
-        }
-        Expression::GT(l_expr, r_expr) => {
-            NormExpression::LT(Box::new(normalize(*r_expr)), Box::new(normalize(*l_expr)))
-        }
-        Expression::GEQ(l_expr, r_expr) => NormExpression::Not(Box::new(NormExpression::LT(
-            Box::new(normalize(*l_expr)),
-            Box::new(normalize(*r_expr)),
-        ))),
-        Expression::LEQ(l_expr, r_expr) => NormExpression::Not(Box::new(NormExpression::LT(
-            Box::new(normalize(*r_expr)),
-            Box::new(normalize(*l_expr)),
-        ))),
-
         // normalize l and r
         Expression::Multiply(l_expr, r_expr) => {
             NormExpression::Multiply(Box::new(normalize(*l_expr)), Box::new(normalize(*r_expr)))
@@ -318,7 +296,6 @@ fn normalize(expr: Expression) -> NormExpression {
 
         // normalize inner
         Expression::Negative(expr) => NormExpression::Negative(Box::new(normalize(*expr))),
-        Expression::Not(expr) => NormExpression::Not(Box::new(normalize(*expr))),
 
         // identity function
         Expression::Identifier(id) => NormExpression::Identifier(id),
@@ -334,15 +311,11 @@ fn normalize(expr: Expression) -> NormExpression {
 fn order_expr(expr: &NormExpression) -> u128 {
     let mut hasher = DefaultHasher::new();
     match expr {
-        NormExpression::And(_) => todo!(),
         NormExpression::Plus(_) => todo!(),
-        NormExpression::EQ(_, _) => todo!(),
-        NormExpression::LT(_, _) => todo!(),
         NormExpression::Multiply(_, _) => todo!(),
         NormExpression::Divide(_, _) => todo!(),
         NormExpression::Mod(_, _) => todo!(),
         NormExpression::Negative(_) => todo!(),
-        NormExpression::Not(_) => todo!(),
         NormExpression::Literal(Literal::Boolean(true)) => 0,
         NormExpression::Literal(Literal::Boolean(false)) => 1,
         NormExpression::Literal(Literal::Integer(n)) => u64::MAX as u128 + *n as u128,
