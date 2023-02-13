@@ -59,7 +59,7 @@ impl PathConstraints {
 }
 
 /// containertype to indicate substitution of variables has already occured on expression
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash)]
 pub struct Substituted(pub Expression);
 
 pub type Reference = Uuid;
@@ -80,8 +80,8 @@ pub enum SymExpression {
 /// Consists of `identifier` (= classname) and a hashmap describing it's fields
 pub type Object = (Identifier, FxHashMap<Identifier, (Type, SymExpression)>);
 
-/// Consists of type, concrete array and Substituted expression representing length
-pub type Array = (Type, Vec<SymExpression>, Substituted);
+/// Consists of type, a mapping from expression to symbolic expression and Substituted expression representing length
+pub type Array = (Type, FxHashMap<Substituted, SymExpression>, Substituted);
 
 #[derive(Debug, Clone)]
 pub enum ReferenceValue {
@@ -91,8 +91,10 @@ pub enum ReferenceValue {
     UninitializedObj(Class),
 }
 
+/// Intermediate type use to implement custom `Hash` for Expression
+/// while also using the default hasher for the 'base values'
 #[derive(Hash)]
-pub enum HashExpression {
+enum HashExpression {
     Plus(Vec<u64>),
     Multiply(Vec<u64>),
     Divide(u64, u64),
@@ -114,9 +116,8 @@ fn map_hash<T: Hash>(v: &Vec<T>) -> Vec<u64> {
         .collect::<Vec<u64>>()
 }
 
-
 impl Hash for Expression {
-    fn hash<H: Hasher>(&self, state: &mut H)  {
+    fn hash<H: Hasher>(&self, state: &mut H) {
         fn collect_sum(expr: Expression) -> Vec<Expression> {
             match expr {
                 Expression::Plus(l_expr, r_expr) => {
@@ -124,9 +125,10 @@ impl Hash for Expression {
                     sum.append(&mut collect_sum(*r_expr));
                     sum
                 }
-                Expression::Minus(l_expr, r_expr) => {
-                    collect_sum(Expression::Plus(l_expr, Box::new(Expression::Negative(r_expr))))
-                }
+                Expression::Minus(l_expr, r_expr) => collect_sum(Expression::Plus(
+                    l_expr,
+                    Box::new(Expression::Negative(r_expr)),
+                )),
                 _ => vec![expr],
             }
         }
@@ -141,25 +143,35 @@ impl Hash for Expression {
                 _ => vec![expr],
             }
         }
+        
         match self {
             Expression::Plus(_, _) => {
                 let sum = collect_sum(self.clone());
                 let mut hashed_sum = map_hash(&sum);
                 hashed_sum.sort();
                 HashExpression::Plus(hashed_sum).hash(state)
-
-            },
-            Expression::Multiply(_,_) => {
+            }
+            Expression::Multiply(_, _) => {
                 let mult = collect_mult(self.clone());
                 let mut hashed_mult = map_hash(&mult);
                 hashed_mult.sort();
                 HashExpression::Multiply(hashed_mult).hash(state)
-
-            },
-            Expression::Minus(l_expr, r_expr) => Expression::Plus(l_expr.clone(), Box::new(Expression::Negative(r_expr.clone()))).hash(state),
-            Expression::Divide(l_expr, r_expr) => HashExpression::Divide(calculate_hash(&*l_expr), calculate_hash(&*r_expr)).hash(state),
-            Expression::Mod(l_expr, r_expr) => HashExpression::Mod(calculate_hash(&*l_expr), calculate_hash(&*r_expr)).hash(state),
-            Expression::Negative(expr) => HashExpression::Negative(calculate_hash(&*expr)).hash(state),
+            }
+            Expression::Minus(l_expr, r_expr) => Expression::Plus(
+                l_expr.clone(),
+                Box::new(Expression::Negative(r_expr.clone())),
+            )
+            .hash(state),
+            Expression::Divide(l_expr, r_expr) => {
+                HashExpression::Divide(calculate_hash(&*l_expr), calculate_hash(&*r_expr))
+                    .hash(state)
+            }
+            Expression::Mod(l_expr, r_expr) => {
+                HashExpression::Mod(calculate_hash(&*l_expr), calculate_hash(&*r_expr)).hash(state)
+            }
+            Expression::Negative(expr) => {
+                HashExpression::Negative(calculate_hash(&*expr)).hash(state)
+            }
             Expression::Identifier(id) => HashExpression::Identifier(id.clone()).hash(state),
             Expression::Literal(lit) => HashExpression::Literal(lit.clone()).hash(state),
             Expression::ArrLength(id) => HashExpression::ArrLength(id.clone()).hash(state),
