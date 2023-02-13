@@ -1,7 +1,6 @@
 use crate::shared::panic_with_diagnostics;
-use std::collections::hash_map::DefaultHasher;
 use std::fmt;
-use std::hash::{Hash, Hasher};
+use std::hash::{Hash};
 /*
 use non_empty_vec::NonEmpty;
 
@@ -167,7 +166,7 @@ pub struct Skip;
 
 pub type Ite = (Expression, Box<Statement>, Box<Statement>);
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone)]
 pub enum Expression {
     //expression1
     Forall(Identifier, Box<Expression>),
@@ -216,144 +215,6 @@ pub enum Literal {
 }
 
 pub type Identifier = String;
-
-pub enum NormExpression {
-    Plus(Vec<NormExpression>),
-    Multiply(Box<NormExpression>, Box<NormExpression>),
-    Divide(Box<NormExpression>, Box<NormExpression>),
-    Mod(Box<NormExpression>, Box<NormExpression>),
-    Negative(Box<NormExpression>),
-    Identifier(Identifier),
-    Literal(Literal),
-    ArrLength(Identifier),
-}
-
-/// Given 3 expressions `e1 = 1+2+3`, `e2 = 3+2+1` and `e1 = 2+3+1`
-/// then `normalize(e1) == normalize(e2)`, `normalize(e2) == normalize(e3)` and so on
-fn normalize(expr: Expression) -> NormExpression {
-
-    // todo simplify expression somewhere
-
-    fn collect_conjunction(expr: Expression) -> Vec<NormExpression> {
-        match expr {
-            Expression::And(l_expr, r_expr) => {
-                let mut members = collect_conjunction(*l_expr);
-                members.append(&mut collect_conjunction(*r_expr));
-                members
-            }
-            _ => vec![normalize(expr)],
-        }
-    }
-    fn collect_summation(expr: Expression) -> Vec<NormExpression> {
-        match expr {
-            Expression::Plus(l_expr, r_expr) => {
-                let mut members = collect_conjunction(*l_expr);
-                members.append(&mut collect_conjunction(*r_expr));
-                members
-            }
-            _ => vec![normalize(expr)],
-        }
-    }
-
-    match expr {
-        // for both the summation and conjunction we collect all parts
-        Expression::Plus(_, _) => NormExpression::Plus(collect_summation(expr)),
-
-        Expression::EQ(l_expr, r_expr) => {
-            let mut nl_expr = normalize(*l_expr);
-            let mut nr_expr = normalize(*r_expr);
-
-            todo!()
-        }
-
-        // change a - b to a + (- b) and normalize again
-        Expression::Minus(l_expr, r_expr) => normalize(Expression::Plus(
-            Box::new(*l_expr),
-            Box::new(Expression::Negative(Box::new(*r_expr))),
-        )),
-
-        // change to ! (!l_expr && !r_expr) and !(l_expr == r_expr),
-        // meaning we map || and != to == and &&
-        Expression::Or(l_expr, r_expr) => normalize(Expression::Not(Box::new(Expression::And(
-            Box::new(Expression::Not(Box::new(*l_expr))),
-            Box::new(Expression::Not(Box::new(*r_expr))),
-        )))),
-        Expression::NE(l_expr, r_expr) => normalize(Expression::Not(Box::new(Expression::EQ(
-            Box::new(*l_expr),
-            Box::new((*r_expr)),
-        )))),
-
-        // normalize l and r
-        Expression::Multiply(l_expr, r_expr) => {
-            NormExpression::Multiply(Box::new(normalize(*l_expr)), Box::new(normalize(*r_expr)))
-        }
-        Expression::Divide(l_expr, r_expr) => {
-            NormExpression::Multiply(Box::new(normalize(*l_expr)), Box::new(normalize(*r_expr)))
-        }
-        Expression::Mod(l_expr, r_expr) => {
-            NormExpression::Multiply(Box::new(normalize(*l_expr)), Box::new(normalize(*r_expr)))
-        }
-
-        // normalize inner
-        Expression::Negative(expr) => NormExpression::Negative(Box::new(normalize(*expr))),
-
-        // identity function
-        Expression::Identifier(id) => NormExpression::Identifier(id),
-        Expression::Literal(lit) => NormExpression::Literal(lit),
-        Expression::ArrLength(id) => NormExpression::ArrLength(id),
-
-        _ => todo!(),
-    };
-    todo!()
-}
-
-// give an arbitrary number to expressions to sort them in a predictable manner
-fn order_expr(expr: &NormExpression) -> u128 {
-    let mut hasher = DefaultHasher::new();
-    match expr {
-        NormExpression::Plus(_) => todo!(),
-        NormExpression::Multiply(_, _) => todo!(),
-        NormExpression::Divide(_, _) => todo!(),
-        NormExpression::Mod(_, _) => todo!(),
-        NormExpression::Negative(_) => todo!(),
-        NormExpression::Literal(Literal::Boolean(true)) => 0,
-        NormExpression::Literal(Literal::Boolean(false)) => 1,
-        NormExpression::Literal(Literal::Integer(n)) => u64::MAX as u128 + *n as u128,
-        NormExpression::Identifier(id) => {
-            id.hash(&mut hasher);
-            hasher.finish() as u128
-        }
-        NormExpression::ArrLength(id) => {
-            // write some data into this hasher to make result different than Identifier
-            hasher.write_u8(100);
-            id.hash(&mut hasher);
-            hasher.finish() as u128
-        }
-    }
-}
-
-fn get_inner_exprs(expr: &Expression) -> (&Expression, Option<&Expression>) {
-    match expr {
-        Expression::Implies(l_expr, r_expr) => (l_expr, Some(r_expr)),
-        Expression::And(l_expr, r_expr) => (l_expr, Some(r_expr)),
-        Expression::Or(l_expr, r_expr) => (l_expr, Some(r_expr)),
-        Expression::EQ(l_expr, r_expr) => (l_expr, Some(r_expr)),
-        Expression::NE(l_expr, r_expr) => (l_expr, Some(r_expr)),
-        Expression::LT(l_expr, r_expr) => (l_expr, Some(r_expr)),
-        Expression::GT(l_expr, r_expr) => (l_expr, Some(r_expr)),
-        Expression::GEQ(l_expr, r_expr) => (l_expr, Some(r_expr)),
-        Expression::LEQ(l_expr, r_expr) => (l_expr, Some(r_expr)),
-        Expression::Plus(l_expr, r_expr) => (l_expr, Some(r_expr)),
-        Expression::Minus(l_expr, r_expr) => (l_expr, Some(r_expr)),
-        Expression::Multiply(l_expr, r_expr) => (l_expr, Some(r_expr)),
-        Expression::Divide(l_expr, r_expr) => (l_expr, Some(r_expr)),
-        Expression::Mod(l_expr, r_expr) => (l_expr, Some(r_expr)),
-        Expression::Forall(_, r_expr) => (r_expr, None),
-        Expression::Exists(_, r_expr) => (r_expr, None),
-        _ => (expr, None),
-    }
-}
-
 
 impl fmt::Debug for Statement {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -437,72 +298,5 @@ impl fmt::Debug for Type {
             Type::ClassType(name) => write!(f, "{}", name),
             Type::ArrayType(ty) => write!(f, "{:?}[]", ty),
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    lalrpop_mod!(pub parser);
-
-    fn parse(i: &str) -> Expression {
-        return parser::VerificationExpressionParser::new()
-            .parse(i)
-            .unwrap();
-    }
-
-    #[test]
-    fn sort_expressions() {
-        let one = parse("1");
-        let id = parse("id");
-        let conjunction = parse("test && true");
-        let negative = parse("-1");
-        let three = parse("0+1+2*3/3");
-        let onwaar = parse("!true && false || false");
-
-        // construct some random arrays with these expressions
-        let mut arr1 = [
-            onwaar.clone(),
-            onwaar.clone(),
-            onwaar.clone(),
-            conjunction.clone(),
-            id.clone(),
-            one.clone(),
-        ];
-        let mut arr2 = [
-            one.clone(),
-            id.clone(),
-            conjunction.clone(),
-            onwaar.clone(),
-            onwaar.clone(),
-            onwaar.clone(),
-        ];
-        let mut arr3 = [
-            onwaar.clone(),
-            one.clone(),
-            onwaar.clone(),
-            conjunction.clone(),
-            onwaar.clone(),
-            id.clone(),
-        ];
-        let mut arr4 = [id, onwaar, conjunction, negative, one, three];
-
-        // arr1.sort();
-        // arr2.sort();
-        // arr3.sort();
-        // arr4.sort();
-
-        // check if arrays are equal after sorting
-        assert!(arr1 == arr2);
-        assert!(arr1 == arr3);
-        assert!(arr1 == arr4);
-    }
-
-    #[test]
-    fn expr_in_fxhashmap() {
-        let e1 = parse("1+2+3");
-        let e2 = parse("3+2+1");
-        //assert!(normalize(e1) == normalize(e2));
     }
 }
