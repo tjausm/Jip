@@ -1,12 +1,14 @@
 class Main {
     
     static void main(Node p){
-
+        p.fill(1);
         bool mem := p.member(1);
-        //assert mem == false;
+        assert mem == true;
 
     }
 }
+
+
 
 //
 // Linked-list, with several methods.
@@ -30,31 +32,13 @@ class Node {
             return b ;
         };
     }
-
-    int length() {
-        Node n := this.next ;
-        if (n==null) return 1 ;
-        else {
-            int k := n.length() ;
-            return k+1 ;
-        };
-    }
-
-    Node min()
-    {
-        Node p := this ;
-        Node min := p ;
-        int minval := min.value ;
-
-        while ( p != null) {
-           int value := p.value ;
-           if ( value < minval) {
-                min := p ;
-                minval := value ;
-           } else ;
-           p := p.next;
+    void fill(int v){
+        Node curr := this;
+        Node next := this.next;
+        while(next != null){
+            curr.value := v;
+            curr := next;
+            next := next.next;
         }
-       return min ;
     }
-
 }
