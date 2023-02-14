@@ -138,7 +138,7 @@ Assert : Expression = {
 
 Assume : Expression = "assume" <VerificationExpression> ";";
 
-While : While = "while (" <v:Expression> ")" <s : Statement>  => (v, Box::new(s));
+While : While = "while" "(" <v:Expression> ")" <s : Statement>  => (v, Box::new(s));
 
 Expression : Expression = {
     Expression2
