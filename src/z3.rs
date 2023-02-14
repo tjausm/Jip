@@ -44,6 +44,12 @@ pub fn verify_constraints<'a>(
     let constraint_expr = path_constraints.combine();
     let constraints = expr_to_bool(&ctx, sym_memory, &constraint_expr.0);
 
+    // println!("\n-----------------------------------------------------------------------\nPATH CONSTRAINTS");
+    // println!("{:?}", path_constraints);
+    // println!("\n-----------------------------------------------------------------------\nSYM_MEMORY");
+    // println!("{:?}", sym_memory);
+    // println!("\n-----------------------------------------------------------------------\n");
+
     check_ast(ctx, &constraints)
 }
 
@@ -206,7 +212,7 @@ fn expr_to_dynamic<'ctx, 'a>(
         },
         Expression::Literal(Literal::Integer(n)) => Dynamic::from(ast::Int::from_i64(ctx, *n)),
         Expression::Literal(Literal::Boolean(b)) => Dynamic::from(ast::Bool::from_bool(ctx, *b)),
-        Expression::Ref(r) => Dynamic::from(ast::Int::from_u64(ctx, r.as_u64_pair().0)),
+        Expression::Literal(Literal::Ref(r)) =>  Dynamic::from(ast::Int::from_u64(ctx, r.1.as_u64_pair().0)),
         otherwise => {
             panic_with_diagnostics(
                 &format!(

@@ -260,7 +260,7 @@ fn stack_insert_free_field(&mut self, ty: Type, id: &'a Identifier) -> () {
                     Type::Int => {
                         let field_name = format!(
                             "{}.{}",
-                            r.as_u64_pair().0,
+                            r,
                             field
                         );
                         self.stack_insert_free_field(Type::Int, &field_name);
@@ -277,7 +277,7 @@ fn stack_insert_free_field(&mut self, ty: Type, id: &'a Identifier) -> () {
                     Type::Bool => {
                         let field_name = format!(
                             "{}.{}",
-                            r.as_u64_pair().0,
+                            r,
                             field
                         );
                         self.stack_insert_free_field(Type::Bool, &field_name);
@@ -402,7 +402,7 @@ fn stack_insert_free_field(&mut self, ty: Type, id: &'a Identifier) -> () {
                 Expression::Identifier(id) => match sym_memory.stack_get(&id) {
                     Some(SymExpression::Bool(SymValue::Expr(Substituted(expr)))) => expr,
                     Some(SymExpression::Int(SymValue::Expr(Substituted(expr)))) => expr,
-                    Some(SymExpression::Ref((_, r))) => Expression::Ref(r),
+                    Some(SymExpression::Ref(r)) => Expression::Literal(Literal::Ref(r)),
                     Some(sym_expr) => panic_with_diagnostics(
                         &format!(
                             "identifier {} with value {:?} can't be substituted",
@@ -477,7 +477,7 @@ fn stack_insert_free_field(&mut self, ty: Type, id: &'a Identifier) -> () {
                     match (simplify(sym_memory, *l_expr), simplify(sym_memory, *r_expr)) {
                         (Expression::Literal(l_lit), Expression::Literal(r_lit)) => {
                             Expression::Literal(Literal::Boolean(l_lit == r_lit))
-                        }
+                        },
                         (l_simple, r_simple) => {
                             Expression::EQ(Box::new(l_simple), Box::new(r_simple))
                         }
@@ -602,7 +602,6 @@ fn stack_insert_free_field(&mut self, ty: Type, id: &'a Identifier) -> () {
                 },
                 Expression::Literal(_) => expr,
                 Expression::Identifier(_) => expr,
-                Expression::Ref(_) => expr,
                 otherwise => panic_with_diagnostics(
                     &format!("{:?} is not yet implemented", otherwise),
                     &sym_memory,
