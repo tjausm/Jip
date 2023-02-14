@@ -613,15 +613,43 @@ fn stack_insert_free_field(&mut self, ty: Type, id: &'a Identifier) -> () {
 
 impl fmt::Debug for SymMemory {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        
+        // Format stack and heap to indented lists
+        let mut formated_sym_stack = "".to_string();
+        for Frame {scope, env} in &self.stack {
+            // add name of frame
+            formated_sym_stack.push_str("   Frame ");
+            match scope.id {
+                None => formated_sym_stack.push_str("'main'\n"),
+                Some(id) => {
+                    formated_sym_stack.push_str(&id.to_string()[0..4]);
+                    formated_sym_stack.push_str("\n")
+                }
+            }
+
+            // add all values of sym_stack
+            for (id, expr) in env {
+                formated_sym_stack.push_str(&format!("      {} := {:?}\n", id, expr))
+            }
+            
+        }
+        let mut formated_sym_heap = "".to_string();
+        for (id, expr) in &self.heap {
+                let formated_expr = match expr {
+                    ReferenceValue::UninitializedObj((class, _)) => format!("Uninitialized {}", class),
+                    _=> format!("{:?}", expr),
+                };
+                formated_sym_heap.push_str(&format!("   {} := {:?}\n", &id.to_string()[0..4],formated_expr))
+        }
+
         write!(
             f,
             "
 State of Sym-Stack:
-{:?}
-
+{}
 State of Sym-Heap:
-{:?}",
-            self.stack, self.heap
+{}",
+            formated_sym_stack, formated_sym_heap
         )
     }
 }
