@@ -17,23 +17,23 @@ use super::model::{SymExpression, Reference, ReferenceValue, Substituted, SymVal
 //-----------------//
 
 #[derive(Debug, Clone)]
-struct Frame<'a> {
+struct Frame {
     pub scope: Scope,
-    pub env: FxHashMap<&'a Identifier, SymExpression>,
+    pub env: FxHashMap<Identifier, SymExpression>,
 }
 
-type SymStack<'a> = Vec<Frame<'a>>;
+type SymStack = Vec<Frame>;
 
 type SymHeap = FxHashMap<Reference, ReferenceValue>;
 
 
 #[derive(Clone)]
-pub struct SymMemory<'ctx> {
-    stack: SymStack<'ctx>,
+pub struct SymMemory {
+    stack: SymStack,
     heap: SymHeap,
 }
 
-impl<'ctx> SymMemory<'ctx> {
+impl<'ctx> SymMemory {
     pub fn new() -> Self {
         SymMemory {
             stack: vec![Frame {
@@ -45,19 +45,39 @@ impl<'ctx> SymMemory<'ctx> {
     }
 }
 
-impl<'a> SymMemory<'a> {
+impl<'a> SymMemory {
     /// inserts a free variable (meaning we don't substitute's)
     pub fn stack_insert_free_var(&mut self, ty: Type, id: &'a Identifier) -> () {
         if let Some(s) = self.stack.last_mut() {
             match ty {
                 Type::Int => s.env.insert(
-                    &id,
+                    id.clone(),
                     SymExpression::Int(SymValue::Expr(Substituted(Expression::Identifier(
                         id.clone(),
                     )))),
                 ),
                 Type::Bool => s.env.insert(
-                    &id,
+                    id.clone(),
+                    SymExpression::Bool(SymValue::Expr(Substituted(Expression::Identifier(
+                        id.clone(),
+                    )))),
+                ),
+                _ => None,
+            };
+        };
+    }
+    /// inserts a free object field, meaning it is inserted at the top of the stack (meaning we don't substitute's)
+fn stack_insert_free_field(&mut self, ty: Type, id: &'a Identifier) -> () {
+        if let Some(s) = self.stack.first_mut() {
+            match ty {
+                Type::Int => s.env.insert(
+                    id.clone(),
+                    SymExpression::Int(SymValue::Expr(Substituted(Expression::Identifier(
+                        id.clone(),
+                    )))),
+                ),
+                Type::Bool => s.env.insert(
+                    id.clone(),
                     SymExpression::Bool(SymValue::Expr(Substituted(Expression::Identifier(
                         id.clone(),
                     )))),
@@ -70,7 +90,7 @@ impl<'a> SymMemory<'a> {
     /// Insert mapping `Identifier |-> SymbolicExpression` in top most frame of stack
     pub fn stack_insert(&mut self, id: &'a Identifier, sym_expr: SymExpression) -> () {
         if let Some(s) = self.stack.last_mut() {
-            s.env.insert(id, sym_expr);
+            s.env.insert(id.clone(), sym_expr);
         }
     }
 
@@ -79,7 +99,7 @@ impl<'a> SymMemory<'a> {
         let below_index = self.stack.len() - 2;
         match self.stack.get_mut(below_index) {
             Some(frame) => {
-                frame.env.insert(id, sym_expr);
+                frame.env.insert(id.clone(), sym_expr);
             }
             _ => (),
         }
@@ -92,7 +112,7 @@ impl<'a> SymMemory<'a> {
         };
 
         for s in self.stack.iter().rev() {
-            match s.env.get(&id) {
+            match s.env.get(id) {
                 Some(var) => return Some(var.clone()),
                 None => (),
             }
@@ -213,6 +233,9 @@ impl<'a> SymMemory<'a> {
                 &subt_index,
             &self)?,
         };
+
+
+
         todo!("acces expression mapping here")
     }
 
@@ -235,21 +258,29 @@ impl<'a> SymMemory<'a> {
             match member {
                 Member::Field((ty, field)) => match ty {
                     Type::Int => {
+                        let field_name = format!(
+                            "{}.{}",
+                            r.as_u64_pair().0,
+                            field
+                        );
+                        self.stack_insert_free_field(Type::Int, &field_name);
                         fields.insert(
                             field.clone(),
                             (
                                 Type::Int,
                                 SymExpression::Int(SymValue::Expr(Substituted(
-                                    Expression::Identifier(format!(
-                                        "{}.{}",
-                                        r.as_u64_pair().0,
-                                        field
-                                    )),
+                                    Expression::Identifier(field_name),
                                 ))),
                             ),
                         );
                     }
                     Type::Bool => {
+                        let field_name = format!(
+                            "{}.{}",
+                            r.as_u64_pair().0,
+                            field
+                        );
+                        self.stack_insert_free_field(Type::Bool, &field_name);
                         (
                             Type::Bool,
                             fields.insert(
@@ -298,14 +329,14 @@ impl<'a> SymMemory<'a> {
     pub fn init_array(&mut self, ty: Type, length: Expression) -> ReferenceValue {
         // generate substituted length
         let subt_len = self.substitute_expr(length);
-        ReferenceValue::Array((ty, vec![], subt_len))
+        ReferenceValue::Array((ty, FxHashMap::default(), subt_len))
     }
 
     /// substitutes all variables in the underlying `Expression`
     pub fn substitute_expr(&self, expr: Expression) -> Substituted {
         return Substituted(substitute(self, expr));
 
-        /// helper function
+        /// substitutes expression
         fn substitute(sym_memory: &SymMemory, expr: Expression) -> Expression {
             match expr {
                 Expression::Forall(id, r) => {
@@ -371,6 +402,7 @@ impl<'a> SymMemory<'a> {
                 Expression::Identifier(id) => match sym_memory.stack_get(&id) {
                     Some(SymExpression::Bool(SymValue::Expr(Substituted(expr)))) => expr,
                     Some(SymExpression::Int(SymValue::Expr(Substituted(expr)))) => expr,
+                    Some(SymExpression::Ref((_, r))) => Expression::Ref(r),
                     Some(sym_expr) => panic_with_diagnostics(
                         &format!(
                             "identifier {} with value {:?} can't be substituted",
@@ -570,6 +602,7 @@ impl<'a> SymMemory<'a> {
                 },
                 Expression::Literal(_) => expr,
                 Expression::Identifier(_) => expr,
+                Expression::Ref(_) => expr,
                 otherwise => panic_with_diagnostics(
                     &format!("{:?} is not yet implemented", otherwise),
                     &sym_memory,
@@ -579,11 +612,7 @@ impl<'a> SymMemory<'a> {
     }
 }
 
-
-
-
-
-impl fmt::Debug for SymMemory<'_> {
+impl fmt::Debug for SymMemory {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,

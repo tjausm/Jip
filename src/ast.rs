@@ -1,3 +1,5 @@
+use uuid::Uuid;
+
 use crate::shared::panic_with_diagnostics;
 use std::fmt;
 use std::hash::{Hash};
@@ -206,6 +208,9 @@ pub enum Expression {
     Identifier(Identifier),
     Literal(Literal),
     ArrLength(Identifier),
+
+    //to substitute identifiers mapped to a reference
+    Ref(Uuid)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -265,6 +270,7 @@ impl fmt::Debug for Expression {
             Expression::Literal(Literal::Boolean(val)) => write!(f, "{:?}", val),
             Expression::Literal(Literal::Integer(val)) => write!(f, "{:?}", val),
             Expression::ArrLength(id) => write!(f, "#{:?}", id),
+            Expression::Ref(r) => write!(f, "Ref({:?})", r),
         }
     }
 }

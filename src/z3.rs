@@ -24,7 +24,7 @@ pub fn check_length<'ctx>(
     ctx: &'ctx Context,
     length: &'ctx Substituted,
     index: &'ctx Substituted,
-    sym_memory: &SymMemory<'ctx>,
+    sym_memory: &SymMemory,
 ) -> Result<(), Error> {
     let length = expr_to_int(ctx, sym_memory, &length.0);
     let index =  expr_to_int(ctx, sym_memory, &index.0);
@@ -38,7 +38,7 @@ pub fn check_length<'ctx>(
 pub fn verify_constraints<'a>(
     ctx: &'a Context,
     path_constraints: &PathConstraints,
-    sym_memory: &SymMemory<'a>,
+    sym_memory: &SymMemory,
 ) -> Result<(), Error> {
     //transform too z3 boolean
     let constraint_expr = path_constraints.combine();
@@ -74,7 +74,7 @@ fn check_ast<'ctx>(ctx: &'ctx Context, ast: &Bool) -> Result<(), Error> {
 
 fn expr_to_int<'ctx>(
     ctx: &'ctx Context,
-    env: &SymMemory<'ctx>,
+    env: &SymMemory,
     expr: &'ctx Expression,
 ) -> Int<'ctx> {
     return unwrap_as_int(expr_to_dynamic(&ctx, Rc::new(env), expr));
@@ -82,7 +82,7 @@ fn expr_to_int<'ctx>(
 
 fn expr_to_bool<'ctx>(
     ctx: &'ctx Context,
-    env: &SymMemory<'ctx>,
+    env: &SymMemory,
     expr: &'ctx Expression,
 ) -> Bool<'ctx> {
     return unwrap_as_bool(expr_to_dynamic(&ctx, Rc::new(env), expr));
@@ -90,7 +90,7 @@ fn expr_to_bool<'ctx>(
 
 fn expr_to_dynamic<'ctx, 'a>(
     ctx: &'ctx Context,
-    sym_memory: Rc<&SymMemory<'a>>,
+    sym_memory: Rc<&SymMemory>,
     expr: &'a Expression,
 ) -> Dynamic<'ctx> {
     match expr {
@@ -206,6 +206,7 @@ fn expr_to_dynamic<'ctx, 'a>(
         },
         Expression::Literal(Literal::Integer(n)) => Dynamic::from(ast::Int::from_i64(ctx, *n)),
         Expression::Literal(Literal::Boolean(b)) => Dynamic::from(ast::Bool::from_bool(ctx, *b)),
+        Expression::Ref(r) => Dynamic::from(ast::Int::from_u64(ctx, r.as_u64_pair().0)),
         otherwise => {
             panic_with_diagnostics(
                 &format!(

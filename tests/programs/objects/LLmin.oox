@@ -1,8 +1,8 @@
 class Main {
     
     static void main(Node p){
-        Node min := p.min();
-        bool isMin := Main.isMin(min, p); 
+        // Node min := p.min();
+        bool isMin := Main.isMin(0, p); 
         assert isMin;
     }
 
@@ -10,7 +10,7 @@ class Main {
         bool isMin := true;
         Node next := p.next;
         while (next != null) {
-            int val := p.val;
+            int val := p.value;
             isMin := val < min || isMin;
             next := next.next;
             }
@@ -28,26 +28,6 @@ class Node {
     Node(int value, Node next){
         this.value := value;
         this.next := next;
-    }
-
-    bool member(int x) {
-        int v := this.value ;
-        
-        if(x==v) return true ;
-        else {
-            Node n := this.next ;
-            bool b := n.member(x) ;
-            return b ;
-        };
-    }
-
-    int length() {
-        Node n := this.next ;
-        if (n==null) return 1 ;
-        else {
-            int k := n.length() ;
-            return k+1 ;
-        };
     }
 
     Node min()

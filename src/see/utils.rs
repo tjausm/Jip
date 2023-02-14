@@ -8,7 +8,7 @@ use crate::symbolic::model::{PathConstraints, Substituted, SymExpression, SymVal
 use crate::symbolic::memory::SymMemory;
 use crate::z3;
 
-pub fn type_lhs<'ctx>(sym_memory: &mut SymMemory<'ctx>, lhs: &'ctx Lhs) -> Type {
+pub fn type_lhs<'ctx>(sym_memory: &mut SymMemory, lhs: &'ctx Lhs) -> Type {
     match lhs {
         Lhs::AccessField(obj, field) => match sym_memory.heap_access_object(obj, field, None) {
             SymExpression::Bool(_) => Type::Bool,
@@ -32,7 +32,7 @@ pub fn type_lhs<'ctx>(sym_memory: &mut SymMemory<'ctx>, lhs: &'ctx Lhs) -> Type 
 pub fn parse_rhs<'a, 'b>(
     ctx: &Context,
     simplify: bool,
-    sym_memory: &mut SymMemory<'a>,
+    sym_memory: &mut SymMemory,
     ty: &Type,
     rhs: &'a Rhs,
 ) -> Result<SymExpression, Error> {
@@ -98,7 +98,7 @@ pub fn parse_rhs<'a, 'b>(
 pub fn lhs_from_rhs<'a>(
     ctx: &Context,
     simplify: bool,
-    sym_memory: &mut SymMemory<'a>,
+    sym_memory: &mut SymMemory,
     lhs: &'a Lhs,
     rhs: &'a Rhs,
 ) -> Result<(), Error> {
@@ -116,7 +116,7 @@ pub fn lhs_from_rhs<'a>(
 
 /// evaluates the parameters & arguments to a mapping id -> variable that can be added to a function scope
 pub fn params_to_vars<'ctx>(
-    sym_memory: &mut SymMemory<'ctx>,
+    sym_memory: &mut SymMemory,
     params: &'ctx Parameters,
     args: &'ctx Arguments,
 ) -> Vec<(&'ctx String, SymExpression)> {
@@ -186,7 +186,7 @@ pub fn params_to_vars<'ctx>(
 pub fn assert<'a>(
     ctx: &'a Context,
     simplify: bool,
-    sym_memory: &mut SymMemory<'a>,
+    sym_memory: &mut SymMemory,
     assertion: &Expression,
     pc: &mut PathConstraints,
     diagnostics: &mut Diagnostics,
