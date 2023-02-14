@@ -1,15 +1,39 @@
+-----------------------------------------------------------------------
+State of Sym-Stack:
+   Frame 'main'
+      p := Ref((Node, 5b5def03-8faa-40db-8782-1ba1cbfd07ce))
+      N := Int(Expr(Substituted(1)))
+      b0fc3875-fe68-45a2-b257-410c0406c512.value := Int(Expr(Substituted(b0fc3875-fe68-45a2-b257-410c0406c512.value)))
+      5b5def03-8faa-40db-8782-1ba1cbfd07ce.value := Int(Expr(Substituted(5b5def03-8faa-40db-8782-1ba1cbfd07ce.value)))
+   Frame 5dbd
+      limit := Int(Expr(Substituted(1)))
+      this := Ref((Node, 5b5def03-8faa-40db-8782-1ba1cbfd07ce))
+      next := Ref((Node, ada6f016-0e87-4b04-8a92-bdd66db97546))
+      curr := Ref((Node, b0fc3875-fe68-45a2-b257-410c0406c512))
+      v := Int(Expr(Substituted(1)))
+
+
+State of Sym-Heap:
+   ada6 := "Uninitialized Node"
+   5b5d := "Object((\"todo\", {\"value\": (int, Int(Expr(Substituted(1)))), \"next\": (Node, Ref((Node, b0fc3875-fe68-45a2-b257-410c0406c512)))}))"
+   b0fc := "Object((\"todo\", {\"value\": (int, Int(Expr(Substituted(b0fc3875-fe68-45a2-b257-410c0406c512.value)))), \"next\": (Node, Ref((Node, ada6f016-0e87-4b04-8a92-bdd66db97546)))}))"
+-----------------------------------------------------------------------
+
+// this example fails because of how we infinitely initialize objects
+// thus we can never reach the end of the program without falsifying assume n.next == null
+// and therefore it is correct i.e. non-terminating member function will never reach assertion
 class Main {
     
     static void main(Node p){
 
-        p.fill(1);
-        bool mem := p.member(2);
-        assert mem == false;
+        int N := 1; //because we infinitely initialize objects we use an artificial limit to linked list length
+
+        p.fill(1, N); // fill linkedlist with values of one up to N
+        bool mem := p.member(2, N);
+        
 
     }
 }
-
-
 
 //
 // Linked-list, with several methods.
@@ -23,24 +47,31 @@ class Node {
         this.next := next;
     }
 
-    bool member(int x) {
+    bool member(int x, int limit) {
+
+        Node n := this;
         int v := this.value ;
-        
-        if(x==v) return true ;
-        else {
-            Node n := this.next ;
-            bool b := n.member(x) ;
-            return b ;
-        };
+
+        while (limit > 0 && n != null){
+            if(x==v) return true ;
+            else {
+                n := this.next ;
+                v := n.value;
+                limit := limit - 1;
+            };     
+        }
+        return false;
+
     }
 
-    void fill(int v){
+    void fill(int v, int limit){
         Node curr := this;
         Node next := this.next;
-        while(next != null){
+        while(limit > 0 && next != null){
             curr.value := v;
             curr := next;
             next := next.next;
+            assert true;
         }
     }
 }

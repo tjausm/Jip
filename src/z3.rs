@@ -6,7 +6,7 @@ use z3::{ast, Config, Context, SatResult, Solver};
 
 use crate::ast::*;
 use crate::shared::{panic_with_diagnostics, Error};
-use crate::symbolic::model::{PathConstraints, SymExpression, Substituted};
+use crate::symbolic::model::{PathConstraints, SymExpression, Substituted, SymValue};
 use crate::symbolic::memory::SymMemory;
 
 //--------------//
@@ -44,11 +44,11 @@ pub fn verify_constraints<'a>(
     let constraint_expr = path_constraints.combine();
     let constraints = expr_to_bool(&ctx, sym_memory, &constraint_expr.0);
 
-    // println!("\n-----------------------------------------------------------------------\nPATH CONSTRAINTS");
-    // println!("{:?}", path_constraints);
-    // println!("\n-----------------------------------------------------------------------\nSYM_MEMORY");
-    // println!("{:?}", sym_memory);
-    // println!("\n-----------------------------------------------------------------------\n");
+    println!("\n-----------------------------------------------------------------------\nPATH CONSTRAINTS");
+    println!("{:?}", path_constraints);
+    println!("\n-----------------------------------------------------------------------\nSYM_MEMORY");
+    println!("{:?}", sym_memory);
+    println!("\n-----------------------------------------------------------------------\n");
 
     check_ast(ctx, &constraints)
 }
@@ -202,6 +202,15 @@ fn expr_to_dynamic<'ctx, 'a>(
         }
         // type variable using stack or substitute one level deep??
         Expression::Identifier(id) => match sym_memory.stack_get(id) {
+            Some(SymExpression::Bool(SymValue::Expr(expr))) => expr_to_dynamic(ctx, sym_memory, &expr.0),
+            Some(SymExpression::Int(SymValue::Expr(expr))) => expr_to_dynamic(ctx, sym_memory, &expr.0),
+            Some(sym_expr) => panic_with_diagnostics(
+                &format!("{:?} is not parseable to a z3 ast", sym_expr),
+                &sym_memory,
+            ),
+            None => panic_with_diagnostics(&format!("{} is undeclared", id), &sym_memory),
+        },
+        Expression::FreeVar(id) => match sym_memory.stack_get(id) {
             Some(SymExpression::Bool(_)) => Dynamic::from(Bool::new_const(ctx, id.clone())),
             Some(SymExpression::Int(_)) => Dynamic::from(Int::new_const(ctx, id.clone())),
             Some(sym_expr) => panic_with_diagnostics(

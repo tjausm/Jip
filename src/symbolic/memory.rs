@@ -1,7 +1,7 @@
 //! Symbolic model representing the stack and heap while symbolically executing a program
 //!
-use rustc_hash::FxHashMap;
 use ::z3::Context;
+use rustc_hash::FxHashMap;
 use std::fmt;
 use uuid::Uuid;
 
@@ -9,8 +9,7 @@ use crate::ast::*;
 use crate::shared::{panic_with_diagnostics, Error, Scope};
 use crate::z3;
 
-use super::model::{SymExpression, Reference, ReferenceValue, Substituted, SymValue};
-
+use super::model::{Reference, ReferenceValue, Substituted, SymExpression, SymValue};
 
 //-----------------//
 // Symbolic memory //
@@ -25,7 +24,6 @@ struct Frame {
 type SymStack = Vec<Frame>;
 
 type SymHeap = FxHashMap<Reference, ReferenceValue>;
-
 
 #[derive(Clone)]
 pub struct SymMemory {
@@ -52,33 +50,13 @@ impl<'a> SymMemory {
             match ty {
                 Type::Int => s.env.insert(
                     id.clone(),
-                    SymExpression::Int(SymValue::Expr(Substituted(Expression::Identifier(
+                    SymExpression::Int(SymValue::Expr(Substituted(Expression::FreeVar(
                         id.clone(),
                     )))),
                 ),
                 Type::Bool => s.env.insert(
                     id.clone(),
-                    SymExpression::Bool(SymValue::Expr(Substituted(Expression::Identifier(
-                        id.clone(),
-                    )))),
-                ),
-                _ => None,
-            };
-        };
-    }
-    /// inserts a free object field, meaning it is inserted at the top of the stack (meaning we don't substitute's)
-fn stack_insert_free_field(&mut self, ty: Type, id: &'a Identifier) -> () {
-        if let Some(s) = self.stack.first_mut() {
-            match ty {
-                Type::Int => s.env.insert(
-                    id.clone(),
-                    SymExpression::Int(SymValue::Expr(Substituted(Expression::Identifier(
-                        id.clone(),
-                    )))),
-                ),
-                Type::Bool => s.env.insert(
-                    id.clone(),
-                    SymExpression::Bool(SymValue::Expr(Substituted(Expression::Identifier(
+                    SymExpression::Bool(SymValue::Expr(Substituted(Expression::FreeVar(
                         id.clone(),
                     )))),
                 ),
@@ -198,7 +176,7 @@ fn stack_insert_free_field(&mut self, ty: Type, id: &'a Identifier) -> () {
     /// Possibly update with passed `var` and return current symbolic expression at arrays index
     pub fn heap_access_array(
         &mut self,
-        ctx : &Context,
+        ctx: &Context,
         simplify: bool,
         arr_name: &Identifier,
         index: Expression,
@@ -206,7 +184,6 @@ fn stack_insert_free_field(&mut self, ty: Type, id: &'a Identifier) -> () {
     ) -> Result<SymExpression, Error> {
         // substitute expr and simplify
         let mut subt_index = self.substitute_expr(index);
-
 
         //get array type, array and length
         let (_, _, length)= match self.stack_get(&arr_name){
@@ -221,20 +198,17 @@ fn stack_insert_free_field(&mut self, ty: Type, id: &'a Identifier) -> () {
         let mut length = length.clone();
         if simplify {
             subt_index = self.simplify_expr(subt_index);
-            length =  self.simplify_expr(length);
+            length = self.simplify_expr(length);
         };
 
         // check if index is always < length
         match (&subt_index.0, &length.0) {
-            (Expression::Literal(Literal::Integer(lit_index)), Expression::Literal(Literal::Integer(lit_lenght))) if lit_index < lit_lenght  => (),
-            _ => z3::check_length(
-                ctx,
-                &length,
-                &subt_index,
-            &self)?,
+            (
+                Expression::Literal(Literal::Integer(lit_index)),
+                Expression::Literal(Literal::Integer(lit_lenght)),
+            ) if lit_index < lit_lenght => (),
+            _ => z3::check_length(ctx, &length, &subt_index, &self)?,
         };
-
-
 
         todo!("acces expression mapping here")
     }
@@ -258,43 +232,19 @@ fn stack_insert_free_field(&mut self, ty: Type, id: &'a Identifier) -> () {
             match member {
                 Member::Field((ty, field)) => match ty {
                     Type::Int => {
-                        let field_name = format!(
-                            "{}.{}",
-                            r,
-                            field
-                        );
-                        self.stack_insert_free_field(Type::Int, &field_name);
+                        let field_name = format!("{}.{}",  &r.to_string()[0..6],field);
                         fields.insert(
                             field.clone(),
-                            (
-                                Type::Int,
-                                SymExpression::Int(SymValue::Expr(Substituted(
-                                    Expression::Identifier(field_name),
-                                ))),
-                            ),
+                            (Type::Int, SymExpression::Int(SymValue::Expr(Substituted(Expression::FreeVar(field_name))))),
                         );
                     }
                     Type::Bool => {
-                        let field_name = format!(
-                            "{}.{}",
-                            r,
-                            field
-                        );
-                        self.stack_insert_free_field(Type::Bool, &field_name);
+                        let field_name = format!("{}.{}", &r.to_string()[0..6], field);
                         (
                             Type::Bool,
                             fields.insert(
                                 field.clone(),
-                                (
-                                    Type::Bool,
-                                    SymExpression::Int(SymValue::Expr(Substituted(
-                                        Expression::Identifier(format!(
-                                            "{}.{}",
-                                            r.as_u64_pair().0,
-                                            field
-                                        )),
-                                    ))),
-                                ),
+                                (Type::Bool, SymExpression::Bool(SymValue::Expr(Substituted(Expression::FreeVar(field_name))))),
                             ),
                         );
                     }
@@ -322,7 +272,7 @@ fn stack_insert_free_field(&mut self, ty: Type, id: &'a Identifier) -> () {
                 _ => (),
             }
         }
-        ReferenceValue::Object(("todo".to_owned(), fields))
+        ReferenceValue::Object((class, fields))
     }
 
     //todo: how to initialize correctly
@@ -400,8 +350,8 @@ fn stack_insert_free_field(&mut self, ty: Type, id: &'a Identifier) -> () {
                 Expression::Not(expr) => Expression::Not(Box::new(substitute(sym_memory, *expr))),
                 Expression::Literal(_) => expr,
                 Expression::Identifier(id) => match sym_memory.stack_get(&id) {
-                    Some(SymExpression::Bool(SymValue::Expr(Substituted(expr)))) => expr,
-                    Some(SymExpression::Int(SymValue::Expr(Substituted(expr)))) => expr,
+                    Some(SymExpression::Bool(SymValue::Expr(Substituted(expr)))) => substitute(sym_memory, expr),
+                    Some(SymExpression::Int(SymValue::Expr(Substituted(expr)))) => substitute(sym_memory, expr),
                     Some(SymExpression::Ref(r)) => Expression::Literal(Literal::Ref(r)),
                     Some(sym_expr) => panic_with_diagnostics(
                         &format!(
@@ -412,6 +362,7 @@ fn stack_insert_free_field(&mut self, ty: Type, id: &'a Identifier) -> () {
                     ),
                     None => panic_with_diagnostics(&format!("{} was not declared", id), sym_memory),
                 },
+                Expression::FreeVar(_) => expr,
                 otherwise => panic_with_diagnostics(
                     &format!("{:?} is not yet implemented", otherwise),
                     &sym_memory,
@@ -477,7 +428,7 @@ fn stack_insert_free_field(&mut self, ty: Type, id: &'a Identifier) -> () {
                     match (simplify(sym_memory, *l_expr), simplify(sym_memory, *r_expr)) {
                         (Expression::Literal(l_lit), Expression::Literal(r_lit)) => {
                             Expression::Literal(Literal::Boolean(l_lit == r_lit))
-                        },
+                        }
                         (l_simple, r_simple) => {
                             Expression::EQ(Box::new(l_simple), Box::new(r_simple))
                         }
@@ -601,7 +552,12 @@ fn stack_insert_free_field(&mut self, ty: Type, id: &'a Identifier) -> () {
                     simple_expr => Expression::Not(Box::new(simple_expr)),
                 },
                 Expression::Literal(_) => expr,
-                Expression::Identifier(_) => expr,
+                Expression::Identifier(id) => match sym_memory.stack_get(&id) {
+                    Some(SymExpression::Bool(SymValue::Expr(expr))) => simplify(sym_memory, expr.0),
+                    Some(SymExpression::Int(SymValue::Expr(expr))) => simplify(sym_memory, expr.0),
+                    _ => todo!(),
+                },
+                Expression::FreeVar(_) => expr,
                 otherwise => panic_with_diagnostics(
                     &format!("{:?} is not yet implemented", otherwise),
                     &sym_memory,
@@ -613,10 +569,9 @@ fn stack_insert_free_field(&mut self, ty: Type, id: &'a Identifier) -> () {
 
 impl fmt::Debug for SymMemory {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        
         // Format stack and heap to indented lists
         let mut formated_sym_stack = "".to_string();
-        for Frame {scope, env} in &self.stack {
+        for Frame { scope, env } in &self.stack {
             // add name of frame
             formated_sym_stack.push_str("   Frame ");
             match scope.id {
@@ -631,15 +586,18 @@ impl fmt::Debug for SymMemory {
             for (id, expr) in env {
                 formated_sym_stack.push_str(&format!("      {} := {:?}\n", id, expr))
             }
-            
         }
         let mut formated_sym_heap = "".to_string();
         for (id, expr) in &self.heap {
-                let formated_expr = match expr {
-                    ReferenceValue::UninitializedObj((class, _)) => format!("Uninitialized {}", class),
-                    _=> format!("{:?}", expr),
-                };
-                formated_sym_heap.push_str(&format!("   {} := {:?}\n", &id.to_string()[0..4],formated_expr))
+            let formated_expr = match expr {
+                ReferenceValue::UninitializedObj((class, _)) => format!("Uninitialized {}", class),
+                _ => format!("{:?}", expr),
+            };
+            formated_sym_heap.push_str(&format!(
+                "   {} := {:?}\n",
+                &id.to_string()[0..6],
+                formated_expr
+            ))
         }
 
         write!(
