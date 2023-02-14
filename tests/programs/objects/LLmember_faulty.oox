@@ -1,18 +1,3 @@
------------------------------------------------------------------------
-PATH CONSTRAINTS
-Substituted((!(Ref(39f66042-03f0-4704-a5f7-800ef530b2cf) != Ref(00000000-0000-0000-0000-000000000000)) ==> ((2 == f9f34a2a-f2a9-4eee-85c5-62f2d0615570.value) ==> (false && true))))
-
------------------------------------------------------------------------
-SYM_MEMORY
-
-State of Sym-Stack:
-[Frame { scope: Scope { id: None }, env: {"p": Ref((Node, f9f34a2a-f2a9-4eee-85c5-62f2d0615570)), "f9f34a2a-f2a9-4eee-85c5-62f2d0615570.value": Int(Expr(Substituted(f9f34a2a-f2a9-4eee-85c5-62f2d0615570.value))), "retval": Int(Expr(Substituted(true))), "mem": Bool(Expr(Substituted(true)))} }]
-
-State of Sym-Heap:
-{f9f34a2a-f2a9-4eee-85c5-62f2d0615570: Object(("todo", {"value": (int, Int(Expr(Substituted(f9f34a2a-f2a9-4eee-85c5-62f2d0615570.value)))), "next": (Node, Ref((Node, 39f66042-03f0-4704-a5f7-800ef530b2cf)))})), 39f66042-03f0-4704-a5f7-800ef530b2cf: UninitializedObj(("Node", [Field((int, "value")), Field((Node, "next")), Constructor(("Node", [(int, "value"), (Node, "next")], [], [this.value := value;, this.next := next;])), Method(Nonstatic((bool, "member", [(int, "x")], [], [int v := this.value;, if ((x == v)) then return true; else { [Node n := this.next;, bool b :=  n.member([x]);, return b;] },  skip ]))), Method(Nonstatic((void, "fill", [(int, "v")], [], [Node curr := this;, Node next := this.next;, while ((next != null)) { [curr.value := v;, curr := next;, next := next.next;] }])))]))} 
-
------------------------------------------------------------------------
-
 class Main {
     
     static void main(Node p){
