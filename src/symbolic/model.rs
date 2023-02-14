@@ -1,6 +1,7 @@
 //! Intermediate model to encode & modify ast before we call z3
 //!
 
+use core::fmt;
 use std::{
     collections::hash_map::DefaultHasher,
     hash::{Hash, Hasher},
@@ -55,6 +56,12 @@ impl PathConstraints {
     /// adds a new constraint
     pub fn push_assumption(&mut self, s: Substituted) {
         self.constraints.push(PathConstraint::Assume(s));
+    }
+}
+
+impl fmt::Debug for PathConstraints {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self.combine())
     }
 }
 
