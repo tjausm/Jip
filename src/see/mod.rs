@@ -16,6 +16,7 @@ use crate::cfg::{generate_cfg, generate_dot_cfg};
 use crate::shared::Config;
 use crate::shared::ExitCode;
 use crate::shared::{panic_with_diagnostics, Diagnostics, Error};
+use crate::symbolic::model::Substituted;
 use crate::symbolic::model::{PathConstraints, ReferenceValue, SymExpression, SymValue};
 use crate::symbolic::memory::{SymMemory};
 use crate::z3::build_ctx;
@@ -204,10 +205,10 @@ fn verify_program(prog_string: &str, d: Depth, config: Config) -> Result<Diagnos
                             Some(SymExpression::Bool(_)) => {
                                 sym_memory.stack_insert(
                                     retval_id,
-                                    SymExpression::Int(SymValue::Expr(sym_memory.substitute_expr(expr.clone()))),
+                                    SymExpression::Int(SymValue::Expr(Substituted::new(&sym_memory, expr.clone()))),
                                 );
                             },
-                            Some(SymExpression::Int(_)) => {sym_memory.stack_insert(retval_id,SymExpression::Int(SymValue::Expr(sym_memory.substitute_expr(expr.clone()))),);},
+                            Some(SymExpression::Int(_)) => {sym_memory.stack_insert(retval_id,SymExpression::Int(SymValue::Expr(Substituted::new(&sym_memory, expr.clone()))),);},
                             None => panic_with_diagnostics(&format!("retval is undeclared in expression 'return {:?}'", expr), &sym_memory),  
                         }
                     }

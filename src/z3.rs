@@ -26,8 +26,8 @@ pub fn check_length<'ctx>(
     index: &'ctx Substituted,
     sym_memory: &SymMemory,
 ) -> Result<(), Error> {
-    let length = expr_to_int(ctx, sym_memory, &length.0);
-    let index =  expr_to_int(ctx, sym_memory, &index.0);
+    let length = expr_to_int(ctx, sym_memory, &length.get());
+    let index =  expr_to_int(ctx, sym_memory, &index.get());
     let length_gt_index = length.gt(&index);
 
     check_ast(ctx, &length_gt_index)
@@ -42,7 +42,7 @@ pub fn verify_constraints<'a>(
 ) -> Result<(), Error> {
     //transform too z3 boolean
     let constraint_expr = path_constraints.combine();
-    let constraints = expr_to_bool(&ctx, sym_memory, &constraint_expr.0);
+    let constraints = expr_to_bool(&ctx, sym_memory, &constraint_expr.get());
 
     println!("\n-----------------------------------------------------------------------\nPATH CONSTRAINTS");
     println!("{:?}", path_constraints);
@@ -202,8 +202,8 @@ fn expr_to_dynamic<'ctx, 'a>(
         }
         // type variable using stack or substitute one level deep??
         Expression::Identifier(id) => match sym_memory.stack_get(id) {
-            Some(SymExpression::Bool(SymValue::Expr(expr))) => expr_to_dynamic(ctx, sym_memory, &expr.0),
-            Some(SymExpression::Int(SymValue::Expr(expr))) => expr_to_dynamic(ctx, sym_memory, &expr.0),
+            Some(SymExpression::Bool(SymValue::Expr(expr))) => expr_to_dynamic(ctx, sym_memory, &expr.get()),
+            Some(SymExpression::Int(SymValue::Expr(expr))) => expr_to_dynamic(ctx, sym_memory, &expr.get()),
             Some(sym_expr) => panic_with_diagnostics(
                 &format!("{:?} is not parseable to a z3 ast", sym_expr),
                 &sym_memory,

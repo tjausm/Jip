@@ -46,19 +46,19 @@ impl<'ctx> SymMemory {
 impl<'a> SymMemory {
     /// inserts a free variable (meaning we don't substitute's)
     pub fn stack_insert_free_var(&mut self, ty: Type, id: &'a Identifier) -> () {
+        let fv = Substituted::new(self, Expression::FreeVar(
+            id.clone(),
+        ));
+
         if let Some(s) = self.stack.last_mut() {
             match ty {
                 Type::Int => s.env.insert(
                     id.clone(),
-                    SymExpression::Int(SymValue::Expr(Substituted(Expression::FreeVar(
-                        id.clone(),
-                    )))),
+                    SymExpression::Int(SymValue::Expr(fv)),
                 ),
                 Type::Bool => s.env.insert(
                     id.clone(),
-                    SymExpression::Bool(SymValue::Expr(Substituted(Expression::FreeVar(
-                        id.clone(),
-                    )))),
+                    SymExpression::Bool(SymValue::Expr(fv)),
                 ),
                 _ => None,
             };
@@ -183,7 +183,7 @@ impl<'a> SymMemory {
         var: Option<SymExpression>,
     ) -> Result<SymExpression, Error> {
         // substitute expr and simplify
-        let mut subt_index = self.substitute_expr(index);
+        let mut subt_index = Substituted::new(self,index);
 
         //get array type, array and length
         let (_, _, length)= match self.stack_get(&arr_name){
@@ -202,7 +202,7 @@ impl<'a> SymMemory {
         };
 
         // check if index is always < length
-        match (&subt_index.0, &length.0) {
+        match (&subt_index.get(), &length.get()) {
             (
                 Expression::Literal(Literal::Integer(lit_index)),
                 Expression::Literal(Literal::Integer(lit_lenght)),
@@ -235,7 +235,7 @@ impl<'a> SymMemory {
                         let field_name = format!("{}.{}",  &r.to_string()[0..6],field);
                         fields.insert(
                             field.clone(),
-                            (Type::Int, SymExpression::Int(SymValue::Expr(Substituted(Expression::FreeVar(field_name))))),
+                            (Type::Int, SymExpression::Int(SymValue::Expr(Substituted::new(self,Expression::FreeVar(field_name))))),
                         );
                     }
                     Type::Bool => {
@@ -244,7 +244,7 @@ impl<'a> SymMemory {
                             Type::Bool,
                             fields.insert(
                                 field.clone(),
-                                (Type::Bool, SymExpression::Bool(SymValue::Expr(Substituted(Expression::FreeVar(field_name))))),
+                                (Type::Bool, SymExpression::Bool(SymValue::Expr(Substituted::new(self,Expression::FreeVar(field_name))))),
                             ),
                         );
                     }
@@ -278,102 +278,16 @@ impl<'a> SymMemory {
     //todo: how to initialize correctly
     pub fn init_array(&mut self, ty: Type, length: Expression) -> ReferenceValue {
         // generate substituted length
-        let subt_len = self.substitute_expr(length);
+        let subt_len = Substituted::new(self,length);
         ReferenceValue::Array((ty, FxHashMap::default(), subt_len))
-    }
-
-    /// substitutes all variables in the underlying `Expression`
-    pub fn substitute_expr(&self, expr: Expression) -> Substituted {
-        return Substituted(substitute(self, expr));
-
-        /// substitutes expression
-        fn substitute(sym_memory: &SymMemory, expr: Expression) -> Expression {
-            match expr {
-                Expression::Forall(id, r) => {
-                    Expression::Forall(id.clone(), Box::new(substitute(sym_memory, *r)))
-                }
-                Expression::And(l, r) => Expression::And(
-                    Box::new(substitute(sym_memory, *l)),
-                    Box::new(substitute(sym_memory, *r)),
-                ),
-                Expression::Or(l, r) => Expression::Or(
-                    Box::new(substitute(sym_memory, *l)),
-                    Box::new(substitute(sym_memory, *r)),
-                ),
-                Expression::EQ(l, r) => Expression::EQ(
-                    Box::new(substitute(sym_memory, *l)),
-                    Box::new(substitute(sym_memory, *r)),
-                ),
-                Expression::NE(l, r) => Expression::NE(
-                    Box::new(substitute(sym_memory, *l)),
-                    Box::new(substitute(sym_memory, *r)),
-                ),
-                Expression::LT(l, r) => Expression::LT(
-                    Box::new(substitute(sym_memory, *l)),
-                    Box::new(substitute(sym_memory, *r)),
-                ),
-                Expression::GT(l, r) => Expression::GT(
-                    Box::new(substitute(sym_memory, *l)),
-                    Box::new(substitute(sym_memory, *r)),
-                ),
-                Expression::GEQ(l, r) => Expression::GEQ(
-                    Box::new(substitute(sym_memory, *l)),
-                    Box::new(substitute(sym_memory, *r)),
-                ),
-                Expression::LEQ(l, r) => Expression::LEQ(
-                    Box::new(substitute(sym_memory, *l)),
-                    Box::new(substitute(sym_memory, *r)),
-                ),
-                Expression::Plus(l, r) => Expression::Plus(
-                    Box::new(substitute(sym_memory, *l)),
-                    Box::new(substitute(sym_memory, *r)),
-                ),
-                Expression::Minus(l, r) => Expression::Minus(
-                    Box::new(substitute(sym_memory, *l)),
-                    Box::new(substitute(sym_memory, *r)),
-                ),
-                Expression::Multiply(l, r) => Expression::Multiply(
-                    Box::new(substitute(sym_memory, *l)),
-                    Box::new(substitute(sym_memory, *r)),
-                ),
-                Expression::Divide(l, r) => Expression::Divide(
-                    Box::new(substitute(sym_memory, *l)),
-                    Box::new(substitute(sym_memory, *r)),
-                ),
-                Expression::Mod(l, r) => Expression::Mod(
-                    Box::new(substitute(sym_memory, *l)),
-                    Box::new(substitute(sym_memory, *r)),
-                ),
-                Expression::Negative(expr) => {
-                    Expression::Negative(Box::new(substitute(sym_memory, *expr)))
-                }
-                Expression::Not(expr) => Expression::Not(Box::new(substitute(sym_memory, *expr))),
-                Expression::Literal(_) => expr,
-                Expression::Identifier(id) => match sym_memory.stack_get(&id) {
-                    Some(SymExpression::Bool(SymValue::Expr(Substituted(expr)))) => substitute(sym_memory, expr),
-                    Some(SymExpression::Int(SymValue::Expr(Substituted(expr)))) => substitute(sym_memory, expr),
-                    Some(SymExpression::Ref(r)) => Expression::Literal(Literal::Ref(r)),
-                    Some(sym_expr) => panic_with_diagnostics(
-                        &format!(
-                            "identifier {} with value {:?} can't be substituted",
-                            id, sym_expr
-                        ),
-                        sym_memory,
-                    ),
-                    None => panic_with_diagnostics(&format!("{} was not declared", id), sym_memory),
-                },
-                Expression::FreeVar(_) => expr,
-                otherwise => panic_with_diagnostics(
-                    &format!("{:?} is not yet implemented", otherwise),
-                    &sym_memory,
-                ),
-            }
-        }
     }
 
     /// front end simplifier
     pub fn simplify_expr(&self, expr: Substituted) -> Substituted {
-        return Substituted(simplify(self, expr.0));
+
+        // map closure with sym_memory over expression
+        let partial_simplify = |expr| simplify(self, expr);
+        return expr.map(partial_simplify);
 
         fn simplify(sym_memory: &SymMemory, expr: Expression) -> Expression {
             match expr {
@@ -553,8 +467,8 @@ impl<'a> SymMemory {
                 },
                 Expression::Literal(_) => expr,
                 Expression::Identifier(id) => match sym_memory.stack_get(&id) {
-                    Some(SymExpression::Bool(SymValue::Expr(expr))) => simplify(sym_memory, expr.0),
-                    Some(SymExpression::Int(SymValue::Expr(expr))) => simplify(sym_memory, expr.0),
+                    Some(SymExpression::Bool(SymValue::Expr(expr))) => simplify(sym_memory, expr.get().clone()),
+                    Some(SymExpression::Int(SymValue::Expr(expr))) => simplify(sym_memory, expr.get().clone()),
                     _ => todo!(),
                 },
                 Expression::FreeVar(_) => expr,

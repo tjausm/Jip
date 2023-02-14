@@ -7,7 +7,7 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use crate::{ast::*, shared::panic_with_diagnostics};
+use crate::{ast::*, shared::panic_with_diagnostics, symbolic::memory::SymMemory};
 use rustc_hash::FxHashMap;
 use uuid::Uuid;
 
@@ -36,17 +36,17 @@ impl PathConstraints {
 
         for constraint in self.constraints.iter().rev() {
             match constraint {
-                PathConstraint::Assert(Substituted(assertion)) => {
+                PathConstraint::Assert(Substituted { expr }) => {
                     constraints =
-                        Expression::And(Box::new(assertion.clone()), Box::new(constraints));
+                        Expression::And(Box::new(expr.clone()), Box::new(constraints));
                 }
-                PathConstraint::Assume(Substituted(assumption)) => {
+                PathConstraint::Assume(Substituted { expr }) => {
                     constraints =
-                        Expression::Implies(Box::new(assumption.clone()), Box::new(constraints));
+                        Expression::Implies(Box::new(expr.clone()), Box::new(constraints));
                 }
             }
         }
-        return Substituted(constraints);
+        return Substituted{ expr: constraints};
     }
 
     /// adds a new constraint
@@ -67,7 +67,117 @@ impl fmt::Debug for PathConstraints {
 
 /// containertype to indicate substitution of variables has already occured on expression
 #[derive(Debug, Clone, Hash)]
-pub struct Substituted(pub Expression);
+pub struct Substituted {
+    expr: Expression
+}
+
+impl Substituted {
+    /// substitutes all variables in the underlying `Expression`
+    pub fn new(sym_memory: &SymMemory, expr: Expression) -> Self {
+        return Substituted { expr: substitute(sym_memory, expr)};
+
+        /// substitutes expression
+        fn substitute(sym_memory: &SymMemory, expr: Expression) -> Expression {
+            match expr {
+                Expression::Forall(id, r) => {
+                    Expression::Forall(id.clone(), Box::new(substitute(sym_memory, *r)))
+                },
+                Expression::Implies(l, r) => Expression::Implies(
+                    Box::new(substitute(sym_memory, *l)),
+                    Box::new(substitute(sym_memory, *r)),
+                ),
+                Expression::And(l, r) => Expression::And(
+                    Box::new(substitute(sym_memory, *l)),
+                    Box::new(substitute(sym_memory, *r)),
+                ),
+                Expression::Or(l, r) => Expression::Or(
+                    Box::new(substitute(sym_memory, *l)),
+                    Box::new(substitute(sym_memory, *r)),
+                ),
+                Expression::EQ(l, r) => Expression::EQ(
+                    Box::new(substitute(sym_memory, *l)),
+                    Box::new(substitute(sym_memory, *r)),
+                ),
+                Expression::NE(l, r) => Expression::NE(
+                    Box::new(substitute(sym_memory, *l)),
+                    Box::new(substitute(sym_memory, *r)),
+                ),
+                Expression::LT(l, r) => Expression::LT(
+                    Box::new(substitute(sym_memory, *l)),
+                    Box::new(substitute(sym_memory, *r)),
+                ),
+                Expression::GT(l, r) => Expression::GT(
+                    Box::new(substitute(sym_memory, *l)),
+                    Box::new(substitute(sym_memory, *r)),
+                ),
+                Expression::GEQ(l, r) => Expression::GEQ(
+                    Box::new(substitute(sym_memory, *l)),
+                    Box::new(substitute(sym_memory, *r)),
+                ),
+                Expression::LEQ(l, r) => Expression::LEQ(
+                    Box::new(substitute(sym_memory, *l)),
+                    Box::new(substitute(sym_memory, *r)),
+                ),
+                Expression::Plus(l, r) => Expression::Plus(
+                    Box::new(substitute(sym_memory, *l)),
+                    Box::new(substitute(sym_memory, *r)),
+                ),
+                Expression::Minus(l, r) => Expression::Minus(
+                    Box::new(substitute(sym_memory, *l)),
+                    Box::new(substitute(sym_memory, *r)),
+                ),
+                Expression::Multiply(l, r) => Expression::Multiply(
+                    Box::new(substitute(sym_memory, *l)),
+                    Box::new(substitute(sym_memory, *r)),
+                ),
+                Expression::Divide(l, r) => Expression::Divide(
+                    Box::new(substitute(sym_memory, *l)),
+                    Box::new(substitute(sym_memory, *r)),
+                ),
+                Expression::Mod(l, r) => Expression::Mod(
+                    Box::new(substitute(sym_memory, *l)),
+                    Box::new(substitute(sym_memory, *r)),
+                ),
+                Expression::Negative(expr) => {
+                    Expression::Negative(Box::new(substitute(sym_memory, *expr)))
+                }
+                Expression::Not(expr) => Expression::Not(Box::new(substitute(sym_memory, *expr))),
+                Expression::Literal(_) => expr,
+                Expression::Identifier(id) => match sym_memory.stack_get(&id) {
+                    Some(SymExpression::Bool(SymValue::Expr(Substituted{expr}))) => substitute(sym_memory, expr),
+                    Some(SymExpression::Int(SymValue::Expr(Substituted{expr}))) => substitute(sym_memory, expr),
+                    Some(SymExpression::Ref(r)) => Expression::Literal(Literal::Ref(r)),
+                    Some(sym_expr) => panic_with_diagnostics(
+                        &format!(
+                            "identifier {} with value {:?} can't be substituted",
+                            id, sym_expr
+                        ),
+                        sym_memory,
+                    ),
+                    None => panic_with_diagnostics(&format!("{} was not declared", id), sym_memory),
+                },
+                Expression::FreeVar(_) => expr,
+                otherwise => panic_with_diagnostics(
+                    &format!("{:?} is not yet implemented", otherwise),
+                    &sym_memory,
+                ),
+                
+            }
+        }
+    
+    }
+
+    pub fn map<F>(self, mut f: F) -> Self
+    where
+        F: FnMut(Expression) -> Expression,
+    {
+        Substituted { expr: f(self.expr) }
+    }
+    pub fn get(&self) -> &Expression{
+        &self.expr
+    }
+
+}
 
 pub type Reference = Uuid;
 

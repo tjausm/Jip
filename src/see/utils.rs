@@ -55,11 +55,11 @@ pub fn parse_rhs<'a, 'b>(
 
         Rhs::Expression(expr) => match ty {
             Type::Int => {
-                Ok(SymExpression::Int(SymValue::Expr(sym_memory.substitute_expr(expr.clone()))))
+                Ok(SymExpression::Int(SymValue::Expr(Substituted::new(&sym_memory, expr.clone()))))
             }
 
             Type::Bool => {
-                Ok(SymExpression::Bool(SymValue::Expr(sym_memory.substitute_expr(expr.clone()))))
+                Ok(SymExpression::Bool(SymValue::Expr(Substituted::new(&sym_memory, expr.clone()))))
             }
             Type::ClassType(class) => match expr {
                 Expression::Identifier(id) => match sym_memory.stack_get(id) {
@@ -129,13 +129,13 @@ pub fn params_to_vars<'ctx>(
             (Some((Type::Int, arg_id)), Some(expr)) => {
                 variables.push((
                     arg_id,
-                    SymExpression::Int(SymValue::Expr(sym_memory.substitute_expr(expr.clone()))),
+                    SymExpression::Int(SymValue::Expr(Substituted::new(&sym_memory, expr.clone()))),
                 ));
             }
             (Some((Type::Bool, arg_id)), Some(expr)) => {
                 variables.push((
                     arg_id,
-                    SymExpression::Bool(SymValue::Expr(sym_memory.substitute_expr(expr.clone()))),
+                    SymExpression::Bool(SymValue::Expr(Substituted::new(&sym_memory, expr.clone()))),
                 ));
             }
             (Some((Type::ClassType(class), arg_id)), Some(expr)) => {
@@ -191,14 +191,14 @@ pub fn assert<'a>(
     pc: &mut PathConstraints,
     diagnostics: &mut Diagnostics,
 ) -> Result<(), Error> {
-    let subt_assertion = sym_memory.substitute_expr(assertion.clone());
+    let subt_assertion = Substituted::new(&sym_memory, assertion.clone());
 
     // add (simplified) assertion
     if simplify {
         let simple_assertion = sym_memory.simplify_expr(subt_assertion);
         //let simple_assertion = assertion;
-        match simple_assertion {
-            Substituted(Expression::Literal(Literal::Boolean(true))) => (),
+        match simple_assertion.get() {
+            Expression::Literal(Literal::Boolean(true)) => (),
             _ => pc.push_assertion(simple_assertion),
         }
     } else {
@@ -210,8 +210,8 @@ pub fn assert<'a>(
     if simplify {
         constraints = sym_memory.simplify_expr(constraints)
     };
-    match constraints {
-        Substituted(Expression::Literal(Literal::Boolean(true))) => return Ok(()),
+    match constraints.get() {
+        Expression::Literal(Literal::Boolean(true)) => return Ok(()),
         _ => (),
     }
 
@@ -227,13 +227,13 @@ pub fn assume(
     assumption: &Expression,
     pc: &mut PathConstraints,
 ) -> bool {
-    let subt_assumption = sym_memory.substitute_expr(assumption.clone());
+    let subt_assumption = Substituted::new(&sym_memory, assumption.clone());
 
     if simplify {
         let simple_assumption = sym_memory.simplify_expr(subt_assumption);
-        match simple_assumption {
-            Substituted(Expression::Literal(Literal::Boolean(false))) => return false,
-            Substituted(Expression::Literal(Literal::Boolean(true))) => (),
+        match simple_assumption.get() {
+            Expression::Literal(Literal::Boolean(false)) => return false,
+            Expression::Literal(Literal::Boolean(true)) => (),
             //_ => sym_memory.add_assume(simple_assumption.clone(), pc),
             _ => pc.push_assumption(simple_assumption),
         };
