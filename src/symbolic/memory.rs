@@ -46,7 +46,7 @@ impl<'ctx> SymMemory {
 impl<'a> SymMemory {
     /// inserts a free variable (meaning we don't substitute's)
     pub fn stack_insert_free_var(&mut self, ty: Type, id: &'a Identifier) -> () {
-        let fv = Substituted::new(self, Expression::FreeVar(
+        let fv = Substituted::new(self, Expression::FreeVariable(ty.clone(), 
             id.clone(),
         ));
 
@@ -235,7 +235,7 @@ impl<'a> SymMemory {
                         let field_name = format!("{}.{}",  &r.to_string()[0..6],field);
                         fields.insert(
                             field.clone(),
-                            (Type::Int, SymExpression::Int(SymValue::Expr(Substituted::new(self,Expression::FreeVar(field_name))))),
+                            (Type::Int, SymExpression::Int(SymValue::Expr(Substituted::new(self,Expression::FreeVariable(Type::Int, field_name))))),
                         );
                     }
                     Type::Bool => {
@@ -244,7 +244,7 @@ impl<'a> SymMemory {
                             Type::Bool,
                             fields.insert(
                                 field.clone(),
-                                (Type::Bool, SymExpression::Bool(SymValue::Expr(Substituted::new(self,Expression::FreeVar(field_name))))),
+                                (Type::Bool, SymExpression::Bool(SymValue::Expr(Substituted::new(self,Expression::FreeVariable(Type::Bool, field_name))))),
                             ),
                         );
                     }
@@ -471,7 +471,7 @@ impl<'a> SymMemory {
                     Some(SymExpression::Int(SymValue::Expr(expr))) => simplify(sym_memory, expr.get().clone()),
                     _ => todo!(),
                 },
-                Expression::FreeVar(_) => expr,
+                Expression::FreeVariable(_, _) => expr,
                 otherwise => panic_with_diagnostics(
                     &format!("{:?} is not yet implemented", otherwise),
                     &sym_memory,

@@ -156,7 +156,7 @@ impl Substituted {
                     ),
                     None => panic_with_diagnostics(&format!("{} was not declared", id), sym_memory),
                 },
-                Expression::FreeVar(_) => expr,
+                Expression::FreeVariable(_, _) => expr,
                 otherwise => panic_with_diagnostics(
                     &format!("{:?} is not yet implemented", otherwise),
                     &sym_memory,

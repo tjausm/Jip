@@ -210,14 +210,13 @@ fn expr_to_dynamic<'ctx, 'a>(
             ),
             None => panic_with_diagnostics(&format!("{} is undeclared", id), &sym_memory),
         },
-        Expression::FreeVar(id) => match sym_memory.stack_get(id) {
-            Some(SymExpression::Bool(_)) => Dynamic::from(Bool::new_const(ctx, id.clone())),
-            Some(SymExpression::Int(_)) => Dynamic::from(Int::new_const(ctx, id.clone())),
-            Some(sym_expr) => panic_with_diagnostics(
-                &format!("{:?} is not parseable to a z3 ast", sym_expr),
+        Expression::FreeVariable(ty, id) => match ty {
+            Type::Bool => Dynamic::from(Bool::new_const(ctx, id.clone())),
+            Type::Int => Dynamic::from(Int::new_const(ctx, id.clone())),
+            _ => panic_with_diagnostics(
+                &format!("Free variable can't be of type {:?}", ty),
                 &sym_memory,
             ),
-            None => panic_with_diagnostics(&format!("{} is undeclared", id), &sym_memory),
         },
         Expression::Literal(Literal::Integer(n)) => Dynamic::from(ast::Int::from_i64(ctx, *n)),
         Expression::Literal(Literal::Boolean(b)) => Dynamic::from(ast::Bool::from_bool(ctx, *b)),

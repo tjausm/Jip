@@ -1,24 +1,3 @@
------------------------------------------------------------------------
-State of Sym-Stack:
-   Frame 'main'
-      p := Ref((Node, 5b5def03-8faa-40db-8782-1ba1cbfd07ce))
-      N := Int(Expr(Substituted(1)))
-      b0fc3875-fe68-45a2-b257-410c0406c512.value := Int(Expr(Substituted(b0fc3875-fe68-45a2-b257-410c0406c512.value)))
-      5b5def03-8faa-40db-8782-1ba1cbfd07ce.value := Int(Expr(Substituted(5b5def03-8faa-40db-8782-1ba1cbfd07ce.value)))
-   Frame 5dbd
-      limit := Int(Expr(Substituted(1)))
-      this := Ref((Node, 5b5def03-8faa-40db-8782-1ba1cbfd07ce))
-      next := Ref((Node, ada6f016-0e87-4b04-8a92-bdd66db97546))
-      curr := Ref((Node, b0fc3875-fe68-45a2-b257-410c0406c512))
-      v := Int(Expr(Substituted(1)))
-
-
-State of Sym-Heap:
-   ada6 := "Uninitialized Node"
-   5b5d := "Object((\"todo\", {\"value\": (int, Int(Expr(Substituted(1)))), \"next\": (Node, Ref((Node, b0fc3875-fe68-45a2-b257-410c0406c512)))}))"
-   b0fc := "Object((\"todo\", {\"value\": (int, Int(Expr(Substituted(b0fc3875-fe68-45a2-b257-410c0406c512.value)))), \"next\": (Node, Ref((Node, ada6f016-0e87-4b04-8a92-bdd66db97546)))}))"
------------------------------------------------------------------------
-
 // this example fails because of how we infinitely initialize objects
 // thus we can never reach the end of the program without falsifying assume n.next == null
 // and therefore it is correct i.e. non-terminating member function will never reach assertion

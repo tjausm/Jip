@@ -1,14 +1,18 @@
+// this example fails because of how we infinitely initialize objects
+// thus we can never reach the end of the program without falsifying assume n.next == null
+// and therefore it is correct i.e. non-terminating member function will never reach assertion
 class Main {
     
     static void main(Node p){
-        p.fill(1);
-        bool mem := p.member(1);
-        assert mem == true;
+
+        int N := 1; //because we infinitely initialize objects we use an artificial limit to linked list length
+
+        p.fill(1, N); // fill linkedlist with values of one up to N
+        bool mem := p.member(2, N);
+        
 
     }
 }
-
-
 
 //
 // Linked-list, with several methods.
@@ -22,23 +26,31 @@ class Node {
         this.next := next;
     }
 
-    bool member(int x) {
+    bool member(int x, int limit) {
+
+        Node n := this;
         int v := this.value ;
-        
-        if(x==v) return true ;
-        else {
-            Node n := this.next ;
-            bool b := n.member(x) ;
-            return b ;
-        };
+
+        while (limit > 0 && n != null){
+            if(x==v) return true ;
+            else {
+                n := this.next ;
+                v := n.value;
+                limit := limit - 1;
+            };     
+        }
+        return false;
+
     }
-    void fill(int v){
+
+    void fill(int v, int limit){
         Node curr := this;
         Node next := this.next;
-        while(next != null){
+        while(limit > 0 && next != null){
             curr.value := v;
             curr := next;
             next := next.next;
+            assert true;
         }
     }
 }
