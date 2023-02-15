@@ -22,7 +22,6 @@ use crate::z3::build_ctx;
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
 use uuid::Uuid;
-use colored::Colorize;
 
 use std::collections::VecDeque;
 use std::fs;
@@ -113,6 +112,7 @@ fn print_debug(node: &Node, sym_memory: &SymMemory, pc: &PathConstraints){
 
     let dump_state = match node {
         Node::Statement(Statement::Assert(_)) => true,
+        Node::Statement(Statement::Assignment((_, Rhs::AccessArray(_, _ )))) => true,
         _ => false
     };
     if dump_state {

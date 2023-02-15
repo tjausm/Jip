@@ -22,7 +22,7 @@ class Main {
        }
 
        if (found) {
-         int val := a[k]; 
+         int val := a[atPosition]; 
          assert val == x; 
          } else ;
     }

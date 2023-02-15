@@ -62,6 +62,7 @@ fn check_ast<'ctx>(ctx: &'ctx Context, ast: &Bool) -> Result<(), Error> {
     let model = solver.get_model();
 
     //println!("{:?}", model);
+    
 
     match (result, model) {
         (SatResult::Unsat, _) => return Ok(()),

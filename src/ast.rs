@@ -268,7 +268,7 @@ impl fmt::Debug for Expression {
             Expression::Negative(expr) => write!(f, "-{:?}", expr),
             Expression::Not(expr) => write!(f, "!{:?}", expr),
             Expression::Identifier(id) => write!(f, "{}", id),
-            Expression::FreeVariable(_, id) => write!(f, "FV({})", id),
+            Expression::FreeVariable(_, id) => write!(f, "{}", id),
             Expression::Literal(Literal::Boolean(val)) => write!(f, "{:?}", val),
             Expression::Literal(Literal::Integer(val)) => write!(f, "{:?}", val),
             Expression::Literal(Literal::Ref(r)) => write!(f, "Ref{:?}", r),

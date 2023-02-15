@@ -527,7 +527,7 @@ impl fmt::Debug for ReferenceValue {
         match self {
             ReferenceValue::Object((ty, fields)) => {
                 let mut formated_obj = format!("{}", ty);
-                for (field_name, (field_ty, expr)) in fields{
+                for (field_name, (_, expr)) in fields{
                     formated_obj.push_str(&format!("\n                .{} := {:?}", field_name, expr))
                 }
                 write!(f, "{}", formated_obj)
