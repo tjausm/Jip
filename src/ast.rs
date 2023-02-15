@@ -272,7 +272,7 @@ impl fmt::Debug for Expression {
             Expression::Literal(Literal::Boolean(val)) => write!(f, "{:?}", val),
             Expression::Literal(Literal::Integer(val)) => write!(f, "{:?}", val),
             Expression::Literal(Literal::Ref(r)) => write!(f, "Ref{:?}", r),
-            Expression::ArrLength(id) => write!(f, "#{:?}", id),
+            Expression::ArrLength(id) => write!(f, "#{}", id),
         }
     }
 }

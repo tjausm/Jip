@@ -156,6 +156,7 @@ impl Substituted {
                     ),
                     None => panic_with_diagnostics(&format!("{} was not declared", id), sym_memory),
                 },
+                Expression::ArrLength(arr_name) => sym_memory.heap_get_arr_length(&arr_name).get().clone(),
                 Expression::FreeVariable(_, _) => expr,
                 otherwise => panic_with_diagnostics(
                     &format!("{:?} is not yet implemented", otherwise),
@@ -167,6 +168,7 @@ impl Substituted {
     
     }
 
+    /// be cautious that `f` doesn't introduce unsubstitued values in the inner-expression
     pub fn map<F>(self, mut f: F) -> Self
     where
         F: FnMut(Expression) -> Expression,

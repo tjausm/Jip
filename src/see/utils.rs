@@ -1,5 +1,4 @@
 use ::z3::Context;
-use uuid::Uuid;
 
 use crate::ast::*;
 use crate::shared::Error;
@@ -31,6 +30,7 @@ pub fn type_lhs<'ctx>(sym_memory: &mut SymMemory, lhs: &'ctx Lhs) -> Type {
 /// returns the symbolic expression rhs refers to
 pub fn parse_rhs<'a, 'b>(
     ctx: &Context,
+    pc: &PathConstraints,
     simplify: bool,
     sym_memory: &mut SymMemory,
     ty: &Type,
@@ -50,7 +50,7 @@ pub fn parse_rhs<'a, 'b>(
         }
 
         Rhs::AccessArray(arr_name, index) => {
-            sym_memory.heap_access_array(ctx, simplify, arr_name, index.clone(), None)
+            sym_memory.heap_access_array(ctx, pc, simplify, arr_name, index.clone(), None)
         }
 
         Rhs::Expression(expr) => match ty {
@@ -97,13 +97,14 @@ pub fn parse_rhs<'a, 'b>(
 // gets type of lhs, parses expression on rhs and assign value of rhs to lhs on stack / heap
 pub fn lhs_from_rhs<'a>(
     ctx: &Context,
+    pc: &PathConstraints,
     simplify: bool,
     sym_memory: &mut SymMemory,
     lhs: &'a Lhs,
     rhs: &'a Rhs,
 ) -> Result<(), Error> {
     let ty = type_lhs(sym_memory, lhs);
-    let var = parse_rhs(ctx, simplify, sym_memory, &ty, rhs)?;
+    let var = parse_rhs(ctx, pc, simplify, sym_memory, &ty, rhs)?;
     match lhs {
         Lhs::AccessField(obj_name, field_name) => {
             sym_memory.heap_access_object(obj_name, field_name, Some(var));

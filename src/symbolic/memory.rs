@@ -9,7 +9,7 @@ use crate::ast::*;
 use crate::shared::{panic_with_diagnostics, Error, Scope};
 use crate::z3;
 
-use super::model::{Reference, ReferenceValue, Substituted, SymExpression, SymValue};
+use super::model::{Reference, ReferenceValue, Substituted, SymExpression, SymValue, PathConstraints};
 
 //-----------------//
 // Symbolic memory //
@@ -173,6 +173,7 @@ impl<'a> SymMemory {
     pub fn heap_access_array(
         &mut self,
         ctx: &Context,
+        pc: &PathConstraints,
         simplify: bool,
         arr_name: &Identifier,
         index: Expression,
@@ -202,7 +203,7 @@ impl<'a> SymMemory {
                 Expression::Literal(Literal::Integer(lit_index)),
                 Expression::Literal(Literal::Integer(lit_lenght)),
             ) if lit_index < lit_lenght => (),
-            _ => z3::check_length(ctx, &length, &simple_index, &self)?,
+            _ => z3::check_length(ctx, pc, &length, &simple_index, &self)?,
         };
 
         //get mutable HashMap representing array
@@ -237,10 +238,11 @@ impl<'a> SymMemory {
         }
     }
 
-    pub fn heap_get_length(&self, arr_name: &Identifier) -> SymExpression {
+    // return the symbolic length of an array
+    pub fn heap_get_arr_length(&self, arr_name: &Identifier) -> Substituted {
         match self.stack_get(&arr_name){
         Some(SymExpression::Ref((_, r))) => match self.heap.get(&r){
-            Some(ReferenceValue::Array((_, _, length))) => SymExpression::Int(SymValue::Expr(length.clone())),
+            Some(ReferenceValue::Array((_, _, length))) => length.clone(),
             otherwise => panic_with_diagnostics(&format!("Can't return length of {} since the value it references to ({:?}) is not an array", arr_name, otherwise), &self),
         },
         _ => panic_with_diagnostics(&format!("{} is not a reference", arr_name), &self),

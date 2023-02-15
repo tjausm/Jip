@@ -139,6 +139,7 @@ fn verify_program(prog_string: &str, d: Depth, config: Config) -> Result<Diagnos
         if d == 0 {
             continue;
         }
+        println!("Currently checking {:?}", &cfg[curr_node]);
 
         match &cfg[curr_node] {
             // add all parameters of main as free variables to env
@@ -187,7 +188,7 @@ fn verify_program(prog_string: &str, d: Depth, config: Config) -> Result<Diagnos
                     Statement::Assume(assumption) => if !assume(config.simplify, &mut sym_memory, assumption, &mut pc) {continue},
                     Statement::Assert(assertion) =>   assert(&ctx, config.simplify, &mut sym_memory, assertion, &mut pc, &mut diagnostics)?,
                     Statement::Assignment((lhs, rhs)) => {
-                        lhs_from_rhs(&ctx, config.simplify, &mut sym_memory, lhs, rhs)?;
+                        lhs_from_rhs(&ctx, &pc, config.simplify, &mut sym_memory, lhs, rhs)?;
                     }
                     Statement::Return(expr) => {
                         // stop path if current scope `id == None`, indicating we are in main scope

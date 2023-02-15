@@ -6,8 +6,8 @@ use z3::{ast, Config, Context, SatResult, Solver};
 
 use crate::ast::*;
 use crate::shared::{panic_with_diagnostics, Error};
-use crate::symbolic::model::{PathConstraints, SymExpression, Substituted, SymValue};
 use crate::symbolic::memory::SymMemory;
+use crate::symbolic::model::{PathConstraints, Substituted, SymExpression, SymValue};
 
 //--------------//
 // z3 bindings //
@@ -19,16 +19,26 @@ pub fn build_ctx() -> (Config, Context) {
     (z3_cfg, ctx)
 }
 
-/// Checks if `always length > index` for usage in array accessing
+/// Combine pathconstraints to assert `pc ==> length > index` == always true
 pub fn check_length<'ctx>(
     ctx: &'ctx Context,
+    pc: &PathConstraints,
     length: &'ctx Substituted,
     index: &'ctx Substituted,
     sym_memory: &SymMemory,
 ) -> Result<(), Error> {
-    let length = expr_to_int(ctx, sym_memory, &length.get());
-    let index =  expr_to_int(ctx, sym_memory, &index.get());
-    let length_gt_index = length.gt(&index);
+
+    println!("PC: {:?}\nChecking: {:?} > {:?}", pc, length, index);
+
+    // combine in expression of form 'length > index'
+    let to_gt = |len|  Expression::GT(Box::new(len), Box::new(index.get().clone())); 
+    let length_gt_index = length.clone().map(to_gt);
+    
+    // build new path constraints and get z3 bool
+    let mut pc = pc.clone();
+    pc.push_assertion(length_gt_index);
+    let constraints = pc.combine();
+    let length_gt_index = expr_to_bool(ctx, sym_memory, constraints.get());
 
     check_ast(ctx, &length_gt_index)
 }
@@ -44,16 +54,19 @@ pub fn verify_constraints<'a>(
     let constraint_expr = path_constraints.combine();
     let constraints = expr_to_bool(&ctx, sym_memory, &constraint_expr.get());
 
-    // println!("\n-----------------------------------------------------------------------\nPATH CONSTRAINTS");
-    // println!("{:?}", path_constraints);
-    // println!("\n-----------------------------------------------------------------------\nSYM_MEMORY");
-    // println!("{:?}", sym_memory);
-    // println!("\n-----------------------------------------------------------------------\n");
+    println!("\n-----------------------------------------------------------------------\nPATH CONSTRAINTS");
+    println!("{:?}", path_constraints);
+    println!(
+        "\n-----------------------------------------------------------------------\nSYM_MEMORY"
+    );
+    println!("{:?}", sym_memory);
+    println!("\n-----------------------------------------------------------------------\n");
 
     check_ast(ctx, &constraints)
 }
 
-// returns error if there exists a counterexample for given formula
+/// returns error if there exists a counterexample for given formula
+/// in other words, given formula `a > b`, counterexample: a -> 0, b -> 0
 fn check_ast<'ctx>(ctx: &'ctx Context, ast: &Bool) -> Result<(), Error> {
     let solver = Solver::new(&ctx);
     solver.assert(&ast.not());
@@ -78,19 +91,11 @@ fn check_ast<'ctx>(ctx: &'ctx Context, ast: &Bool) -> Result<(), Error> {
     };
 }
 
-fn expr_to_int<'ctx>(
-    ctx: &'ctx Context,
-    env: &SymMemory,
-    expr: &'ctx Expression,
-) -> Int<'ctx> {
+fn expr_to_int<'ctx>(ctx: &'ctx Context, env: &SymMemory, expr: &'ctx Expression) -> Int<'ctx> {
     return unwrap_as_int(expr_to_dynamic(&ctx, Rc::new(env), expr));
 }
 
-fn expr_to_bool<'ctx>(
-    ctx: &'ctx Context,
-    env: &SymMemory,
-    expr: &'ctx Expression,
-) -> Bool<'ctx> {
+fn expr_to_bool<'ctx>(ctx: &'ctx Context, env: &SymMemory, expr: &'ctx Expression) -> Bool<'ctx> {
     return unwrap_as_bool(expr_to_dynamic(&ctx, Rc::new(env), expr));
 }
 
@@ -202,8 +207,12 @@ fn expr_to_dynamic<'ctx, 'a>(
         }
         // type variable using stack or substitute one level deep??
         Expression::Identifier(id) => match sym_memory.stack_get(id) {
-            Some(SymExpression::Bool(SymValue::Expr(expr))) => expr_to_dynamic(ctx, sym_memory, &expr.get()),
-            Some(SymExpression::Int(SymValue::Expr(expr))) => expr_to_dynamic(ctx, sym_memory, &expr.get()),
+            Some(SymExpression::Bool(SymValue::Expr(expr))) => {
+                expr_to_dynamic(ctx, sym_memory, &expr.get())
+            }
+            Some(SymExpression::Int(SymValue::Expr(expr))) => {
+                expr_to_dynamic(ctx, sym_memory, &expr.get())
+            }
             Some(sym_expr) => panic_with_diagnostics(
                 &format!("{:?} is not parseable to a z3 ast", sym_expr),
                 &sym_memory,
@@ -220,7 +229,9 @@ fn expr_to_dynamic<'ctx, 'a>(
         },
         Expression::Literal(Literal::Integer(n)) => Dynamic::from(ast::Int::from_i64(ctx, *n)),
         Expression::Literal(Literal::Boolean(b)) => Dynamic::from(ast::Bool::from_bool(ctx, *b)),
-        Expression::Literal(Literal::Ref(r)) =>  Dynamic::from(ast::Int::from_u64(ctx, r.1.as_u64_pair().0)),
+        Expression::Literal(Literal::Ref(r)) => {
+            Dynamic::from(ast::Int::from_u64(ctx, r.1.as_u64_pair().0))
+        }
         otherwise => {
             panic_with_diagnostics(
                 &format!(
