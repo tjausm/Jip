@@ -46,20 +46,16 @@ impl<'ctx> SymMemory {
 impl<'a> SymMemory {
     /// inserts a free variable (meaning we don't substitute's)
     pub fn stack_insert_free_var(&mut self, ty: Type, id: &'a Identifier) -> () {
-        let fv = Substituted::new(self, Expression::FreeVariable(ty.clone(), 
-            id.clone(),
-        ));
+        let fv = Substituted::new(self, Expression::FreeVariable(ty.clone(), id.clone()));
 
         if let Some(s) = self.stack.last_mut() {
             match ty {
-                Type::Int => s.env.insert(
-                    id.clone(),
-                    SymExpression::Int(SymValue::Expr(fv)),
-                ),
-                Type::Bool => s.env.insert(
-                    id.clone(),
-                    SymExpression::Bool(SymValue::Expr(fv)),
-                ),
+                Type::Int => s
+                    .env
+                    .insert(id.clone(), SymExpression::Int(SymValue::Expr(fv))),
+                Type::Bool => s
+                    .env
+                    .insert(id.clone(), SymExpression::Bool(SymValue::Expr(fv))),
                 _ => None,
             };
         };
@@ -183,34 +179,62 @@ impl<'a> SymMemory {
         var: Option<SymExpression>,
     ) -> Result<SymExpression, Error> {
         // substitute expr and simplify
-        let mut subt_index = Substituted::new(self,index);
+        let subt_index = Substituted::new(self, index);
 
-        //get array type, array and length
-        let (_, _, length)= match self.stack_get(&arr_name){
+        //get immutable length(immutable)
+        let mut length = match self.stack_get(&arr_name){
             Some(SymExpression::Ref((_, r))) => match self.heap.get(&r){
+                Some(ReferenceValue::Array((ty, arr, length))) => (ty, arr, length),
+                otherwise => panic_with_diagnostics(&format!("{:?} is not an array and can't be assigned to in assignment '{}[{:?}] := {:?}'", otherwise, arr_name, subt_index, var), &self),
+            },
+            _ => panic_with_diagnostics(&format!("{} is not a reference", arr_name), &self),
+        }.2.clone();
+
+        // make length owned and simplify if toggled
+        let simple_index = self.simplify_expr(subt_index.clone());
+        if simplify {
+            length = self.simplify_expr(length);
+        };
+
+        // check if index is always < length
+        match (&simple_index.get(), &length.get()) {
+            (
+                Expression::Literal(Literal::Integer(lit_index)),
+                Expression::Literal(Literal::Integer(lit_lenght)),
+            ) if lit_index < lit_lenght => (),
+            _ => z3::check_length(ctx, &length, &simple_index, &self)?,
+        };
+
+        //get mutable HashMap representing array
+        let (ty, arr, _) = match self.stack_get(&arr_name){
+            Some(SymExpression::Ref((_, r))) => match self.heap.get_mut(&r){
                 Some(ReferenceValue::Array((ty, arr, length))) => (ty, arr, length),
                 otherwise => panic_with_diagnostics(&format!("{:?} is not an array and can't be assigned to in assignment '{}[{:?}] := {:?}'", otherwise, arr_name, subt_index, var), &self),
             },
             _ => panic_with_diagnostics(&format!("{} is not a reference", arr_name), &self),
         };
 
-        // make length owned and simplifyif toggled
-        let mut length = length.clone();
-        if simplify {
-            subt_index = self.simplify_expr(subt_index);
-            length = self.simplify_expr(length);
-        };
-
-        // check if index is always < length
-        match (&subt_index.get(), &length.get()) {
-            (
-                Expression::Literal(Literal::Integer(lit_index)),
-                Expression::Literal(Literal::Integer(lit_lenght)),
-            ) if lit_index < lit_lenght => (),
-            _ => z3::check_length(ctx, &length, &subt_index, &self)?,
-        };
-
-        todo!("acces expression mapping here")
+        match var {
+            Some(var) => {
+                arr.insert(simple_index, var.clone());
+                Ok(var)
+            },
+            None => match arr.get(&simple_index) {
+                Some(v) => Ok(v.clone()),
+                None => {
+                    let fv_expr = SymValue::Expr(Substituted::mk_freevar(ty.clone(), format!("{}[{:?}]", arr_name.clone(), simple_index)));
+                    let fv = match ty {
+                    Type::Int => SymExpression::Int(fv_expr),
+                    Type::Bool => SymExpression::Int(fv_expr), 
+                    Type::ClassType(_) => todo!(),
+                    Type::ArrayType(_) => todo!(),
+                    _ => todo!(),
+                };
+                arr.insert(simple_index, fv.clone());
+                Ok(fv)
+            },
+            },
+        }
     }
 
     pub fn heap_get_length(&self, arr_name: &Identifier) -> SymExpression {
@@ -232,10 +256,16 @@ impl<'a> SymMemory {
             match member {
                 Member::Field((ty, field)) => match ty {
                     Type::Int => {
-                        let field_name = format!("{}.{}",  &r.to_string()[0..6],field);
+                        let field_name = format!("{}.{}", &r.to_string()[0..6], field);
                         fields.insert(
                             field.clone(),
-                            (Type::Int, SymExpression::Int(SymValue::Expr(Substituted::new(self,Expression::FreeVariable(Type::Int, field_name))))),
+                            (
+                                Type::Int,
+                                SymExpression::Int(SymValue::Expr(Substituted::new(
+                                    self,
+                                    Expression::FreeVariable(Type::Int, field_name),
+                                ))),
+                            ),
                         );
                     }
                     Type::Bool => {
@@ -244,7 +274,13 @@ impl<'a> SymMemory {
                             Type::Bool,
                             fields.insert(
                                 field.clone(),
-                                (Type::Bool, SymExpression::Bool(SymValue::Expr(Substituted::new(self,Expression::FreeVariable(Type::Bool, field_name))))),
+                                (
+                                    Type::Bool,
+                                    SymExpression::Bool(SymValue::Expr(Substituted::new(
+                                        self,
+                                        Expression::FreeVariable(Type::Bool, field_name),
+                                    ))),
+                                ),
                             ),
                         );
                     }
@@ -276,15 +312,12 @@ impl<'a> SymMemory {
     }
 
     //todo: how to initialize correctly
-    pub fn init_array(&mut self, ty: Type, length: Expression) -> ReferenceValue {
-        // generate substituted length
-        let subt_len = Substituted::new(self,length);
-        ReferenceValue::Array((ty, FxHashMap::default(), subt_len))
+    pub fn init_array(&mut self, ty: Type, length: Substituted) -> ReferenceValue {
+        ReferenceValue::Array((ty, FxHashMap::default(), length))
     }
 
     /// front end simplifier
     pub fn simplify_expr(&self, expr: Substituted) -> Substituted {
-
         // map closure with sym_memory over expression
         let partial_simplify = |expr| simplify(self, expr);
         return expr.map(partial_simplify);
@@ -467,8 +500,12 @@ impl<'a> SymMemory {
                 },
                 Expression::Literal(_) => expr,
                 Expression::Identifier(id) => match sym_memory.stack_get(&id) {
-                    Some(SymExpression::Bool(SymValue::Expr(expr))) => simplify(sym_memory, expr.get().clone()),
-                    Some(SymExpression::Int(SymValue::Expr(expr))) => simplify(sym_memory, expr.get().clone()),
+                    Some(SymExpression::Bool(SymValue::Expr(expr))) => {
+                        simplify(sym_memory, expr.get().clone())
+                    }
+                    Some(SymExpression::Int(SymValue::Expr(expr))) => {
+                        simplify(sym_memory, expr.get().clone())
+                    }
                     _ => todo!(),
                 },
                 Expression::FreeVariable(_, _) => expr,

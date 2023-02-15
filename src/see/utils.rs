@@ -43,9 +43,9 @@ pub fn parse_rhs<'a, 'b>(
 
         // generate reference, build arrayname from said reference, insert array into heap and return reference
         Rhs::NewArray(ty, len) => {
-            let r = Uuid::new_v4();
-            let arr = sym_memory.init_array(ty.clone(), len.clone());
-            let r = sym_memory.heap_insert(Some(r), arr);
+            let subt_len = Substituted::new(sym_memory, len.clone());
+            let arr = sym_memory.init_array(ty.clone(), subt_len);
+            let r = sym_memory.heap_insert(None, arr);
             Ok(SymExpression::Ref((ty.clone(), r)))
         }
 

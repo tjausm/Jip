@@ -35,12 +35,12 @@ impl Program {
                 Member::Method(method) => match method {
                     Method::Static(content @ (_, id, _, _, _)) => {
                         if id == method_name {
-                            return content;
+                            return &content;
                         }
                     }
                     Method::Nonstatic(content @ (_, id, _, _, _)) => {
                         if id == method_name {
-                            return content;
+                            return &content;
                         }
                     }
                 },
@@ -58,7 +58,7 @@ impl Program {
 
         for m in class.1.iter() {
             match m {
-                Member::Constructor(c) => return c,
+                Member::Constructor(c) => return &c,
                 _ => continue,
             }
         }

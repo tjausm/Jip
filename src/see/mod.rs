@@ -143,19 +143,24 @@ fn verify_program(prog_string: &str, d: Depth, config: Config) -> Result<Diagnos
         match &cfg[curr_node] {
             // add all parameters of main as free variables to env
             Node::EnteringMain(parameters) => {
-                for p in parameters {
-                    match p {
+                for parameter in parameters {
+                    match parameter {
                         (Type::Int, id) => sym_memory.stack_insert_free_var(Type::Int, id),
                         (Type::Bool, id) => sym_memory.stack_insert_free_var(Type::Bool, id),
-                        (Type::ClassType(ty), id) => {
-                            let class = prog.get_class(ty);
-
-                            let r = Uuid::new_v4();
+                        (Type::ArrayType(ty), id) => {
+                            let arr = sym_memory.init_array(*ty.clone(), Substituted::mk_freevar(Type::Int, format!("#{}", id)));
+                            let r = sym_memory.heap_insert(None, arr);
                             sym_memory.stack_insert(
                                 id,
-                                SymExpression::Ref((Type::ClassType(ty.clone()), r)),
+                                SymExpression::Ref((parameter.0.clone(), r)),
                             );
-                            sym_memory.heap_insert(Some(r), ReferenceValue::UninitializedObj(class.clone()));
+                        },
+                        (Type::ClassType(ty), id) => {
+                            let class = prog.get_class(ty);
+                            let r = sym_memory.heap_insert(None, ReferenceValue::UninitializedObj(class.clone()));
+                            sym_memory.stack_insert(
+                                id,
+                                SymExpression::Ref((parameter.0.clone(), r)));
                         }
                         (ty, id) => panic_with_diagnostics(
                             &format!("Can't call main with parameter {} of type {:?}", id, ty),

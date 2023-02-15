@@ -66,13 +66,13 @@ impl fmt::Debug for PathConstraints {
 }
 
 /// containertype to indicate substitution of variables has already occured on expression
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct Substituted {
     expr: Expression
 }
 
 impl Substituted {
-    /// substitutes all variables in the underlying `Expression`
+    /// generate a substituted expression from given expression
     pub fn new(sym_memory: &SymMemory, expr: Expression) -> Self {
         return Substituted { expr: substitute(sym_memory, expr)};
 
@@ -173,8 +173,13 @@ impl Substituted {
     {
         Substituted { expr: f(self.expr) }
     }
+
     pub fn get(&self) -> &Expression{
         &self.expr
+    }
+
+    pub fn mk_freevar(ty: Type, name: Identifier) -> Substituted{
+        Substituted{expr: Expression::FreeVariable(ty, name)}
     }
 
 }
