@@ -44,11 +44,11 @@ pub fn verify_constraints<'a>(
     let constraint_expr = path_constraints.combine();
     let constraints = expr_to_bool(&ctx, sym_memory, &constraint_expr.get());
 
-    println!("\n-----------------------------------------------------------------------\nPATH CONSTRAINTS");
-    println!("{:?}", path_constraints);
-    println!("\n-----------------------------------------------------------------------\nSYM_MEMORY");
-    println!("{:?}", sym_memory);
-    println!("\n-----------------------------------------------------------------------\n");
+    // println!("\n-----------------------------------------------------------------------\nPATH CONSTRAINTS");
+    // println!("{:?}", path_constraints);
+    // println!("\n-----------------------------------------------------------------------\nSYM_MEMORY");
+    // println!("{:?}", sym_memory);
+    // println!("\n-----------------------------------------------------------------------\n");
 
     check_ast(ctx, &constraints)
 }

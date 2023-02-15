@@ -3,10 +3,7 @@
 // and therefore it is correct i.e. non-terminating member function will never reach assertion
 class Main {
     
-    static void main(Node p){
-
-        int N := 1; //because we infinitely initialize objects we use an artificial limit to linked list length
-
+    static void main(Node p, int N){
         p.fill(1, N); // fill linkedlist with values of one up to N
         bool mem := p.member(2, N);
         
@@ -51,6 +48,7 @@ class Node {
             curr := next;
             next := next.next;
             assert true;
+            limit := limit - 1;
         }
     }
 }
