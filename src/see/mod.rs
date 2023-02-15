@@ -9,20 +9,20 @@ mod utils;
 
 use crate::see::types::*;
 use crate::see::utils::*;
-
 use crate::ast::*;
 use crate::cfg::types::{Action, Node};
 use crate::cfg::{generate_cfg, generate_dot_cfg};
 use crate::shared::Config;
 use crate::shared::ExitCode;
 use crate::shared::{panic_with_diagnostics, Diagnostics, Error};
+use crate::symbolic::memory::SymMemory;
 use crate::symbolic::model::Substituted;
 use crate::symbolic::model::{PathConstraints, ReferenceValue, SymExpression, SymValue};
-use crate::symbolic::memory::{SymMemory};
 use crate::z3::build_ctx;
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
 use uuid::Uuid;
+use colored::Colorize;
 
 use std::collections::VecDeque;
 use std::fs;
@@ -99,16 +99,35 @@ pub fn print_verification(
         ),
         _ => "".to_string(),
     };
-    let result = verify_program(program, d, config);
+    let result = verify_program(program, d, config, verbose);
     let (ec, r) = print_result(result.clone());
-    if verbose {
-        return (ec, format!("{}{}", r, print_diagnostics(result)));
-    }
-    return (ec, r);
+    return (ec, format!("{}{}", r, print_diagnostics(result)));
 }
 
-fn verify_program(prog_string: &str, d: Depth, config: Config) -> Result<Diagnostics, Error> {
+/// prints the verbose debug info
+fn print_debug(node: &Node, sym_memory: &SymMemory, pc: &PathConstraints){
+    
+    let print_node = format!("{:?}", node);
+    let print_pc = format!("Path constraints -> {:?}", pc.combine().get());
+    let print_sym_memory = format!("{:?}", sym_memory);
 
+    let dump_state = match node {
+        Node::Statement(Statement::Assert(_)) => true,
+        _ => false
+    };
+    if dump_state {
+        println!("{}\n\n{}\n\n{}", print_node, print_pc, print_sym_memory)
+    } else {
+        println!("{}", print_node);
+    }
+}
+
+fn verify_program(
+    prog_string: &str,
+    d: Depth,
+    config: Config,
+    verbose: bool,
+) -> Result<Diagnostics, Error> {
     // init global z3 context
     let (_, ctx) = build_ctx();
 
@@ -124,12 +143,7 @@ fn verify_program(prog_string: &str, d: Depth, config: Config) -> Result<Diagnos
 
     //init our bfs through the cfg
     let mut q: VecDeque<(SymMemory, PathConstraints, Depth, NodeIndex)> = VecDeque::new();
-    q.push_back((
-        SymMemory::new(),
-        PathConstraints::default(),
-        d,
-        start_node,
-    ));
+    q.push_back((SymMemory::new(), PathConstraints::default(), d, start_node));
 
     // Assert -> build & verify z3 formula, return error if disproven
     // Assume -> build & verify z3 formula, stop evaluating pad if disproven
@@ -139,7 +153,10 @@ fn verify_program(prog_string: &str, d: Depth, config: Config) -> Result<Diagnos
         if d == 0 {
             continue;
         }
-        println!("Currently checking {:?}", &cfg[curr_node]);
+
+        if verbose {
+            print_debug(&cfg[curr_node], &sym_memory, &pc);
+        };
 
         match &cfg[curr_node] {
             // add all parameters of main as free variables to env
@@ -149,19 +166,20 @@ fn verify_program(prog_string: &str, d: Depth, config: Config) -> Result<Diagnos
                         (Type::Int, id) => sym_memory.stack_insert_free_var(Type::Int, id),
                         (Type::Bool, id) => sym_memory.stack_insert_free_var(Type::Bool, id),
                         (Type::ArrayType(ty), id) => {
-                            let arr = sym_memory.init_array(*ty.clone(), Substituted::mk_freevar(Type::Int, format!("#{}", id)));
-                            let r = sym_memory.heap_insert(None, arr);
-                            sym_memory.stack_insert(
-                                id,
-                                SymExpression::Ref((parameter.0.clone(), r)),
+                            let arr = sym_memory.init_array(
+                                *ty.clone(),
+                                Substituted::mk_freevar(Type::Int, format!("#{}", id)),
                             );
-                        },
+                            let r = sym_memory.heap_insert(None, arr);
+                            sym_memory
+                                .stack_insert(id, SymExpression::Ref((parameter.0.clone(), r)));
+                        }
                         (Type::ClassType(ty), id) => {
                             let class = prog.get_class(ty);
-                            let r = sym_memory.heap_insert(None, ReferenceValue::UninitializedObj(class.clone()));
-                            sym_memory.stack_insert(
-                                id,
-                                SymExpression::Ref((parameter.0.clone(), r)));
+                            let r = sym_memory
+                                .heap_insert(None, ReferenceValue::UninitializedObj(class.clone()));
+                            sym_memory
+                                .stack_insert(id, SymExpression::Ref((parameter.0.clone(), r)));
                         }
                         (ty, id) => panic_with_diagnostics(
                             &format!("Can't call main with parameter {} of type {:?}", id, ty),
@@ -171,22 +189,35 @@ fn verify_program(prog_string: &str, d: Depth, config: Config) -> Result<Diagnos
                 }
             }
 
-                Node::Statement(stmt) => {
+            Node::Statement(stmt) => {
                 match stmt {
                     Statement::Declaration((ty, id)) => match ty {
                         Type::Int => {
-                            sym_memory.stack_insert(&id, SymExpression::Int(SymValue::Uninitialized));
+                            sym_memory
+                                .stack_insert(&id, SymExpression::Int(SymValue::Uninitialized));
                         }
                         Type::Bool => {
-                            sym_memory.stack_insert(&id,  SymExpression::Bool(SymValue::Uninitialized));
-                        },
+                            sym_memory
+                                .stack_insert(&id, SymExpression::Bool(SymValue::Uninitialized));
+                        }
                         ty => {
                             let r = Uuid::new_v4();
-                            sym_memory.stack_insert(&id,  SymExpression::Ref((ty.clone(), r)))
-                        },
+                            sym_memory.stack_insert(&id, SymExpression::Ref((ty.clone(), r)))
+                        }
                     },
-                    Statement::Assume(assumption) => if !assume(config.simplify, &mut sym_memory, assumption, &mut pc) {continue},
-                    Statement::Assert(assertion) =>   assert(&ctx, config.simplify, &mut sym_memory, assertion, &mut pc, &mut diagnostics)?,
+                    Statement::Assume(assumption) => {
+                        if !assume(config.simplify, &mut sym_memory, assumption, &mut pc) {
+                            continue;
+                        }
+                    }
+                    Statement::Assert(assertion) => assert(
+                        &ctx,
+                        config.simplify,
+                        &mut sym_memory,
+                        assertion,
+                        &mut pc,
+                        &mut diagnostics,
+                    )?,
                     Statement::Assignment((lhs, rhs)) => {
                         lhs_from_rhs(&ctx, &pc, config.simplify, &mut sym_memory, lhs, rhs)?;
                     }
@@ -198,24 +229,47 @@ fn verify_program(prog_string: &str, d: Depth, config: Config) -> Result<Diagnos
 
                         // evaluate return expression with type of retval and add to stack
                         match sym_memory.stack_get(retval_id) {
-                            Some(SymExpression::Ref(_)) => {
-                                match expr {
-                                    Expression::Identifier(id) => match sym_memory.stack_get( id) {
-                                        Some(SymExpression::Ref(r)) => sym_memory.stack_insert(retval_id, SymExpression::Ref(r)),
-                                        Some(expr) => panic_with_diagnostics(&format!("Can't return '{:?}' as a referencevalue", expr), &sym_memory),
-                                        None => panic_with_diagnostics(&format!("{} is undeclared", id), &sym_memory),
-                                    },
-                                    _ => panic_with_diagnostics(&format!("Can't return expression '{:?}'", expr), &sym_memory),
-                                }
+                            Some(SymExpression::Ref(_)) => match expr {
+                                Expression::Identifier(id) => match sym_memory.stack_get(id) {
+                                    Some(SymExpression::Ref(r)) => {
+                                        sym_memory.stack_insert(retval_id, SymExpression::Ref(r))
+                                    }
+                                    Some(expr) => panic_with_diagnostics(
+                                        &format!("Can't return '{:?}' as a referencevalue", expr),
+                                        &sym_memory,
+                                    ),
+                                    None => panic_with_diagnostics(
+                                        &format!("{} is undeclared", id),
+                                        &sym_memory,
+                                    ),
+                                },
+                                _ => panic_with_diagnostics(
+                                    &format!("Can't return expression '{:?}'", expr),
+                                    &sym_memory,
+                                ),
                             },
                             Some(SymExpression::Bool(_)) => {
                                 sym_memory.stack_insert(
                                     retval_id,
-                                    SymExpression::Int(SymValue::Expr(Substituted::new(&sym_memory, expr.clone()))),
+                                    SymExpression::Int(SymValue::Expr(Substituted::new(
+                                        &sym_memory,
+                                        expr.clone(),
+                                    ))),
                                 );
-                            },
-                            Some(SymExpression::Int(_)) => {sym_memory.stack_insert(retval_id,SymExpression::Int(SymValue::Expr(Substituted::new(&sym_memory, expr.clone()))),);},
-                            None => panic_with_diagnostics(&format!("retval is undeclared in expression 'return {:?}'", expr), &sym_memory),  
+                            }
+                            Some(SymExpression::Int(_)) => {
+                                sym_memory.stack_insert(
+                                    retval_id,
+                                    SymExpression::Int(SymValue::Expr(Substituted::new(
+                                        &sym_memory,
+                                        expr.clone(),
+                                    ))),
+                                );
+                            }
+                            None => panic_with_diagnostics(
+                                &format!("retval is undeclared in expression 'return {:?}'", expr),
+                                &sym_memory,
+                            ),
                         }
                     }
                     _ => (),
@@ -282,9 +336,6 @@ fn verify_program(prog_string: &str, d: Depth, config: Config) -> Result<Diagnos
                         from: class,
                         to: lhs,
                     } => {
-                        
-
-
                         // get reference r, init object, and insert into heap under reference
                         match lhs {
                             Lhs::Identifier(id) => {
@@ -329,14 +380,28 @@ fn verify_program(prog_string: &str, d: Depth, config: Config) -> Result<Diagnos
                         for specification in specifications {
                             match (specification, from_main_scope) {
                                 // if require is called outside main scope we assert
-                                (Specification::Requires(assertion), false) => assert(&ctx, config.simplify, &mut sym_memory, assertion, &mut pc, &mut diagnostics)?,
+                                (Specification::Requires(assertion), false) => assert(
+                                    &ctx,
+                                    config.simplify,
+                                    &mut sym_memory,
+                                    assertion,
+                                    &mut pc,
+                                    &mut diagnostics,
+                                )?,
                                 // otherwise process we assume
                                 (spec, _) => {
                                     let assumption = match spec {
                                         Specification::Requires(expr) => expr,
                                         Specification::Ensures(expr) => expr,
                                     };
-                                    if !assume(config.simplify, &mut sym_memory, assumption, &mut pc) {continue};
+                                    if !assume(
+                                        config.simplify,
+                                        &mut sym_memory,
+                                        assumption,
+                                        &mut pc,
+                                    ) {
+                                        continue;
+                                    };
                                 }
                             };
                         }

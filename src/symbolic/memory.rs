@@ -520,6 +520,30 @@ impl<'a> SymMemory {
     }
 }
 
+impl fmt::Debug for ReferenceValue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+
+
+        match self {
+            ReferenceValue::Object((ty, fields)) => {
+                let mut formated_obj = format!("{}", ty);
+                for (field_name, (field_ty, expr)) in fields{
+                    formated_obj.push_str(&format!("\n                .{} := {:?}", field_name, expr))
+                }
+                write!(f, "{}", formated_obj)
+            },
+            ReferenceValue::Array((ty, entries, len)) => {
+                let mut formated_obj = format!("{:?}[] with length {:?}", ty, len);
+                for (index, value) in entries{
+                    
+                    formated_obj.push_str(&format!("\n                [{:?}] := {:?}", index, value))
+                }
+                write!(f, "{}", formated_obj)
+            },
+            ReferenceValue::UninitializedObj((class, _)) => write!(f, "Uninitialized {}", class),
+        }
+    }
+}
 impl fmt::Debug for SymMemory {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // Format stack and heap to indented lists
@@ -541,15 +565,11 @@ impl fmt::Debug for SymMemory {
             }
         }
         let mut formated_sym_heap = "".to_string();
-        for (id, expr) in &self.heap {
-            let formated_expr = match expr {
-                ReferenceValue::UninitializedObj((class, _)) => format!("Uninitialized {}", class),
-                _ => format!("{:?}", expr),
-            };
+        for (id, ref_val) in &self.heap {
             formated_sym_heap.push_str(&format!(
                 "   {} := {:?}\n",
                 &id.to_string()[0..6],
-                formated_expr
+                ref_val
             ))
         }
 

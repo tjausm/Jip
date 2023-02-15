@@ -8,6 +8,7 @@ use clap::{ArgEnum, Parser, Subcommand};
 use see::types::Depth;
 use shared::{Config, ExitCode};
 use std::process::exit;
+
 // module declarations
 mod ast;
 mod cfg;

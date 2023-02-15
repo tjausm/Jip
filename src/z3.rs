@@ -27,9 +27,6 @@ pub fn check_length<'ctx>(
     index: &'ctx Substituted,
     sym_memory: &SymMemory,
 ) -> Result<(), Error> {
-
-    println!("PC: {:?}\nChecking: {:?} > {:?}", pc, length, index);
-
     // combine in expression of form 'length > index'
     let to_gt = |len|  Expression::GT(Box::new(len), Box::new(index.get().clone())); 
     let length_gt_index = length.clone().map(to_gt);
@@ -53,15 +50,6 @@ pub fn verify_constraints<'a>(
     //transform too z3 boolean
     let constraint_expr = path_constraints.combine();
     let constraints = expr_to_bool(&ctx, sym_memory, &constraint_expr.get());
-
-    println!("\n-----------------------------------------------------------------------\nPATH CONSTRAINTS");
-    println!("{:?}", path_constraints);
-    println!(
-        "\n-----------------------------------------------------------------------\nSYM_MEMORY"
-    );
-    println!("{:?}", sym_memory);
-    println!("\n-----------------------------------------------------------------------\n");
-
     check_ast(ctx, &constraints)
 }
 

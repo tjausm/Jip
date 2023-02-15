@@ -37,8 +37,7 @@ impl PathConstraints {
         for constraint in self.constraints.iter().rev() {
             match constraint {
                 PathConstraint::Assert(Substituted { expr }) => {
-                    constraints =
-                        Expression::And(Box::new(expr.clone()), Box::new(constraints));
+                    constraints = Expression::And(Box::new(expr.clone()), Box::new(constraints));
                 }
                 PathConstraint::Assume(Substituted { expr }) => {
                     constraints =
@@ -46,7 +45,7 @@ impl PathConstraints {
                 }
             }
         }
-        return Substituted{ expr: constraints};
+        return Substituted { expr: constraints };
     }
 
     /// adds a new constraint
@@ -59,29 +58,25 @@ impl PathConstraints {
     }
 }
 
-impl fmt::Debug for PathConstraints {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}", self.combine())
-    }
-}
-
 /// containertype to indicate substitution of variables has already occured on expression
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+#[derive(Clone, Hash, PartialEq, Eq)]
 pub struct Substituted {
-    expr: Expression
+    expr: Expression,
 }
 
 impl Substituted {
     /// generate a substituted expression from given expression
     pub fn new(sym_memory: &SymMemory, expr: Expression) -> Self {
-        return Substituted { expr: substitute(sym_memory, expr)};
+        return Substituted {
+            expr: substitute(sym_memory, expr),
+        };
 
         /// substitutes expression
         fn substitute(sym_memory: &SymMemory, expr: Expression) -> Expression {
             match expr {
                 Expression::Forall(id, r) => {
                     Expression::Forall(id.clone(), Box::new(substitute(sym_memory, *r)))
-                },
+                }
                 Expression::Implies(l, r) => Expression::Implies(
                     Box::new(substitute(sym_memory, *l)),
                     Box::new(substitute(sym_memory, *r)),
@@ -144,8 +139,12 @@ impl Substituted {
                 Expression::Not(expr) => Expression::Not(Box::new(substitute(sym_memory, *expr))),
                 Expression::Literal(_) => expr,
                 Expression::Identifier(id) => match sym_memory.stack_get(&id) {
-                    Some(SymExpression::Bool(SymValue::Expr(Substituted{expr}))) => substitute(sym_memory, expr),
-                    Some(SymExpression::Int(SymValue::Expr(Substituted{expr}))) => substitute(sym_memory, expr),
+                    Some(SymExpression::Bool(SymValue::Expr(Substituted { expr }))) => {
+                        substitute(sym_memory, expr)
+                    }
+                    Some(SymExpression::Int(SymValue::Expr(Substituted { expr }))) => {
+                        substitute(sym_memory, expr)
+                    }
                     Some(SymExpression::Ref(r)) => Expression::Literal(Literal::Ref(r)),
                     Some(sym_expr) => panic_with_diagnostics(
                         &format!(
@@ -156,16 +155,16 @@ impl Substituted {
                     ),
                     None => panic_with_diagnostics(&format!("{} was not declared", id), sym_memory),
                 },
-                Expression::ArrLength(arr_name) => sym_memory.heap_get_arr_length(&arr_name).get().clone(),
+                Expression::ArrLength(arr_name) => {
+                    sym_memory.heap_get_arr_length(&arr_name).get().clone()
+                }
                 Expression::FreeVariable(_, _) => expr,
                 otherwise => panic_with_diagnostics(
                     &format!("{:?} is not yet implemented", otherwise),
                     &sym_memory,
                 ),
-                
             }
         }
-    
     }
 
     /// be cautious that `f` doesn't introduce unsubstitued values in the inner-expression
@@ -176,25 +175,26 @@ impl Substituted {
         Substituted { expr: f(self.expr) }
     }
 
-    pub fn get(&self) -> &Expression{
+    pub fn get(&self) -> &Expression {
         &self.expr
     }
 
-    pub fn mk_freevar(ty: Type, name: Identifier) -> Substituted{
-        Substituted{expr: Expression::FreeVariable(ty, name)}
+    pub fn mk_freevar(ty: Type, name: Identifier) -> Substituted {
+        Substituted {
+            expr: Expression::FreeVariable(ty, name),
+        }
     }
-
 }
 
 pub type Reference = Uuid;
 
-#[derive(Debug, Clone)]
+#[derive( Clone)]
 pub enum SymValue {
     Uninitialized,
     Expr(Substituted),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum SymExpression {
     Int(SymValue),
     Bool(SymValue),
@@ -207,7 +207,7 @@ pub type Object = (Identifier, FxHashMap<Identifier, (Type, SymExpression)>);
 /// Consists of type, a mapping from expression to symbolic expression and Substituted expression representing length
 pub type Array = (Type, FxHashMap<Substituted, SymExpression>, Substituted);
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum ReferenceValue {
     Object(Object),
     Array(Array),
@@ -267,7 +267,7 @@ impl Hash for Expression {
                 _ => vec![expr],
             }
         }
-        
+
         match self {
             Expression::Plus(_, _) => {
                 let sum = collect_sum(self.clone());
@@ -310,6 +310,35 @@ impl PartialEq for Expression {
     }
 }
 impl Eq for Expression {}
+
+impl fmt::Debug for SymValue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SymValue::Uninitialized => write!(f, "Uninitialized"),
+            SymValue::Expr(expr) => write!(f, "{:?}", expr.get()),
+        }
+    }
+}
+impl fmt::Debug for SymExpression {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SymExpression::Int(val) => write!(f, "{:?}", val),
+            SymExpression::Bool(val) => write!(f, "{:?}", val),
+            SymExpression::Ref(r) => write!(f, "{:?}", r),
+        }
+    }
+}
+
+impl fmt::Debug for PathConstraints {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self.combine())
+    }
+}
+impl fmt::Debug for Substituted {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self.get())
+    }
+}
 
 #[cfg(test)]
 mod tests {
