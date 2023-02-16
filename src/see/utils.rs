@@ -3,8 +3,8 @@ use ::z3::Context;
 use crate::ast::*;
 use crate::shared::Error;
 use crate::shared::{panic_with_diagnostics, Diagnostics};
-use crate::symbolic::model::{PathConstraints, Substituted, SymExpression, SymValue};
 use crate::symbolic::memory::SymMemory;
+use crate::symbolic::model::{PathConstraints, Substituted, SymExpression, SymValue};
 use crate::z3;
 
 pub fn type_lhs<'ctx>(sym_memory: &mut SymMemory, lhs: &'ctx Lhs) -> Type {
@@ -23,7 +23,16 @@ pub fn type_lhs<'ctx>(sym_memory: &mut SymMemory, lhs: &'ctx Lhs) -> Type {
                 &sym_memory,
             ),
         },
-        Lhs::AccessArray(_, _) => todo!(),
+        Lhs::AccessArray(arr_name, index) => match sym_memory.stack_get(arr_name) {
+            Some(SymExpression::Ref((Type::ArrayType(inner_ty), _))) => *inner_ty,
+            _ => panic_with_diagnostics(
+                &format!(
+                    "Can't type '{}[{:?}]' because {} is not on the stack as an array",
+                    arr_name, index, arr_name
+                ),
+                &sym_memory,
+            ),
+        },
     }
 }
 
@@ -54,14 +63,17 @@ pub fn parse_rhs<'a, 'b>(
         }
 
         Rhs::Expression(expr) => match ty {
-            Type::Int => {
-                Ok(SymExpression::Int(SymValue::Expr(Substituted::new(&sym_memory, expr.clone()))))
-            }
+            Type::Int => Ok(SymExpression::Int(SymValue::Expr(Substituted::new(
+                &sym_memory,
+                expr.clone(),
+            )))),
 
-            Type::Bool => {
-                Ok(SymExpression::Bool(SymValue::Expr(Substituted::new(&sym_memory, expr.clone()))))
-            }
-            Type::ClassType(class) => match expr {
+            Type::Bool => Ok(SymExpression::Bool(SymValue::Expr(Substituted::new(
+                &sym_memory,
+                expr.clone(),
+            )))),
+            // otherwise parse as ref
+            _ => match expr {
                 Expression::Identifier(id) => match sym_memory.stack_get(id) {
                     Some(SymExpression::Ref((ty, r))) => Ok(SymExpression::Ref((ty, r))),
                     Some(_) => panic_with_diagnostics(
@@ -71,18 +83,10 @@ pub fn parse_rhs<'a, 'b>(
                     None => panic_with_diagnostics(&format!("TODO: think of error"), &sym_memory),
                 },
                 _ => panic_with_diagnostics(
-                    &format!("Can't evaluate {:?} to type {}", rhs, class),
+                    &format!("Can't evaluate {:?} as referencevalue", rhs),
                     &sym_memory,
                 ),
             },
-            Type::ArrayType(_) => todo!(),
-            Type::Void => panic_with_diagnostics(
-                &format!(
-                    "Can't evaluate rhs expression of the form {:?} to type void",
-                    rhs
-                ),
-                &sym_memory,
-            ),
         },
         _ => panic_with_diagnostics(
             &format!(
@@ -106,11 +110,13 @@ pub fn lhs_from_rhs<'a>(
     let ty = type_lhs(sym_memory, lhs);
     let var = parse_rhs(ctx, pc, simplify, sym_memory, &ty, rhs)?;
     match lhs {
+        Lhs::Identifier(id) => sym_memory.stack_insert(id, var),
         Lhs::AccessField(obj_name, field_name) => {
             sym_memory.heap_access_object(obj_name, field_name, Some(var));
         }
-        Lhs::Identifier(id) => sym_memory.stack_insert(id, var),
-        Lhs::AccessArray(_, _) => todo!(),
+        Lhs::AccessArray(arr_name, index) => {
+            sym_memory.heap_access_array(ctx, pc, simplify, arr_name, index.clone(), Some(var))?;
+        }
     };
     Ok(())
 }
@@ -125,6 +131,16 @@ pub fn params_to_vars<'ctx>(
     let mut args_iter = args.iter();
     let mut variables = vec![];
 
+    let err = |ty, arg_id, expr| {
+        panic_with_diagnostics(
+            &format!(
+                "Can't assign argument '{} {}' value '{:?}'",
+                ty, arg_id, expr
+            ),
+            &sym_memory,
+        )
+    };
+
     loop {
         match (params_iter.next(), args_iter.next()) {
             (Some((Type::Int, arg_id)), Some(expr)) => {
@@ -136,29 +152,26 @@ pub fn params_to_vars<'ctx>(
             (Some((Type::Bool, arg_id)), Some(expr)) => {
                 variables.push((
                     arg_id,
-                    SymExpression::Bool(SymValue::Expr(Substituted::new(&sym_memory, expr.clone()))),
+                    SymExpression::Bool(SymValue::Expr(Substituted::new(
+                        &sym_memory,
+                        expr.clone(),
+                    ))),
                 ));
             }
-            (Some((Type::ClassType(class), arg_id)), Some(expr)) => {
-                let err = |class, arg_id, expr| {
-                    panic_with_diagnostics(
-                        &format!(
-                            "Can't assign argument '{} {}' value '{:?}'",
-                            class, arg_id, expr
-                        ),
-                        &sym_memory,
-                    )
-                };
-                match expr {
-                    Expression::Identifier(param_id) => match sym_memory.stack_get(param_id) {
-                        Some(SymExpression::Ref(r)) => {
-                            variables.push((arg_id, SymExpression::Ref(r)))
-                        }
-                        _ => return err(class, arg_id, expr),
-                    },
+            (Some((Type::ArrayType(ty), arg_id)), Some(expr)) => match expr {
+                Expression::Identifier(param_id) => match sym_memory.stack_get(param_id) {
+                    Some(SymExpression::Ref(r)) => variables.push((arg_id, SymExpression::Ref(r))),
+                    _ => return err(&format!("{:?}[]", ty), arg_id, expr),
+                },
+                _ => return err(&format!("{:?}[]", ty), arg_id, expr),
+            },
+            (Some((Type::ClassType(class), arg_id)), Some(expr)) => match expr {
+                Expression::Identifier(param_id) => match sym_memory.stack_get(param_id) {
+                    Some(SymExpression::Ref(r)) => variables.push((arg_id, SymExpression::Ref(r))),
                     _ => return err(class, arg_id, expr),
-                }
-            }
+                },
+                _ => return err(class, arg_id, expr),
+            },
             (Some((ty, _)), Some(_)) => panic_with_diagnostics(
                 &format!("Argument of type {:?} are not implemented", ty),
                 &sym_memory,

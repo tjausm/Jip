@@ -6,8 +6,8 @@
 // Below I will use maximum N, namely 10.
 class Main {
     static void main(int step, int[] a){
-        a := PVbenchmark.pullup(step, a);
-        a := PVbenchmark.pullupinvalid(step, a);
+        a := PVbenchmark.pullUp(step, a);
+        a := PVbenchmark.pullUp_invalid(step, a);
     }
 }
 
@@ -36,7 +36,7 @@ class PVbenchmark {
          if (x >= next) {
              x := x + step ;
              a[k+1] := x ;
-         }
+         };
          k := k+1 ;
        }
        // error; should be >= b[0]+#b-1. Change: bug removed.
@@ -69,7 +69,7 @@ class PVbenchmark {
          if (x >= next) {
              x := x + step ;
              a[k+1] := x ;
-         }
+         } ;
          k := k+1 ;
        }
        // error; should be >= b[0]+#b-1. Change: bug removed.

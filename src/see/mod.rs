@@ -302,8 +302,11 @@ fn verify_program(
                                 retval_id,
                                 SymExpression::Ref((Type::ClassType(ty.clone()), Uuid::nil())),
                             ),
+                            Type::ArrayType(_) => sym_memory.stack_insert(
+                                retval_id,
+                                SymExpression::Ref((ty.clone(), Uuid::nil())),
+                            ),
                             Type::Void => panic!("Cannot declare retval of type void"),
-                            Type::ArrayType(_) => todo!(),
                         }
                     }
                     Action::AssignArgs { params, args } => {
