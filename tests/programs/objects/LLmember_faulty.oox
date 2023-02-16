@@ -4,10 +4,11 @@
 class Main {
     
     static void main(Node p, int N){
+
         p.fill(1, N); // fill linkedlist with values of one up to N
         bool mem := p.member(2, N);
         
-
+        assert mem == true;
     }
 }
 
@@ -47,7 +48,6 @@ class Node {
             curr.value := v;
             curr := next;
             next := next.next;
-            assert true;
             limit := limit - 1;
         }
     }

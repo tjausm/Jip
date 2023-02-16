@@ -2,6 +2,7 @@ use std::str::FromStr;
 use crate::ast::*;
 grammar;
 
+// parses comma seperated list to a vector
 Comma<T>: Vec<T> = { // (1)
     <mut v:(<T> ",")*> <e:T?> => match e { // (2)
         None => v,
@@ -58,13 +59,17 @@ Primitivetype : Type = {
 }
 
 Referencetype : Type = {
-    Classtype
+    ClassType,
+    ArrayType
 }
 
-Classtype : Type = {
-    <Identifier> => Type::Classtype(<>),
+ClassType : Type = {
+    <Identifier> => Type::ClassType(<>),
 }
 
+ArrayType : Type = {
+    <Nonvoidtype> "[]" => Type::ArrayType(Box::new(<>))
+}
 
 
 pub Statements  = Statement*;
@@ -97,16 +102,18 @@ Assignment : Assignment = {
 
 Lhs : Lhs = {
     Identifier => Lhs::Identifier(<>),
-    <Identifier> "." <Identifier> => Lhs::Accessfield(<>)
+    <Identifier> "." <Identifier> => Lhs::AccessField(<>),
+    <Identifier> "[" <Expression> "]" => Lhs::AccessArray(<>)
 }
 
 Rhs : Rhs= {
     Expression => Rhs::Expression(<>),
-    <Identifier> "." <Identifier> => Rhs::Accessfield(<>),
+    <Identifier> "." <Identifier> => Rhs::AccessField(<>),
+    <Identifier> "[" <Expression> "]" => Rhs::AccessArray(<>),
     Invocation => Rhs::Invocation(<>),
     "new" <Identifier> "(" <Arguments> ")" => Rhs::Newobject(<>),
-    "new" <Classtype> "[" <Integer> "]" => Rhs::NewArray(<>),
-    "new" <Primitivetype> "[" <Integer> "]" => Rhs::NewArray(<>)
+    "new" <ClassType> "[" <Expression> "]" => Rhs::NewArray(<>),
+    "new" <Primitivetype> "[" <Expression> "]" => Rhs::NewArray(<>)
 }
 
 Invocation : Invocation = {
@@ -131,7 +138,7 @@ Assert : Expression = {
 
 Assume : Expression = "assume" <VerificationExpression> ";";
 
-While : While = "while (" <v:Expression> ")" <s : Statement>  => (v, Box::new(s));
+While : While = "while" "(" <v:Expression> ")" <s : Statement>  => (v, Box::new(s));
 
 Expression : Expression = {
     Expression2
@@ -191,6 +198,7 @@ Expression8 : Expression = {
 
 Expression9 : Expression = {
     Identifier => Expression::Identifier(<>),
+    "#" <Identifier>     => Expression::ArrLength(<>),
     Literal => Expression::Literal(<>),
     "(" <e:Expression> ")" => e
 }

@@ -8,12 +8,13 @@ use clap::{ArgEnum, Parser, Subcommand};
 use see::types::Depth;
 use shared::{Config, ExitCode};
 use std::process::exit;
+
 // module declarations
 mod ast;
 mod cfg;
 mod see;
 mod shared;
-mod sym_model;
+mod symbolic;
 mod z3;
 
 #[derive(Parser)]

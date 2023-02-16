@@ -49,8 +49,13 @@ All tests are executed with `cargo test`, we have 2 types of tests:
 1. **Program tests**: one test is constructed for each OOX program in the `src/tests/programs` folder. We assume a test program contains no violation of it's assertions unless it has a file name ending in `_faulty`.
 
 # Cheatsheet
-- **Testing** -> `cargo test`
-- **Build** -> `cargo build`
+- **Testing** 
+    - `cargo test`
+    - `cargo test -- --test-threads 3`   
+    - `cargo test -- --no-capture`   
+- **Build** 
+    - `cargo build`
+    - `cargo build --release`
 - **Generate docs** -> `cargo doc --open`
 - **Run** -> `cargo build` and then `target/debug/jip.exe`
 

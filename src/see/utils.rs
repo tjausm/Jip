@@ -2,13 +2,14 @@ use ::z3::Context;
 
 use crate::ast::*;
 use crate::shared::Error;
-use crate::z3;
 use crate::shared::{panic_with_diagnostics, Diagnostics};
-use crate::sym_model::{SymExpression, SymMemory, SymValue, PathConstraints, Substituted};
+use crate::symbolic::model::{PathConstraints, Substituted, SymExpression, SymValue};
+use crate::symbolic::memory::SymMemory;
+use crate::z3;
 
-pub fn type_lhs<'ctx>(sym_memory: &mut SymMemory<'ctx>, lhs: &'ctx Lhs) -> Type {
+pub fn type_lhs<'ctx>(sym_memory: &mut SymMemory, lhs: &'ctx Lhs) -> Type {
     match lhs {
-        Lhs::Accessfield(obj, field) => match sym_memory.heap_get_field(obj, field) {
+        Lhs::AccessField(obj, field) => match sym_memory.heap_access_object(obj, field, None) {
             SymExpression::Bool(_) => Type::Bool,
             SymExpression::Int(_) => Type::Int,
             SymExpression::Ref((ty, _)) => ty,
@@ -22,23 +23,47 @@ pub fn type_lhs<'ctx>(sym_memory: &mut SymMemory<'ctx>, lhs: &'ctx Lhs) -> Type 
                 &sym_memory,
             ),
         },
+        Lhs::AccessArray(_, _) => todo!(),
     }
 }
 
 /// returns the symbolic expression rhs refers to
-pub fn parse_rhs<'a, 'b>(sym_memory: &mut SymMemory<'a>, ty: &Type, rhs: &'a Rhs) -> SymExpression {
+pub fn parse_rhs<'a, 'b>(
+    ctx: &Context,
+    pc: &PathConstraints,
+    simplify: bool,
+    sym_memory: &mut SymMemory,
+    ty: &Type,
+    rhs: &'a Rhs,
+) -> Result<SymExpression, Error> {
     match rhs {
-        Rhs::Accessfield(obj_name, field_name) => {
-            sym_memory.heap_get_field(obj_name, field_name).clone()
+        Rhs::AccessField(obj_name, field_name) => Ok(sym_memory
+            .heap_access_object(obj_name, field_name, None)
+            .clone()),
+
+        // generate reference, build arrayname from said reference, insert array into heap and return reference
+        Rhs::NewArray(ty, len) => {
+            let subt_len = Substituted::new(sym_memory, len.clone());
+            let arr = sym_memory.init_array(ty.clone(), subt_len);
+            let r = sym_memory.heap_insert(None, arr);
+            Ok(SymExpression::Ref((ty.clone(), r)))
+        }
+
+        Rhs::AccessArray(arr_name, index) => {
+            sym_memory.heap_access_array(ctx, pc, simplify, arr_name, index.clone(), None)
         }
 
         Rhs::Expression(expr) => match ty {
-            Type::Int => SymExpression::Int(SymValue::Expr(sym_memory.substitute_expr(expr.clone()))),
+            Type::Int => {
+                Ok(SymExpression::Int(SymValue::Expr(Substituted::new(&sym_memory, expr.clone()))))
+            }
 
-            Type::Bool => SymExpression::Bool(SymValue::Expr(sym_memory.substitute_expr(expr.clone()))),
-            Type::Classtype(class) => match expr {
+            Type::Bool => {
+                Ok(SymExpression::Bool(SymValue::Expr(Substituted::new(&sym_memory, expr.clone()))))
+            }
+            Type::ClassType(class) => match expr {
                 Expression::Identifier(id) => match sym_memory.stack_get(id) {
-                    Some(SymExpression::Ref((ty, r))) => SymExpression::Ref((ty, r)),
+                    Some(SymExpression::Ref((ty, r))) => Ok(SymExpression::Ref((ty, r))),
                     Some(_) => panic_with_diagnostics(
                         &format!("Trying to parse '{:?}' of type {:?}", rhs, ty),
                         &sym_memory,
@@ -50,6 +75,7 @@ pub fn parse_rhs<'a, 'b>(sym_memory: &mut SymMemory<'a>, ty: &Type, rhs: &'a Rhs
                     &sym_memory,
                 ),
             },
+            Type::ArrayType(_) => todo!(),
             Type::Void => panic_with_diagnostics(
                 &format!(
                     "Can't evaluate rhs expression of the form {:?} to type void",
@@ -59,27 +85,39 @@ pub fn parse_rhs<'a, 'b>(sym_memory: &mut SymMemory<'a>, ty: &Type, rhs: &'a Rhs
             ),
         },
         _ => panic_with_diagnostics(
-            &format!("Rhs of the form {:?} should not be in the cfg", rhs),
+            &format!(
+                "Rhs of the form {:?} with type {:?} should not be in the cfg",
+                rhs, ty
+            ),
             &sym_memory,
         ),
     }
 }
 
 // gets type of lhs, parses expression on rhs and assign value of rhs to lhs on stack / heap
-pub fn lhs_from_rhs<'a>(sym_memory: &mut SymMemory<'a>, lhs: &'a Lhs, rhs: &'a Rhs) -> () {
+pub fn lhs_from_rhs<'a>(
+    ctx: &Context,
+    pc: &PathConstraints,
+    simplify: bool,
+    sym_memory: &mut SymMemory,
+    lhs: &'a Lhs,
+    rhs: &'a Rhs,
+) -> Result<(), Error> {
     let ty = type_lhs(sym_memory, lhs);
-    let var = parse_rhs(sym_memory, &ty, rhs);
+    let var = parse_rhs(ctx, pc, simplify, sym_memory, &ty, rhs)?;
     match lhs {
-        Lhs::Accessfield(obj_name, field_name) => {
-            sym_memory.heap_update_field(obj_name, field_name, var)
+        Lhs::AccessField(obj_name, field_name) => {
+            sym_memory.heap_access_object(obj_name, field_name, Some(var));
         }
         Lhs::Identifier(id) => sym_memory.stack_insert(id, var),
-    }
+        Lhs::AccessArray(_, _) => todo!(),
+    };
+    Ok(())
 }
 
 /// evaluates the parameters & arguments to a mapping id -> variable that can be added to a function scope
 pub fn params_to_vars<'ctx>(
-    sym_memory: &mut SymMemory<'ctx>,
+    sym_memory: &mut SymMemory,
     params: &'ctx Parameters,
     args: &'ctx Arguments,
 ) -> Vec<(&'ctx String, SymExpression)> {
@@ -90,12 +128,18 @@ pub fn params_to_vars<'ctx>(
     loop {
         match (params_iter.next(), args_iter.next()) {
             (Some((Type::Int, arg_id)), Some(expr)) => {
-                variables.push((arg_id, SymExpression::Int(SymValue::Expr(sym_memory.substitute_expr(expr.clone())))));
+                variables.push((
+                    arg_id,
+                    SymExpression::Int(SymValue::Expr(Substituted::new(&sym_memory, expr.clone()))),
+                ));
             }
             (Some((Type::Bool, arg_id)), Some(expr)) => {
-                variables.push((arg_id, SymExpression::Bool(SymValue::Expr(sym_memory.substitute_expr(expr.clone())))));
+                variables.push((
+                    arg_id,
+                    SymExpression::Bool(SymValue::Expr(Substituted::new(&sym_memory, expr.clone()))),
+                ));
             }
-            (Some((Type::Classtype(class), arg_id)), Some(expr)) => {
+            (Some((Type::ClassType(class), arg_id)), Some(expr)) => {
                 let err = |class, arg_id, expr| {
                     panic_with_diagnostics(
                         &format!(
@@ -140,28 +184,35 @@ pub fn params_to_vars<'ctx>(
 }
 
 /// handles the assertion in the SEE (used in `assert` and `require` statements)
-pub fn assert<'a>(ctx: &'a Context, simplify: bool, sym_memory: &mut SymMemory<'a>, assertion: &Expression, pc: &mut PathConstraints, diagnostics: &mut Diagnostics) -> Result<(), Error>{
-
-    let subt_assertion = sym_memory.substitute_expr(assertion.clone());
+pub fn assert<'a>(
+    ctx: &'a Context,
+    simplify: bool,
+    sym_memory: &mut SymMemory,
+    assertion: &Expression,
+    pc: &mut PathConstraints,
+    diagnostics: &mut Diagnostics,
+) -> Result<(), Error> {
+    let subt_assertion = Substituted::new(&sym_memory, assertion.clone());
 
     // add (simplified) assertion
     if simplify {
         let simple_assertion = sym_memory.simplify_expr(subt_assertion);
         //let simple_assertion = assertion;
-        match simple_assertion {
-            Substituted(Expression::Literal(Literal::Boolean(true))) => (),
+        match simple_assertion.get() {
+            Expression::Literal(Literal::Boolean(true)) => (),
             _ => pc.push_assertion(simple_assertion),
-            }
         }
-    else{
+    } else {
         pc.push_assertion(subt_assertion);
     };
 
     // calculate (simplified) constraints
     let mut constraints = pc.combine();
-    if simplify {constraints = sym_memory.simplify_expr(constraints)};
-    match constraints {
-        Substituted(Expression::Literal(Literal::Boolean(true))) => return Ok(()),
+    if simplify {
+        constraints = sym_memory.simplify_expr(constraints)
+    };
+    match constraints.get() {
+        Expression::Literal(Literal::Boolean(true)) => return Ok(()),
         _ => (),
     }
 
@@ -171,20 +222,24 @@ pub fn assert<'a>(ctx: &'a Context, simplify: bool, sym_memory: &mut SymMemory<'
 }
 /// handles the assume in the SEE (used in `assume`, `require` and `ensure` statements)
 /// returns false if assumption is infeasible and can be dropped
-pub fn assume(simplify: bool, sym_memory: &mut SymMemory, assumption: &Expression, pc: &mut PathConstraints) -> bool{
-    let subt_assumption = sym_memory.substitute_expr(assumption.clone());
+pub fn assume(
+    simplify: bool,
+    sym_memory: &mut SymMemory,
+    assumption: &Expression,
+    pc: &mut PathConstraints,
+) -> bool {
+    let subt_assumption = Substituted::new(&sym_memory, assumption.clone());
 
     if simplify {
         let simple_assumption = sym_memory.simplify_expr(subt_assumption);
-        match simple_assumption{
-            Substituted(Expression::Literal(Literal::Boolean(false))) => return false,
-            Substituted(Expression::Literal(Literal::Boolean(true))) => (),
+        match simple_assumption.get() {
+            Expression::Literal(Literal::Boolean(false)) => return false,
+            Expression::Literal(Literal::Boolean(true)) => (),
             //_ => sym_memory.add_assume(simple_assumption.clone(), pc),
             _ => pc.push_assumption(simple_assumption),
-
         };
     } else {
         pc.push_assumption(subt_assumption);
     };
-    return true
+    return true;
 }

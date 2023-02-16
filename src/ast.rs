@@ -1,6 +1,8 @@
-use std::fmt;
+use uuid::Uuid;
 
 use crate::shared::panic_with_diagnostics;
+use std::fmt;
+use std::hash::{Hash};
 /*
 use non_empty_vec::NonEmpty;
 
@@ -33,12 +35,12 @@ impl Program {
                 Member::Method(method) => match method {
                     Method::Static(content @ (_, id, _, _, _)) => {
                         if id == method_name {
-                            return content;
+                            return &content;
                         }
                     }
                     Method::Nonstatic(content @ (_, id, _, _, _)) => {
                         if id == method_name {
-                            return content;
+                            return &content;
                         }
                     }
                 },
@@ -56,7 +58,7 @@ impl Program {
 
         for m in class.1.iter() {
             match m {
-                Member::Constructor(c) => return c,
+                Member::Constructor(c) => return &c,
                 _ => continue,
             }
         }
@@ -67,6 +69,7 @@ impl Program {
     }
 }
 
+/// `(class_name, members)`
 pub type Class = (Identifier, Members);
 
 pub type Members = Vec<Member>;
@@ -127,12 +130,13 @@ pub type Declaration = (Type, Identifier);
 
 pub type While = (Expression, Box<Statement>);
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub enum Type {
     Void,
     Int,
     Bool,
-    Classtype(Identifier),
+    ClassType(Identifier),
+    ArrayType(Box<Type>),
 }
 
 pub type Assignment = (Lhs, Rhs);
@@ -140,16 +144,18 @@ pub type Assignment = (Lhs, Rhs);
 #[derive(Clone)]
 pub enum Lhs {
     Identifier(String),
-    Accessfield(Identifier, Identifier),
+    AccessField(Identifier, Identifier),
+    AccessArray(Identifier, Expression),
 }
 
 #[derive(Clone)]
 pub enum Rhs {
     Expression(Expression),
-    Accessfield(Identifier, Identifier),
+    AccessField(Identifier, Identifier),
+    AccessArray(Identifier, Expression),
     Invocation(Invocation),
     Newobject(Identifier, Arguments),
-    NewArray(Type, i64),
+    NewArray(Type, Expression),
 }
 
 //TODO: add args hier
@@ -201,12 +207,17 @@ pub enum Expression {
     //expression9
     Identifier(Identifier),
     Literal(Literal),
+    ArrLength(Identifier),
+
+    //free var flows in the program from main() args
+    FreeVariable(Type, Identifier),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Literal {
     Boolean(bool),
     Integer(i64),
+    Ref((Type, Uuid))
 }
 
 pub type Identifier = String;
@@ -223,7 +234,7 @@ impl fmt::Debug for Statement {
             Statement::Declaration((t, id)) => write!(f, "{:?} {};", t, id),
             Statement::Assignment((lhs, rhs)) => write!(f, "{:?} := {:?}", lhs, rhs),
             Statement::Call((l, r, args)) => write!(f, "{}.{}({:?});", l, r, args),
-            Statement::Skip(Skip) => write!(f, " skip "),
+            Statement::Skip(Skip) => write!(f, "skip "),
             Statement::Ite((cond, if_expr, else_expr)) => {
                 write!(f, "if ({:?}) then {:?} else {:?}", cond, if_expr, else_expr)
             }
@@ -257,15 +268,19 @@ impl fmt::Debug for Expression {
             Expression::Negative(expr) => write!(f, "-{:?}", expr),
             Expression::Not(expr) => write!(f, "!{:?}", expr),
             Expression::Identifier(id) => write!(f, "{}", id),
+            Expression::FreeVariable(_, id) => write!(f, "{}", id),
             Expression::Literal(Literal::Boolean(val)) => write!(f, "{:?}", val),
             Expression::Literal(Literal::Integer(val)) => write!(f, "{:?}", val),
+            Expression::Literal(Literal::Ref(r)) => write!(f, "Ref{:?}", r),
+            Expression::ArrLength(id) => write!(f, "#{}", id),
         }
     }
 }
 impl fmt::Debug for Lhs {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Lhs::Accessfield(class, field) => write!(f, "{}.{}", class, field),
+            Lhs::AccessField(class, field) => write!(f, "{}.{}", class, field),
+            Lhs::AccessArray(id, index) => write!(f, "{}[{:?}]", id, index),
             Lhs::Identifier(id) => write!(f, "{}", id),
         }
     }
@@ -274,10 +289,11 @@ impl fmt::Debug for Rhs {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Rhs::Expression(expr) => write!(f, "{:?};", expr),
-            Rhs::Accessfield(class, field) => write!(f, "{}.{};", class, field),
+            Rhs::AccessField(class, field) => write!(f, "{}.{};", class, field),
+            Rhs::AccessArray(class, index) => write!(f, "{}.[{:?}];", class, index),
             Rhs::Invocation((class, fun, args)) => write!(f, " {}.{}({:?});", class, fun, args),
-            Rhs::Newobject(class, args) => write!(f, "{}({:?});", class, args),
-            Rhs::NewArray(ty, size) => write!(f, "{:?}[{}]", ty, size),
+            Rhs::Newobject(class, args) => write!(f, "new {}({:?});", class, args),
+            Rhs::NewArray(ty, size) => write!(f, "new {:?}[{:?}]", ty, size),
         }
     }
 }
@@ -287,7 +303,8 @@ impl fmt::Debug for Type {
             Type::Void => write!(f, "void"),
             Type::Bool => write!(f, "bool"),
             Type::Int => write!(f, "int"),
-            Type::Classtype(name) => write!(f, "{}", name),
+            Type::ClassType(name) => write!(f, "{}", name),
+            Type::ArrayType(ty) => write!(f, "{:?}[]", ty),
         }
     }
 }

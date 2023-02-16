@@ -1,121 +1,39 @@
-//! Intermediate types & utilities to encode & manipulate ast before we call z3
+//! Symbolic model representing the stack and heap while symbolically executing a program
 //!
+use ::z3::Context;
 use rustc_hash::FxHashMap;
 use std::fmt;
 use uuid::Uuid;
 
 use crate::ast::*;
-use crate::shared::{panic_with_diagnostics,  Scope};
+use crate::shared::{panic_with_diagnostics, Error, Scope};
+use crate::z3;
 
-//----------------------//
-// Symbolic expressions //
-//----------------------//
-
-#[derive(Clone)]
-pub struct PathConstraints {
-    constraints: Vec<PathConstraint>,
-}
-
-#[derive(Clone)]
-pub enum PathConstraint {
-    Assert(Substituted),
-    Assume(Substituted),
-}
-
-impl Default for PathConstraints {
-    fn default() -> Self {
-        PathConstraints {
-            constraints: vec![],
-        }
-    }
-}
-
-impl PathConstraints {
-    pub fn combine<'a>(&'a self) -> Substituted {
-        let mut constraints = Expression::Literal(Literal::Boolean(true));
-
-        for constraint in self.constraints.iter().rev() {
-            match constraint {
-                PathConstraint::Assert(Substituted(assertion)) => {
-                    constraints =
-                        Expression::And(Box::new(assertion.clone()), Box::new(constraints));
-                }
-                PathConstraint::Assume(Substituted(assumption)) => {
-                    constraints =
-                        Expression::Implies(Box::new(assumption.clone()), Box::new(constraints));
-                }
-            }
-        }
-        return Substituted(constraints);
-    }
-
-    /// adds a new constraint
-    pub fn push_assertion(&mut self, s: Substituted) {
-        self.constraints.push(PathConstraint::Assert(s));
-    }
-    /// adds a new constraint
-    pub fn push_assumption(&mut self, s: Substituted) {
-        self.constraints.push(PathConstraint::Assume(s));
-    }
-}
-
-/// containertype to indicate substitution of variables has already occured on expression
-#[derive(Debug, Clone)]
-pub struct Substituted(pub Expression);
-
-pub type Reference = Uuid;
-
-#[derive(Debug, Clone)]
-pub enum SymValue {
-    Uninitialized,
-    Expr(Substituted),
-}
-
-#[derive(Debug, Clone)]
-pub enum SymExpression {
-    Int(SymValue),
-    Bool(SymValue),
-    Ref((Type, Reference)),
-}
-
-/// Consists of `identifier` (= classname) and a hashmap describing it's fields
-pub type Object = (Identifier, FxHashMap<Identifier, (Type, SymExpression)>);
-
-pub type _Array = (Type, Vec<SymExpression>);
-
-#[derive(Debug, Clone)]
-pub enum ReferenceValue {
-    Object(Object),
-    //Array(Array),
-    /// Takes classname as input
-    UninitializedObj(Identifier),
-}
+use super::model::{Reference, ReferenceValue, Substituted, SymExpression, SymValue, PathConstraints};
 
 //-----------------//
 // Symbolic memory //
 //-----------------//
 
 #[derive(Debug, Clone)]
-struct Frame<'a> {
+struct Frame {
     pub scope: Scope,
-    pub env: FxHashMap<&'a Identifier, SymExpression>,
+    pub env: FxHashMap<Identifier, SymExpression>,
 }
 
-type SymStack<'a> = Vec<Frame<'a>>;
+type SymStack = Vec<Frame>;
 
 type SymHeap = FxHashMap<Reference, ReferenceValue>;
 
 #[derive(Clone)]
-pub struct SymMemory<'ctx> {
-    program: Program,
-    stack: SymStack<'ctx>,
+pub struct SymMemory {
+    stack: SymStack,
     heap: SymHeap,
 }
 
-impl<'ctx> SymMemory<'ctx> {
-    pub fn new(program: Program) -> Self {
+impl<'ctx> SymMemory {
+    pub fn new() -> Self {
         SymMemory {
-            program,
             stack: vec![Frame {
                 scope: Scope { id: None },
                 env: FxHashMap::default(),
@@ -125,23 +43,19 @@ impl<'ctx> SymMemory<'ctx> {
     }
 }
 
-impl<'a> SymMemory<'a> {
+impl<'a> SymMemory {
     /// inserts a free variable (meaning we don't substitute's)
     pub fn stack_insert_free_var(&mut self, ty: Type, id: &'a Identifier) -> () {
+        let fv = Substituted::new(self, Expression::FreeVariable(ty.clone(), id.clone()));
+
         if let Some(s) = self.stack.last_mut() {
             match ty {
-                Type::Int => s.env.insert(
-                    &id,
-                    SymExpression::Int(SymValue::Expr(Substituted(Expression::Identifier(
-                        id.clone(),
-                    )))),
-                ),
-                Type::Bool => s.env.insert(
-                    &id,
-                    SymExpression::Bool(SymValue::Expr(Substituted(Expression::Identifier(
-                        id.clone(),
-                    )))),
-                ),
+                Type::Int => s
+                    .env
+                    .insert(id.clone(), SymExpression::Int(SymValue::Expr(fv))),
+                Type::Bool => s
+                    .env
+                    .insert(id.clone(), SymExpression::Bool(SymValue::Expr(fv))),
                 _ => None,
             };
         };
@@ -150,7 +64,7 @@ impl<'a> SymMemory<'a> {
     /// Insert mapping `Identifier |-> SymbolicExpression` in top most frame of stack
     pub fn stack_insert(&mut self, id: &'a Identifier, sym_expr: SymExpression) -> () {
         if let Some(s) = self.stack.last_mut() {
-            s.env.insert(id, sym_expr);
+            s.env.insert(id.clone(), sym_expr);
         }
     }
 
@@ -159,7 +73,7 @@ impl<'a> SymMemory<'a> {
         let below_index = self.stack.len() - 2;
         match self.stack.get_mut(below_index) {
             Some(frame) => {
-                frame.env.insert(id, sym_expr);
+                frame.env.insert(id.clone(), sym_expr);
             }
             _ => (),
         }
@@ -172,7 +86,7 @@ impl<'a> SymMemory<'a> {
         };
 
         for s in self.stack.iter().rev() {
-            match s.env.get(&id) {
+            match s.env.get(id) {
                 Some(var) => return Some(var.clone()),
                 None => (),
             }
@@ -202,131 +116,51 @@ impl<'a> SymMemory<'a> {
         }
     }
 
-    /// Insert mapping `Reference |-> ReferenceValue` into heap
-    pub fn heap_insert(&mut self, r: Reference, v: ReferenceValue) -> () {
+    /// Inserts mapping `Reference |-> ReferenceValue` into heap returning it's reference
+    /// generates new reference if none is given
+    pub fn heap_insert(&mut self, r: Option<Reference>, v: ReferenceValue) -> Reference {
+        let r = r.unwrap_or(Uuid::new_v4());
         self.heap.insert(r, v);
+        r
     }
 
     /// Get symbolic value of the object's field, panics if something goes wrong
-    pub fn heap_get_field(&mut self, obj_name: &String, field_name: &String) -> SymExpression {
-        match self.stack_get(obj_name) {
-            Some(SymExpression::Ref((_, r))) => {
-                let ref_val = self.heap.get(&r).map(|s| s.clone());
-                match ref_val {
-                    Some(ReferenceValue::Object((_, fields))) => match fields.get(field_name) {
-                        Some((_, expr)) => expr.clone(),
-                        None => panic_with_diagnostics(
-                            &format!("Field {} does not exist on {}", field_name, obj_name),
-                            &self,
-                        ),
-                    },
-
-                    Some(ReferenceValue::UninitializedObj(class_name)) => {
-                        let mut new_fields = FxHashMap::default();
-
-                        // initialize newObj lazily
-                        let members = self.program.get_class(&class_name).1.clone();
-                        for member in members {
-                            if let Member::Field((ty, field_name)) = member {
-                                match ty {
-                                    Type::Int => {
-                                        new_fields.insert(
-                                            field_name.clone(),
-                                            (
-                                                Type::Int,
-                                                SymExpression::Int(SymValue::Expr(Substituted(
-                                                    Expression::Identifier(format!(
-                                                        "{}.{}",
-                                                        r.as_u64_pair().0,
-                                                        field_name
-                                                    )),
-                                                ))),
-                                            ),
-                                        );
-                                    }
-                                    Type::Bool => {
-                                        new_fields.insert(
-                                            field_name.clone(),
-                                            (
-                                                Type::Bool,
-                                                SymExpression::Bool(SymValue::Expr(Substituted(
-                                                    Expression::Identifier(format!(
-                                                        "{}.{}",
-                                                        r.as_u64_pair().0,
-                                                        field_name
-                                                    )),
-                                                ))),
-                                            ),
-                                        );
-                                    }
-                                    Type::Classtype(n) => {
-                                        // add new unitializedObject to the heap
-                                        let next_r = Uuid::new_v4();
-                                        self.heap_insert(
-                                            next_r,
-                                            ReferenceValue::UninitializedObj(n.clone()),
-                                        );
-
-                                        // insert unitialized object in the object's fields
-                                        new_fields.insert(
-                                            field_name.clone(),
-                                            (
-                                                Type::Classtype(n.clone()),
-                                                SymExpression::Ref((
-                                                    Type::Classtype(n.clone()),
-                                                    next_r,
-                                                )),
-                                            ),
-                                        );
-                                    }
-                                    Type::Void => {
-                                        panic_with_diagnostics("Panic should never trigger", &self)
-                                    }
-                                }
-                            }
-                        }
-
-                        // push new object under original reference to heap and recurse
-                        let new_obj = ReferenceValue::Object((class_name.clone(), new_fields));
-                        self.heap_insert(r, new_obj);
-                        self.heap_get_field(obj_name, field_name)
-                    }
-
-                    _ => panic_with_diagnostics(
-                        &format!("Reference of {} not found on heap", obj_name),
-                        &self,
-                    ),
-                }
-            }
-            _ => panic_with_diagnostics(&format!("{} is not a reference", obj_name), &self),
-        }
-    }
-    /// Update symbolic value of the object's field, panics if something goes wrong
-    pub fn heap_update_field(
+    /// Possibly update with passed `var` and return current symbolic value of the object's field
+    pub fn heap_access_object(
         &mut self,
         obj_name: &String,
         field_name: &'a String,
-        sym_expr: SymExpression,
-    ) -> () {
-
+        var: Option<SymExpression>,
+    ) -> SymExpression {
         match self.stack_get(obj_name) {
             Some(SymExpression::Ref((_, r))) => match self.heap.get_mut(&r) {
                 Some(ReferenceValue::Object((_, fields))) => {
-                    let ty = match fields.get(field_name) {
+                    let (ty, expr) = match fields.get(field_name) {
                         Some(field) => field,
                         None => panic_with_diagnostics(
                             &format!("Field {} does not exist on {}", field_name, obj_name),
                             &self,
                         ),
+                    };
+                    match var {
+                        Some(var) => {
+                            let ty = ty.clone();
+                            fields.insert(field_name.clone(), (ty, var.clone()));
+                            var
+                        }
+                        None => expr.clone(),
                     }
-                    .0
-                    .clone();
-                    fields.insert(field_name.clone(), (ty, sym_expr));
                 }
-                _ => panic_with_diagnostics(
+                Some(ReferenceValue::UninitializedObj(class)) => {
+                    let class = class.clone();
+                    let new_obj = self.init_object(r, class);
+                    self.heap_insert(Some(r), new_obj);
+                    self.heap_access_object(obj_name, field_name, var)
+                }
+                otherwise => panic_with_diagnostics(
                     &format!(
-                        "Reference of {} not found on heap while doing assignment '{}.{} := {:?}'",
-                        obj_name, obj_name, field_name, sym_expr
+                        "{:?} can't be assigned in assignment '{}.{} := {:?}'",
+                        otherwise, obj_name, field_name, var
                     ),
                     &self,
                 ),
@@ -335,96 +169,160 @@ impl<'a> SymMemory<'a> {
         }
     }
 
-    /// substitutes all variables in the underlying `Expression`
-    pub fn substitute_expr(&self, expr: Expression) -> Substituted {
-        return Substituted(substitute(self, expr));
+    /// Possibly update with passed `var` and return current symbolic expression at arrays index
+    pub fn heap_access_array(
+        &mut self,
+        ctx: &Context,
+        pc: &PathConstraints,
+        simplify: bool,
+        arr_name: &Identifier,
+        index: Expression,
+        var: Option<SymExpression>,
+    ) -> Result<SymExpression, Error> {
+        // substitute expr and simplify
+        let subt_index = Substituted::new(self, index);
 
-        /// helper function
-        fn substitute(sym_memory: &SymMemory, expr: Expression) -> Expression {
-            match expr {
-                Expression::Forall(id, r) => {
-                    Expression::Forall(id.clone(), Box::new(substitute(sym_memory, *r)))
-                }
-                Expression::And(l, r) => Expression::And(
-                    Box::new(substitute(sym_memory, *l)),
-                    Box::new(substitute(sym_memory, *r)),
-                ),
-                Expression::Or(l, r) => Expression::Or(
-                    Box::new(substitute(sym_memory, *l)),
-                    Box::new(substitute(sym_memory, *r)),
-                ),
-                Expression::EQ(l, r) => Expression::EQ(
-                    Box::new(substitute(sym_memory, *l)),
-                    Box::new(substitute(sym_memory, *r)),
-                ),
-                Expression::NE(l, r) => Expression::NE(
-                    Box::new(substitute(sym_memory, *l)),
-                    Box::new(substitute(sym_memory, *r)),
-                ),
-                Expression::LT(l, r) => Expression::LT(
-                    Box::new(substitute(sym_memory, *l)),
-                    Box::new(substitute(sym_memory, *r)),
-                ),
-                Expression::GT(l, r) => Expression::GT(
-                    Box::new(substitute(sym_memory, *l)),
-                    Box::new(substitute(sym_memory, *r)),
-                ),
-                Expression::GEQ(l, r) => Expression::GEQ(
-                    Box::new(substitute(sym_memory, *l)),
-                    Box::new(substitute(sym_memory, *r)),
-                ),
-                Expression::LEQ(l, r) => Expression::LEQ(
-                    Box::new(substitute(sym_memory, *l)),
-                    Box::new(substitute(sym_memory, *r)),
-                ),
-                Expression::Plus(l, r) => Expression::Plus(
-                    Box::new(substitute(sym_memory, *l)),
-                    Box::new(substitute(sym_memory, *r)),
-                ),
-                Expression::Minus(l, r) => Expression::Minus(
-                    Box::new(substitute(sym_memory, *l)),
-                    Box::new(substitute(sym_memory, *r)),
-                ),
-                Expression::Multiply(l, r) => Expression::Multiply(
-                    Box::new(substitute(sym_memory, *l)),
-                    Box::new(substitute(sym_memory, *r)),
-                ),
-                Expression::Divide(l, r) => Expression::Divide(
-                    Box::new(substitute(sym_memory, *l)),
-                    Box::new(substitute(sym_memory, *r)),
-                ),
-                Expression::Mod(l, r) => Expression::Mod(
-                    Box::new(substitute(sym_memory, *l)),
-                    Box::new(substitute(sym_memory, *r)),
-                ),
-                Expression::Negative(expr) => {
-                    Expression::Negative(Box::new(substitute(sym_memory, *expr)))
-                }
-                Expression::Not(expr) => Expression::Not(Box::new(substitute(sym_memory, *expr))),
-                Expression::Literal(_) => expr,
-                Expression::Identifier(id) => match sym_memory.stack_get(&id) {
-                    Some(SymExpression::Bool(SymValue::Expr(Substituted(expr)))) => expr,
-                    Some(SymExpression::Int(SymValue::Expr(Substituted(expr)))) => expr,
-                    Some(sym_expr) => panic_with_diagnostics(
-                        &format!(
-                            "identifier {} with value {:?} can't be substituted",
-                            id, sym_expr
-                        ),
-                        sym_memory,
+        //get immutable length(immutable)
+        let mut length = match self.stack_get(&arr_name){
+            Some(SymExpression::Ref((_, r))) => match self.heap.get(&r){
+                Some(ReferenceValue::Array((ty, arr, length))) => (ty, arr, length),
+                otherwise => panic_with_diagnostics(&format!("{:?} is not an array and can't be assigned to in assignment '{}[{:?}] := {:?}'", otherwise, arr_name, subt_index, var), &self),
+            },
+            _ => panic_with_diagnostics(&format!("{} is not a reference", arr_name), &self),
+        }.2.clone();
+
+        // make length owned and simplify if toggled
+        let simple_index = self.simplify_expr(subt_index.clone());
+        if simplify {
+            length = self.simplify_expr(length);
+        };
+
+        // check if index is always < length
+        match (&simple_index.get(), &length.get()) {
+            (
+                Expression::Literal(Literal::Integer(lit_index)),
+                Expression::Literal(Literal::Integer(lit_lenght)),
+            ) if lit_index < lit_lenght => (),
+            _ => z3::check_length(ctx, pc, &length, &simple_index, &self)?,
+        };
+
+        //get mutable HashMap representing array
+        let (ty, arr, _) = match self.stack_get(&arr_name){
+            Some(SymExpression::Ref((_, r))) => match self.heap.get_mut(&r){
+                Some(ReferenceValue::Array((ty, arr, length))) => (ty, arr, length),
+                otherwise => panic_with_diagnostics(&format!("{:?} is not an array and can't be assigned to in assignment '{}[{:?}] := {:?}'", otherwise, arr_name, subt_index, var), &self),
+            },
+            _ => panic_with_diagnostics(&format!("{} is not a reference", arr_name), &self),
+        };
+
+        match var {
+            Some(var) => {
+                arr.insert(simple_index, var.clone());
+                Ok(var)
+            },
+            None => match arr.get(&simple_index) {
+                Some(v) => Ok(v.clone()),
+                None => {
+                    let fv_expr = SymValue::Expr(Substituted::mk_freevar(ty.clone(), format!("{}[{:?}]", arr_name.clone(), simple_index)));
+                    let fv = match ty {
+                    Type::Int => SymExpression::Int(fv_expr),
+                    Type::Bool => SymExpression::Int(fv_expr), 
+                    Type::ClassType(_) => todo!(),
+                    Type::ArrayType(_) => todo!(),
+                    _ => todo!(),
+                };
+                arr.insert(simple_index, fv.clone());
+                Ok(fv)
+            },
+            },
+        }
+    }
+
+    // return the symbolic length of an array
+    pub fn heap_get_arr_length(&self, arr_name: &Identifier) -> Substituted {
+        match self.stack_get(&arr_name){
+        Some(SymExpression::Ref((_, r))) => match self.heap.get(&r){
+            Some(ReferenceValue::Array((_, _, length))) => length.clone(),
+            otherwise => panic_with_diagnostics(&format!("Can't return length of {} since the value it references to ({:?}) is not an array", arr_name, otherwise), &self),
+        },
+        _ => panic_with_diagnostics(&format!("{} is not a reference", arr_name), &self),
+    }
+    }
+
+    /// given a reference and the class, initializes all fields lazily and returns a ReferenceValue
+    pub fn init_object(&mut self, r: Reference, (class, members): Class) -> ReferenceValue {
+        let mut fields = FxHashMap::default();
+
+        // map all fields to symbolic values
+        for member in &members {
+            match member {
+                Member::Field((ty, field)) => match ty {
+                    Type::Int => {
+                        let field_name = format!("{}.{}", &r.to_string()[0..6], field);
+                        fields.insert(
+                            field.clone(),
+                            (
+                                Type::Int,
+                                SymExpression::Int(SymValue::Expr(Substituted::new(
+                                    self,
+                                    Expression::FreeVariable(Type::Int, field_name),
+                                ))),
+                            ),
+                        );
+                    }
+                    Type::Bool => {
+                        let field_name = format!("{}.{}", &r.to_string()[0..6], field);
+                        (
+                            Type::Bool,
+                            fields.insert(
+                                field.clone(),
+                                (
+                                    Type::Bool,
+                                    SymExpression::Bool(SymValue::Expr(Substituted::new(
+                                        self,
+                                        Expression::FreeVariable(Type::Bool, field_name),
+                                    ))),
+                                ),
+                            ),
+                        );
+                    }
+                    Type::ClassType(class) => {
+                        // insert uninitialized object to heap
+                        let ty = Type::ClassType(class.clone());
+                        let r = self.heap_insert(
+                            None,
+                            ReferenceValue::UninitializedObj((class.clone(), members.clone())),
+                        );
+                        fields.insert(
+                            field.clone(),
+                            (
+                                Type::ClassType(class.to_string()),
+                                SymExpression::Ref((ty, r)),
+                            ),
+                        );
+                    }
+                    Type::Void => panic_with_diagnostics(
+                        &format!("Type of {}.{} can't be void", class, field),
+                        &self,
                     ),
-                    None => panic_with_diagnostics(&format!("{} was not declared", id), sym_memory),
+                    Type::ArrayType(_) => todo!(),
                 },
-                otherwise => panic_with_diagnostics(
-                    &format!("{:?} is not yet implemented", otherwise),
-                    &sym_memory,
-                ),
+                _ => (),
             }
         }
+        ReferenceValue::Object((class, fields))
+    }
+
+    //todo: how to initialize correctly
+    pub fn init_array(&mut self, ty: Type, length: Substituted) -> ReferenceValue {
+        ReferenceValue::Array((ty, FxHashMap::default(), length))
     }
 
     /// front end simplifier
     pub fn simplify_expr(&self, expr: Substituted) -> Substituted {
-        return Substituted(simplify(self, expr.0));
+        // map closure with sym_memory over expression
+        let partial_simplify = |expr| simplify(self, expr);
+        return expr.map(partial_simplify);
 
         fn simplify(sym_memory: &SymMemory, expr: Expression) -> Expression {
             match expr {
@@ -603,7 +501,16 @@ impl<'a> SymMemory<'a> {
                     simple_expr => Expression::Not(Box::new(simple_expr)),
                 },
                 Expression::Literal(_) => expr,
-                Expression::Identifier(_) => expr,
+                Expression::Identifier(id) => match sym_memory.stack_get(&id) {
+                    Some(SymExpression::Bool(SymValue::Expr(expr))) => {
+                        simplify(sym_memory, expr.get().clone())
+                    }
+                    Some(SymExpression::Int(SymValue::Expr(expr))) => {
+                        simplify(sym_memory, expr.get().clone())
+                    }
+                    _ => todo!(),
+                },
+                Expression::FreeVariable(_, _) => expr,
                 otherwise => panic_with_diagnostics(
                     &format!("{:?} is not yet implemented", otherwise),
                     &sym_memory,
@@ -612,17 +519,68 @@ impl<'a> SymMemory<'a> {
         }
     }
 }
-impl fmt::Debug for SymMemory<'_> {
+
+impl fmt::Debug for ReferenceValue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+
+
+        match self {
+            ReferenceValue::Object((ty, fields)) => {
+                let mut formated_obj = format!("{}", ty);
+                for (field_name, (_, expr)) in fields{
+                    formated_obj.push_str(&format!("\n                .{} := {:?}", field_name, expr))
+                }
+                write!(f, "{}", formated_obj)
+            },
+            ReferenceValue::Array((ty, entries, len)) => {
+                let mut formated_obj = format!("{:?}[] with length {:?}", ty, len);
+                for (index, value) in entries{
+                    
+                    formated_obj.push_str(&format!("\n                [{:?}] := {:?}", index, value))
+                }
+                write!(f, "{}", formated_obj)
+            },
+            ReferenceValue::UninitializedObj((class, _)) => write!(f, "Uninitialized {}", class),
+        }
+    }
+}
+impl fmt::Debug for SymMemory {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Format stack and heap to indented lists
+        let mut formated_sym_stack = "".to_string();
+        for Frame { scope, env } in &self.stack {
+            // add name of frame
+            formated_sym_stack.push_str("   Frame ");
+            match scope.id {
+                None => formated_sym_stack.push_str("'main'\n"),
+                Some(id) => {
+                    formated_sym_stack.push_str(&id.to_string()[0..4]);
+                    formated_sym_stack.push_str("\n")
+                }
+            }
+
+            // add all values of sym_stack
+            for (id, expr) in env {
+                formated_sym_stack.push_str(&format!("      {} := {:?}\n", id, expr))
+            }
+        }
+        let mut formated_sym_heap = "".to_string();
+        for (id, ref_val) in &self.heap {
+            formated_sym_heap.push_str(&format!(
+                "   {} := {:?}\n",
+                &id.to_string()[0..6],
+                ref_val
+            ))
+        }
+
         write!(
             f,
             "
 State of Sym-Stack:
-{:?}
-
+{}
 State of Sym-Heap:
-{:?}",
-            self.stack, self.heap
+{}",
+            formated_sym_stack, formated_sym_heap
         )
     }
 }
