@@ -41,7 +41,7 @@ pub fn check_length<'ctx>(
         (SatResult::Unsat, _) => return Ok(()),
         (SatResult::Sat, Some(model)) => {
             return Err(Error::Verification(format!(
-                "Following counter-example violates one of the assertion:\n{:?}",
+                "Following input violates one of the assertion:\n{:?}",
                 model
             )));
         }
@@ -68,7 +68,7 @@ pub fn verify_constraints<'a>(
         (SatResult::Unsat, _) => return Ok(()),
         (SatResult::Sat, Some(model)) => {
             return Err(Error::Verification(format!(
-                "Following counter-example (potentially) accesses an array out of bounds:\n{:?}",
+                "Following input could (potentially) accesses an array out of bounds:\n{:?}",
                 model
             )));
         }

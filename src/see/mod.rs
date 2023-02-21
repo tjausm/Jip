@@ -7,11 +7,11 @@ lalrpop_mod!(#[allow(dead_code)] pub parser); // synthesized by LALRPOP and pass
 pub(crate) mod types;
 mod utils;
 
-use crate::see::types::*;
-use crate::see::utils::*;
 use crate::ast::*;
 use crate::cfg::types::{Action, Node};
 use crate::cfg::{generate_cfg, generate_dot_cfg};
+use crate::see::types::*;
+use crate::see::utils::*;
 use crate::shared::Config;
 use crate::shared::ExitCode;
 use crate::shared::{panic_with_diagnostics, Diagnostics, Error};
@@ -19,6 +19,7 @@ use crate::symbolic::memory::SymMemory;
 use crate::symbolic::model::Substituted;
 use crate::symbolic::model::{PathConstraints, ReferenceValue, SymExpression, SymValue};
 use crate::z3::build_ctx;
+use colored::Colorize;
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
 use uuid::Uuid;
@@ -26,8 +27,6 @@ use uuid::Uuid;
 use std::collections::VecDeque;
 use std::fs;
 use std::time::Instant;
-
-const PROG_CORRECT: &'static str = "Program is correct";
 
 pub fn bench(
     program: &str,
@@ -57,9 +56,25 @@ pub fn bench(
 
 fn print_result(r: Result<Diagnostics, Error>) -> (ExitCode, String) {
     match r {
-        Err(Error::Other(why)) => (ExitCode::Error, format!("{}", why)),
-        Err(Error::Verification(why)) => (ExitCode::CounterExample, format!("{}", why)),
-        Ok(_) => (ExitCode::Valid, PROG_CORRECT.to_string()),
+        Err(Error::Other(why)) => (
+            ExitCode::Error,
+            format!("{} {}", "Error:".red().bold(), why),
+        ),
+        Err(Error::Verification(why)) => (
+            ExitCode::CounterExample,
+            format!("{} {}", "Counter-example:".red().bold(), why),
+        ),
+        Ok(d) => {
+            let mut msg = "".to_string();
+            if d.paths_explored == 0 {
+                msg.push_str(&format!("{} Jip has not finished exploring any paths. Is your search depth high enough? And are you sure the program terminates?\n", "Warning: ".yellow().bold()))
+            }
+            msg.push_str(&format!(
+                "{}\nPaths checked    {}\nZ3 invocations   {}",
+                "Program is correct".green().bold(), d.paths_explored, d.z3_invocations
+            ));
+            (ExitCode::Valid, msg)
+        }
     }
 }
 
@@ -88,32 +103,20 @@ pub fn print_verification(
     config: Config,
     verbose: bool,
 ) -> (ExitCode, String) {
-    let print_diagnostics = |d: Result<Diagnostics, _>| match d {
-        Ok(Diagnostics {
-            paths_explored: paths,
-            z3_invocations,
-        }) => format!(
-            "\nPaths checked    {}\nZ3 invocations   {}",
-            paths, z3_invocations
-        ),
-        _ => "".to_string(),
-    };
     let result = verify_program(program, d, config, verbose);
-    let (ec, r) = print_result(result.clone());
-    return (ec, format!("{}{}", r, print_diagnostics(result)));
+    print_result(result.clone())
 }
 
 /// prints the verbose debug info
-fn print_debug(node: &Node, sym_memory: &SymMemory, pc: &PathConstraints){
-    
+fn print_debug(node: &Node, sym_memory: &SymMemory, pc: &PathConstraints) {
     let print_node = format!("{:?}", node);
     let print_pc = format!("Path constraints -> {:?}", pc.combine().get());
     let print_sym_memory = format!("{:?}", sym_memory);
 
     let dump_state = match node {
         Node::Statement(Statement::Assert(_)) => true,
-        Node::Statement(Statement::Assignment((_, Rhs::AccessArray(_, _ )))) => true,
-        _ => false
+        Node::Statement(Statement::Assignment((_, Rhs::AccessArray(_, _)))) => true,
+        _ => false,
     };
     if dump_state {
         println!("{}\n\n{}\n\n{}", print_node, print_pc, print_sym_memory)
