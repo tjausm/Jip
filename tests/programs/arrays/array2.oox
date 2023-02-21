@@ -77,7 +77,7 @@ class Main
                     array[i] := v;
                     array[i - 1] := u;
                     sorted := false;
-                } else ;
+                } ;
                 i := i + 1;
             }
         }

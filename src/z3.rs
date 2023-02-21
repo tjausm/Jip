@@ -2,7 +2,7 @@
 
 use std::rc::Rc;
 use z3::ast::{Ast, Bool, Dynamic, Int};
-use z3::{ast, Config, Context, SatResult, Solver};
+use z3::{ast, Config, Context, SatResult, Solver, Model};
 
 use crate::ast::*;
 use crate::shared::{panic_with_diagnostics, Error};
@@ -28,16 +28,29 @@ pub fn check_length<'ctx>(
     sym_memory: &SymMemory,
 ) -> Result<(), Error> {
     // combine in expression of form 'length > index'
-    let to_gt = |len|  Expression::GT(Box::new(len), Box::new(index.get().clone())); 
+    let to_gt = |len| Expression::GT(Box::new(len), Box::new(index.get().clone()));
     let length_gt_index = length.clone().map(to_gt);
-    
+
     // build new path constraints and get z3 bool
     let mut pc = pc.clone();
     pc.push_assertion(length_gt_index);
     let constraints = pc.combine();
     let length_gt_index = expr_to_bool(ctx, sym_memory, constraints.get());
 
-    check_ast(ctx, &length_gt_index)
+    match check_ast(ctx, &length_gt_index) {
+        (SatResult::Unsat, _) => return Ok(()),
+        (SatResult::Sat, Some(model)) => {
+            return Err(Error::Verification(format!(
+                "Following counter-example violates one of the assertion:\n{:?}",
+                model
+            )));
+        }
+        _ => {
+            return Err(Error::Verification(
+                "Huh, verification gave an unkown result".to_string(),
+            ))
+        }
+    }
 }
 
 /// Combine the constraints in reversed order and check correctness using z3
@@ -50,25 +63,12 @@ pub fn verify_constraints<'a>(
     //transform too z3 boolean
     let constraint_expr = path_constraints.combine();
     let constraints = expr_to_bool(&ctx, sym_memory, &constraint_expr.get());
-    check_ast(ctx, &constraints)
-}
 
-/// returns error if there exists a counterexample for given formula
-/// in other words, given formula `a > b`, counterexample: a -> 0, b -> 0
-fn check_ast<'ctx>(ctx: &'ctx Context, ast: &Bool) -> Result<(), Error> {
-    let solver = Solver::new(&ctx);
-    solver.assert(&ast.not());
-    let result = solver.check();
-    let model = solver.get_model();
-
-    //println!("{:?}", model);
-    
-
-    match (result, model) {
+    match check_ast(ctx, &constraints) {
         (SatResult::Unsat, _) => return Ok(()),
         (SatResult::Sat, Some(model)) => {
             return Err(Error::Verification(format!(
-                "Following counter-example was found:\n{:?}",
+                "Following counter-example (potentially) accesses an array out of bounds:\n{:?}",
                 model
             )));
         }
@@ -77,7 +77,15 @@ fn check_ast<'ctx>(ctx: &'ctx Context, ast: &Bool) -> Result<(), Error> {
                 "Huh, verification gave an unkown result".to_string(),
             ))
         }
-    };
+    }
+}
+
+/// returns error if there exists a counterexample for given formula
+/// in other words, given formula `a > b`, counterexample: a -> 0, b -> 0
+fn check_ast<'ctx>(ctx: &'ctx Context, ast: &Bool) -> (SatResult, Option<Model<'ctx>>) {
+    let solver = Solver::new(&ctx);
+    solver.assert(&ast.not());
+    (solver.check(), solver.get_model())
 }
 
 fn expr_to_int<'ctx>(ctx: &'ctx Context, env: &SymMemory, expr: &'ctx Expression) -> Int<'ctx> {

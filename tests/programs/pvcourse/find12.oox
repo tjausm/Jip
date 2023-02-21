@@ -16,7 +16,6 @@ class PVbenchmark {
 
     static int find12(int[] a)
         requires (a != null)
-        exceptional(false)
     {
        // N is an experiment parameter
        // choose max N:
