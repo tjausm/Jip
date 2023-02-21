@@ -246,23 +246,28 @@ pub fn assume(
     diagnostics: &mut Diagnostics,
 ) -> bool {
     let subt_assumption = Substituted::new(&sym_memory, assumption.clone());
-
+    
     if simplify {
-        let simple_assumption = sym_memory.simplify_expr(subt_assumption);
+        let simple_assumption = sym_memory.simplify_expr(subt_assumption.clone());
+
+        //  let z3_subt = z3::expression_unsatisfiable(ctx, &subt_assumption, sym_memory);
+        //  let z3_simple = z3::expression_unsatisfiable(ctx, &simple_assumption, sym_memory);
+        //  println!("\nsubt_assumption: {:?}\n z3_subt: {:?}\n simplified: {:?}\n z3_simplified: {:?}\n", subt_assumption, z3_subt, simple_assumption, z3_simple);
+
         match simple_assumption.get() {
             Expression::Literal(Literal::Boolean(false)) => return false,
             Expression::Literal(Literal::Boolean(true)) => (),
-            //_ => sym_memory.add_assume(simple_assumption.clone(), pc),
             _ => pc.push_assumption(simple_assumption),
         };
-    } else {
-        pc.push_assumption(subt_assumption);
+    } 
+    else {
+        pc.push_assumption(subt_assumption.clone());
     };
 
     // if we have not solved by now, invoke z3
     if use_z3{
         diagnostics.z3_invocations = diagnostics.z3_invocations + 1;
-        return z3::verify_constraints(ctx, &pc, &sym_memory).is_ok();
+        if z3::expression_unsatisfiable(ctx, &subt_assumption, sym_memory) {return false};
     }
 
     return true;

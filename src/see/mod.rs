@@ -45,9 +45,9 @@ pub fn bench(
 
         // Code block to measure.
         {
-            match print_verification(program, d, prune_ratio, config.clone(), false) {
-                (ExitCode::Error, e) => return (ExitCode::Error, e),
-                _ => (),
+            match verify_program(program, d, prune_ratio, config.clone(), false) {
+                Ok(_) => (),
+                r => return print_result(r),
             }
         }
         println!("{}       {:?}", d, now.elapsed());

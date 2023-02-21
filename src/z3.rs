@@ -41,7 +41,7 @@ pub fn check_length<'ctx>(
         (SatResult::Unsat, _) => return Ok(()),
         (SatResult::Sat, Some(model)) => {
             return Err(Error::Verification(format!(
-                "Following input violates one of the assertion:\n{:?}",
+                "Following input could (potentially) accesses an array out of bounds:\n{:?}",
                 model
             )));
         }
@@ -68,7 +68,7 @@ pub fn verify_constraints<'a>(
         (SatResult::Unsat, _) => return Ok(()),
         (SatResult::Sat, Some(model)) => {
             return Err(Error::Verification(format!(
-                "Following input could (potentially) accesses an array out of bounds:\n{:?}",
+                "Following input violates one of the assertion:\n{:?}",
                 model
             )));
         }
@@ -77,6 +77,22 @@ pub fn verify_constraints<'a>(
                 "Huh, verification gave an unkown result".to_string(),
             ))
         }
+    }
+}
+/// returns true if an expression can never be satisfied
+pub fn expression_unsatisfiable<'a>(
+    ctx: &'a Context,
+    expression: &Substituted,
+    sym_memory: &SymMemory,
+) -> bool {
+
+    //negate assumption and try to find counter-example
+    //no counter-example for !assumption means assumption is never true
+    let assumption_ast = expr_to_bool(&ctx, sym_memory, expression.get()).not();
+
+    match check_ast(ctx, &assumption_ast) {
+        (SatResult::Unsat, _) => true,
+        _ => false
     }
 }
 
