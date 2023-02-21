@@ -30,6 +30,7 @@ use std::time::Instant;
 
 pub fn bench(
     program: &str,
+    prune_ratio: i8,
     start: Depth,
     end: Option<Depth>,
     step: i32,
@@ -44,7 +45,7 @@ pub fn bench(
 
         // Code block to measure.
         {
-            match print_verification(program, d, config.clone(), false) {
+            match print_verification(program, d, prune_ratio, config.clone(), false) {
                 (ExitCode::Error, e) => return (ExitCode::Error, e),
                 _ => (),
             }
@@ -100,10 +101,11 @@ pub fn print_cfg(program: &str) -> (ExitCode, String) {
 pub fn print_verification(
     program: &str,
     d: Depth,
+    prune_ratio: i8,
     config: Config,
     verbose: bool,
 ) -> (ExitCode, String) {
-    let result = verify_program(program, d, config, verbose);
+    let result = verify_program(program, d, prune_ratio, config, verbose);
     print_result(result.clone())
 }
 
@@ -128,9 +130,14 @@ fn print_debug(node: &Node, sym_memory: &SymMemory, pc: &PathConstraints) {
 fn verify_program(
     prog_string: &str,
     d: Depth,
+    prune_ratio: i8,
     config: Config,
     verbose: bool,
 ) -> Result<Diagnostics, Error> {
+
+    let prune_coefficient = f64::from(prune_ratio) /  f64::from(i8::MAX);
+    let prune_depth = (f64::from(d) - f64::from(d) * prune_coefficient) as i32;
+
     // init global z3 context
     let (_, ctx) = build_ctx();
 
@@ -209,7 +216,7 @@ fn verify_program(
                         }
                     },
                     Statement::Assume(assumption) => {
-                        if !assume(config.simplify, &mut sym_memory, assumption, &mut pc) {
+                        if !assume(&ctx, config.simplify, d > prune_depth, &mut sym_memory, assumption, &mut pc, &mut diagnostics) {
                             continue;
                         }
                     }
@@ -401,10 +408,13 @@ fn verify_program(
                                         Specification::Ensures(expr) => expr,
                                     };
                                     if !assume(
+                                        &ctx,
                                         config.simplify,
+                                        prune_depth < d,
                                         &mut sym_memory,
                                         assumption,
                                         &mut pc,
+                                        &mut diagnostics
                                     ) {
                                         continue;
                                     };

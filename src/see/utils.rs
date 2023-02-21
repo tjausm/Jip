@@ -197,8 +197,8 @@ pub fn params_to_vars<'ctx>(
 }
 
 /// handles the assertion in the SEE (used in `assert` and `require` statements)
-pub fn assert<'a>(
-    ctx: &'a Context,
+pub fn assert(
+    ctx: &Context,
     simplify: bool,
     sym_memory: &mut SymMemory,
     assertion: &Expression,
@@ -233,13 +233,17 @@ pub fn assert<'a>(
     diagnostics.z3_invocations = diagnostics.z3_invocations + 1;
     z3::verify_constraints(ctx, &pc, &sym_memory)
 }
+
 /// handles the assume in the SEE (used in `assume`, `require` and `ensure` statements)
 /// returns false if assumption is infeasible and can be dropped
 pub fn assume(
+    ctx: &Context,
     simplify: bool,
+    use_z3: bool,
     sym_memory: &mut SymMemory,
     assumption: &Expression,
     pc: &mut PathConstraints,
+    diagnostics: &mut Diagnostics,
 ) -> bool {
     let subt_assumption = Substituted::new(&sym_memory, assumption.clone());
 
@@ -254,5 +258,12 @@ pub fn assume(
     } else {
         pc.push_assumption(subt_assumption);
     };
+
+    // if we have not solved by now, invoke z3
+    if use_z3{
+        diagnostics.z3_invocations = diagnostics.z3_invocations + 1;
+        return z3::verify_constraints(ctx, &pc, &sym_memory).is_ok();
+    }
+
     return true;
 }

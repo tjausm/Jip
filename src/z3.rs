@@ -88,10 +88,6 @@ fn check_ast<'ctx>(ctx: &'ctx Context, ast: &Bool) -> (SatResult, Option<Model<'
     (solver.check(), solver.get_model())
 }
 
-fn expr_to_int<'ctx>(ctx: &'ctx Context, env: &SymMemory, expr: &'ctx Expression) -> Int<'ctx> {
-    return unwrap_as_int(expr_to_dynamic(&ctx, Rc::new(env), expr));
-}
-
 fn expr_to_bool<'ctx>(ctx: &'ctx Context, env: &SymMemory, expr: &'ctx Expression) -> Bool<'ctx> {
     return unwrap_as_bool(expr_to_dynamic(&ctx, Rc::new(env), expr));
 }

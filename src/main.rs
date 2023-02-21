@@ -30,6 +30,14 @@ struct Cli {
     /// Print cfg in Dot format / print generated z3 formulas / verify program
     #[clap(subcommand)]
     mode: Mode,
+
+    /// TODO
+    #[clap(default_value_t = 0)]
+    prune_ratio: i8,
+
+    /// Turns on the front end simplifier
+    #[clap(short, long)]
+    simplifier: bool,
 }
 
 /// BEWARE: flags are hardcoded in the test builder
@@ -40,9 +48,7 @@ enum Mode {
         /// Up to which depth program is evaluated
         #[clap(default_value_t = 40)]
         depth: Depth,
-        /// Turns on the front end simplifier
-        #[clap(short, long)]
-        simplifier: bool,
+
         /// Report diagnostic information after succesful program verification
         #[clap(short, long)]
         verbose: bool,
@@ -58,9 +64,6 @@ enum Mode {
         /// Given interval i we measure verification time for each depth between s and e with intervals of i
         #[clap(default_value_t = 5)]
         interval: Depth,
-        /// Turns on the front end simplifier
-        #[clap(short, long)]
-        simplifier: bool,
     },
 }
 
@@ -89,26 +92,21 @@ fn main() {
     // if program loaded execute function corresponding to cmd and exit with the result
     match cli.mode {
         Mode::PrintCFG => exit(see::print_cfg(&program)),
-        Mode::Verify {
-            depth,
-            simplifier,
-            verbose,
-        } => {
+        Mode::Verify { depth, verbose } => {
             let config = Config {
-                simplify: simplifier,
+                simplify: cli.simplifier,
             };
-            exit(see::print_verification(&program, depth, config, verbose))
+            exit(see::print_verification(&program, depth, cli.prune_ratio, config, verbose))
         }
         Mode::Bench {
             start,
             end,
             interval,
-            simplifier,
         } => {
             let config = Config {
-                simplify: simplifier,
+                simplify: cli.simplifier,
             };
-            exit(see::bench(&program, start, end, interval, config))
+            exit(see::bench(&program, cli.prune_ratio, start, end, interval, config))
         }
     };
 }
