@@ -31,7 +31,9 @@ impl Default for PathConstraints {
 }
 
 impl PathConstraints {
-    pub fn combine<'a>(&'a self) -> Substituted {
+
+    /// combine constraints over true as follows: `assume(a), assert(b) -> a ==> b && true`
+    pub fn combine_over_true<'a>(&'a self) -> Substituted {
         let mut constraints = Expression::Literal(Literal::Boolean(true));
 
         for constraint in self.constraints.iter().rev() {
@@ -42,6 +44,23 @@ impl PathConstraints {
                 PathConstraint::Assume(Substituted { expr }) => {
                     constraints =
                         Expression::Implies(Box::new(expr.clone()), Box::new(constraints));
+                }
+            }
+        }
+        return Substituted { expr: constraints };
+    }
+    /// combine constraints as a conjunction as follows: `assume(a), assert(b) -> a && b`
+    pub fn conjuct<'a>(&'a self) -> Substituted {
+        let mut constraints = Expression::Literal(Literal::Boolean(true));
+
+        for constraint in self.constraints.iter().rev() {
+            match constraint {
+                PathConstraint::Assert(Substituted { expr }) => {
+                    constraints = Expression::And(Box::new(expr.clone()), Box::new(constraints));
+                }
+                PathConstraint::Assume(Substituted { expr }) => {
+                    constraints =
+                        Expression::And(Box::new(expr.clone()), Box::new(constraints));
                 }
             }
         }
@@ -331,7 +350,7 @@ impl fmt::Debug for SymExpression {
 
 impl fmt::Debug for PathConstraints {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}", self.combine())
+        write!(f, "{:?}", self.combine_over_true())
     }
 }
 impl fmt::Debug for Substituted {

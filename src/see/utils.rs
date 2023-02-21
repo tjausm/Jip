@@ -220,7 +220,7 @@ pub fn assert(
     };
 
     // calculate (simplified) constraints
-    let mut constraints = pc.combine();
+    let mut constraints = pc.combine_over_true();
     if simplify {
         constraints = sym_memory.simplify_expr(constraints)
     };
@@ -267,7 +267,7 @@ pub fn assume(
     // if we have not solved by now, invoke z3
     if use_z3{
         diagnostics.z3_invocations = diagnostics.z3_invocations + 1;
-        if z3::expression_unsatisfiable(ctx, &subt_assumption, sym_memory) {return false};
+        if z3::expression_unsatisfiable(ctx, &pc.conjuct(), sym_memory) {return false};
     }
 
     return true;

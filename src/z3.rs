@@ -34,7 +34,7 @@ pub fn check_length<'ctx>(
     // build new path constraints and get z3 bool
     let mut pc = pc.clone();
     pc.push_assertion(length_gt_index);
-    let constraints = pc.combine();
+    let constraints = pc.combine_over_true();
     let length_gt_index = expr_to_bool(ctx, sym_memory, constraints.get());
 
     match check_ast(ctx, &length_gt_index) {
@@ -61,7 +61,7 @@ pub fn verify_constraints<'a>(
     sym_memory: &SymMemory,
 ) -> Result<(), Error> {
     //transform too z3 boolean
-    let constraint_expr = path_constraints.combine();
+    let constraint_expr = path_constraints.combine_over_true();
     let constraints = expr_to_bool(&ctx, sym_memory, &constraint_expr.get());
 
     match check_ast(ctx, &constraints) {

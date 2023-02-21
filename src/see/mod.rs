@@ -112,7 +112,7 @@ pub fn print_verification(
 /// prints the verbose debug info
 fn print_debug(node: &Node, sym_memory: &SymMemory, pc: &PathConstraints) {
     let print_node = format!("{:?}", node);
-    let print_pc = format!("Path constraints -> {:?}", pc.combine().get());
+    let print_pc = format!("Path constraints -> {:?}", pc.combine_over_true().get());
     let print_sym_memory = format!("{:?}", sym_memory);
 
     let dump_state = match node {
