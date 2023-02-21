@@ -2,7 +2,7 @@
 
 use std::rc::Rc;
 use z3::ast::{Ast, Bool, Dynamic, Int};
-use z3::{ast, Config, Context, SatResult, Solver};
+use z3::{ast, Config, Context, SatResult, Solver, Model};
 
 use crate::ast::*;
 use crate::shared::{panic_with_diagnostics, Error};
@@ -37,7 +37,7 @@ pub fn check_length<'ctx>(
     let constraints = pc.combine();
     let length_gt_index = expr_to_bool(ctx, sym_memory, constraints.get());
 
-    match check_ast(ctx, &constraints) {
+    match check_ast(ctx, &length_gt_index) {
         (SatResult::Unsat, _) => return Ok(()),
         (SatResult::Sat, Some(model)) => {
             return Err(Error::Verification(format!(
@@ -82,7 +82,7 @@ pub fn verify_constraints<'a>(
 
 /// returns error if there exists a counterexample for given formula
 /// in other words, given formula `a > b`, counterexample: a -> 0, b -> 0
-fn check_ast<'ctx>(ctx: &'ctx Context, ast: &Bool) -> (SatResult, Option<Model>) {
+fn check_ast<'ctx>(ctx: &'ctx Context, ast: &Bool) -> (SatResult, Option<Model<'ctx>>) {
     let solver = Solver::new(&ctx);
     solver.assert(&ast.not());
     (solver.check(), solver.get_model())
