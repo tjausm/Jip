@@ -93,9 +93,6 @@ impl Substituted {
         /// substitutes expression
         fn substitute(sym_memory: &SymMemory, expr: Expression) -> Expression {
             match expr {
-                Expression::Forall(id, r) => {
-                    Expression::Forall(id.clone(), Box::new(substitute(sym_memory, *r)))
-                }
                 Expression::Implies(l, r) => Expression::Implies(
                     Box::new(substitute(sym_memory, *l)),
                     Box::new(substitute(sym_memory, *r)),

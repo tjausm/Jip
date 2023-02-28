@@ -171,8 +171,10 @@ pub type Ite = (Expression, Box<Statement>, Box<Statement>);
 #[derive(Clone)]
 pub enum Expression {
     //expression1
-    Forall(Identifier, Box<Expression>),
-    Exists(Identifier, Box<Expression>),
+    ///(forall arr, index, value : expression) -> for all index value pairs in given array the expression holds
+    Forall(Identifier, Identifier, Identifier, Box<Expression>),
+    ///(exists arr, index, value : expression) -> for all index value pairs in given array the expression holds
+    Exists(Identifier, Identifier, Identifier, Box<Expression>),
 
     //expression2
     Implies(Box<Expression>, Box<Expression>),
@@ -249,8 +251,8 @@ impl fmt::Debug for Statement {
 impl fmt::Debug for Expression {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Expression::Forall(id, body) => write!(f, "forall {} : {:?}", id, body),
-            Expression::Exists(id, body) => write!(f, "exists {} : {:?}", id, body),
+            Expression::Forall(arr, i, v, body) => write!(f, "forall {}, {}, {} : {:?}", arr, i, v, body),
+            Expression::Exists(arr, i, v, body) => write!(f, "exists {}, {}, {} : {:?}", arr, i, v, body),
             Expression::Implies(l_expr, r_expr) => write!(f, "({:?} ==> {:?})", l_expr, r_expr),
             Expression::And(l_expr, r_expr) => write!(f, "({:?} && {:?})", l_expr, r_expr),
             Expression::Or(l_expr, r_expr) => write!(f, "({:?} || {:?})", l_expr, r_expr),

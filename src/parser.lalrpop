@@ -148,8 +148,8 @@ Expression : Expression = {
 pub VerificationExpression : Expression = Expression1;
 
 Expression1 : Expression = {
-    "forall" <id:Identifier> ":" <r:Expression1> => Expression::Forall(id, Box::new(r)),
-    "exists" <id:Identifier> ":" <r:Expression1> => Expression::Exists(id, Box::new(r)),
+    "forall" <arr:Identifier> "," <i:Identifier> "," <v:Identifier> ":" <expr:Expression1> => Expression::Forall(arr, i, v, Box::new(expr)),
+    "exists" <arr:Identifier> "," <i:Identifier> "," <v:Identifier> ":" <expr:Expression1> => Expression::Exists(arr, i, v, Box::new(expr)),
     Expression2
 }
 

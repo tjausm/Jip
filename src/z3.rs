@@ -122,12 +122,6 @@ fn expr_to_dynamic<'ctx, 'a>(
     expr: &'a Expression,
 ) -> Dynamic<'ctx> {
     match expr {
-        Expression::Exists(id, expr) => {
-            let l = Int::fresh_const(ctx, id);
-            let r = expr_to_bool(ctx, sym_memory, expr);
-
-            return Dynamic::from(ast::exists_const(&ctx, &[&l], &[], &r));
-        }
         Expression::And(l_expr, r_expr) => {
             let l = expr_to_bool(ctx, Rc::clone(&sym_memory), l_expr);
             let r = expr_to_bool(ctx, sym_memory, r_expr);
