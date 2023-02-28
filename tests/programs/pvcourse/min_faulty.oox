@@ -10,8 +10,8 @@
 class Main {
 
     static void main(int[] a, Num x, Num u, Num m)
-        requires(a != null)
-    {
+      requires(a != null)
+      {
       // setting N to 10:
       int N := 10 ;
       assume x != null ;
@@ -21,11 +21,11 @@ class Main {
       while (k < #a) {
           int kval :=  a[k] ;
           u := new Num(kval) ;
-          if (k==0) {m := u ; };
+          if (k==0) m := u ;;
           int uv := u.val ;
           int mv := m.val ;
           if (uv <= mv) // subtle, uv<mv would go wrong...
-             m := u ;
+             {m := u ;}
           else u.val := uv + 1 ;
           if (m != null) { // always be the case
               assert m != x ;
@@ -35,11 +35,12 @@ class Main {
           k := k+1 ;
       }
       int mv := m.val ;
-      assert forall a, i, v : mv <= v ;
+      assert forall a, i, v : mv <= v-1 ; // should be <=v
     }
+
 }
+
 class Num {
    - int val ;
    Num(int x) { this.val := x ; }
 }
-
