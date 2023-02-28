@@ -2,10 +2,7 @@
 // Bubble sort on an array of integers
 //
 class Main {
-    static int[] sort(int [] array)
-        requires(array != null)
-        ensures(forall v, i : retval : forall w, j : retval : i < j ==> v <= w)
-        exceptional (false)
+    static void main(int [] array)
     {
         bool sorted := false;
         while (!sorted) {
@@ -18,10 +15,15 @@ class Main {
                     array [i] := b;
                     array [i - 1] := a;
                     sorted := false;
-                }
+                };
                 i := i + 1;
             }
         }
-        return array;
+        
+        assert 
+            forall array, i, vi : 
+                forall array, j, vj : 
+                    i < j ==> vi < vj;
+
     }
 }
