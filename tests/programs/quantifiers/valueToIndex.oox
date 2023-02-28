@@ -1,0 +1,13 @@
+// program sets all values to the index they exist at in the array
+
+class Main {
+    static void main(int[] a)
+    {
+        int j := 0;
+        while(j < #a){
+            a[j] := j;
+            j := j + 1;
+        }
+        assert forall a, i, v : i == v;
+    }
+}

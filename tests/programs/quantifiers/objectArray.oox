@@ -1,0 +1,19 @@
+// program copies all references from a2 to a1 and asserts that arrays are equal
+
+class Main {
+    static void main(O[] a1, O[] a2)
+    ensures(#a1 == #a2)
+    {
+        int j := 0;
+        while(j < #a1){
+            a1[1] := a2[j];
+            j := j + 1;
+        }
+        assert
+            forall a1, i1, v1 :
+                forall a2, i2, v2 :
+                    i1 == i2 ==> v1 == v2;
+    }
+}
+
+class O {}
