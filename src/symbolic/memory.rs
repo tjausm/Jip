@@ -9,7 +9,7 @@ use crate::ast::*;
 use crate::shared::{panic_with_diagnostics, Error, Scope};
 use crate::z3;
 
-use super::model::{Reference, ReferenceValue, Substituted, SymExpression, SymValue, PathConstraints};
+use super::model::{Reference, ReferenceValue, Substituted, SymExpression, SymValue, PathConstraints, Array};
 
 //-----------------//
 // Symbolic memory //
@@ -169,6 +169,16 @@ impl<'a> SymMemory {
         }
     }
 
+    pub fn heap_get_array(&self, arr_name: &Identifier) -> &Array {
+        match self.stack_get(arr_name){
+            Some(SymExpression::Ref((_, r))) => match self.heap.get(&r){
+                Some(ReferenceValue::Array(arr)) => arr,
+                otherwise => panic_with_diagnostics(&format!("{:?} is not an array, it has value {:?} on the heap", otherwise, arr_name), &self),
+            },
+            _ => panic_with_diagnostics(&format!("{} is not a reference", arr_name), &self),
+        
+    }}
+
     /// Possibly update with passed `var` and return current symbolic expression at arrays index
     pub fn heap_access_array(
         &mut self,
@@ -183,13 +193,7 @@ impl<'a> SymMemory {
         let subt_index = Substituted::new(self, index);
 
         //get immutable length(immutable)
-        let mut length = match self.stack_get(&arr_name){
-            Some(SymExpression::Ref((_, r))) => match self.heap.get(&r){
-                Some(ReferenceValue::Array((ty, arr, length))) => (ty, arr, length),
-                otherwise => panic_with_diagnostics(&format!("{:?} is not an array and can't be assigned to in assignment '{}[{:?}] := {:?}'", otherwise, arr_name, subt_index, var), &self),
-            },
-            _ => panic_with_diagnostics(&format!("{} is not a reference", arr_name), &self),
-        }.2.clone();
+        let mut length = self.heap_get_array(arr_name).2.clone();
 
         // make length owned and simplify if toggled
         let simple_index = self.simplify_expr(subt_index.clone());

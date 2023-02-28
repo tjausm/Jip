@@ -90,7 +90,7 @@ impl Substituted {
             expr: substitute(sym_memory, expr),
         };
 
-        /// substitutes expression
+        /// substitutes expression with the passed 
         fn substitute(sym_memory: &SymMemory, expr: Expression) -> Expression {
             match expr {
                 Expression::Implies(l, r) => Expression::Implies(

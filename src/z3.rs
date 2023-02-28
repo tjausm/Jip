@@ -2,7 +2,7 @@
 
 use std::rc::Rc;
 use z3::ast::{Ast, Bool, Dynamic, Int};
-use z3::{ast, Config, Context, SatResult, Solver, Model};
+use z3::{ast, Config, Context, Model, SatResult, Solver};
 
 use crate::ast::*;
 use crate::shared::{panic_with_diagnostics, Error};
@@ -85,14 +85,13 @@ pub fn expression_unsatisfiable<'a>(
     expression: &Substituted,
     sym_memory: &SymMemory,
 ) -> bool {
-
     //negate assumption and try to find counter-example
     //no counter-example for !assumption means assumption is never true
     let assumption_ast = expr_to_bool(&ctx, Rc::new(sym_memory), expression.get()).not();
 
     match check_ast(ctx, &assumption_ast) {
         (SatResult::Unsat, _) => true,
-        _ => false
+        _ => false,
     }
 }
 
@@ -112,7 +111,11 @@ fn expr_to_int<'ctx, 'a>(
     return unwrap_as_int(expr_to_dynamic(&ctx, sym_memory, expr));
 }
 
-fn expr_to_bool<'ctx, 'a>(ctx: &'ctx Context, sym_memory: Rc<&SymMemory>, expr: &'a Expression) -> Bool<'ctx> {
+fn expr_to_bool<'ctx, 'a>(
+    ctx: &'ctx Context,
+    sym_memory: Rc<&SymMemory>,
+    expr: &'a Expression,
+) -> Bool<'ctx> {
     return unwrap_as_bool(expr_to_dynamic(&ctx, sym_memory, expr));
 }
 
@@ -122,6 +125,17 @@ fn expr_to_dynamic<'ctx, 'a>(
     expr: &'a Expression,
 ) -> Dynamic<'ctx> {
     match expr {
+        Expression::Forall(arr, index, value, expr) => {
+            let sym_memory = &mut **sym_memory.clone();
+            return Dynamic::from(forall_to_bool(
+                ctx,
+                sym_memory,
+                arr,
+                index,
+                value,
+                expr,
+            ));
+        }
         Expression::And(l_expr, r_expr) => {
             let l = expr_to_bool(ctx, Rc::clone(&sym_memory), l_expr);
             let r = expr_to_bool(ctx, sym_memory, r_expr);
@@ -253,6 +267,51 @@ fn expr_to_dynamic<'ctx, 'a>(
             );
         }
     }
+}
+
+fn forall_to_bool<'ctx, 'a>(
+    ctx: &'ctx Context,
+    sym_memory: &mut SymMemory,
+    arr_name: &Identifier,
+    index: &Identifier,
+    value: &Identifier,
+    expr: &'a Expression,
+) -> Bool<'ctx> {
+    let (_, arr, len) = sym_memory.heap_get_array(arr_name).clone();
+    let index_id = Expression::Identifier(index.clone());
+
+    // foreach (i, v) pair in arr:
+    // - C = for each[i |-> index, v |-> value]expr && C
+    // - O = index != i && O
+    let mut c = Expression::Literal(Literal::Boolean(true));
+    let mut o = Expression::Literal(Literal::Boolean(true));
+    for (i, v) in arr.into_iter() {
+
+        let iv_memory = SymMemory::new();
+        iv_memory.stack_insert(index, SymExpression::Int(SymValue::Expr(i.clone())));
+        iv_memory.stack_insert(value, v.clone());
+        
+        let s = Substituted::new(&sym_memory, expr.clone()).get().clone();
+        
+        c = Expression::And(Box::new(s), Box::new(c));
+
+        let ne = Expression::NE(Box::new(index_id.clone()), Box::new(i.get().clone()));
+        o = Expression::And(Box::new(ne), Box::new(o));
+    }
+
+    // E = index >= 0 && O && index < #arr ==> expr
+    let iGeq0 = Expression::GEQ(
+        Box::new(index_id.clone()),
+        Box::new(Expression::Literal(Literal::Integer(0))),
+    );
+    let iLtLen = Expression::LT(Box::new(index_id.clone()), Box::new(len.get().clone()));
+    let e = Expression::Literal(Literal::Boolean(true));
+
+    expr_to_bool(
+        ctx,
+        Rc::new(sym_memory),
+        &Expression::And(Box::new(c), Box::new(e)),
+    )
 }
 
 fn unwrap_as_bool(d: Dynamic) -> Bool {
