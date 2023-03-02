@@ -86,10 +86,50 @@ pub struct Substituted {
 impl Substituted {
     /// generate a substituted expression from given expression
     pub fn new(sym_memory: &SymMemory, expr: Expression) -> Self {
+        let apply = |expr| partial_apply(sym_memory, expr);
+
         return Substituted {
-            expr: substitute(sym_memory, expr),
+            expr: expr.apply_when(apply, when),
         };
 
+
+
+        fn when(expr: &Expression) -> bool{
+            match expr{
+                Expression::Identifier(_) => true,
+                Expression::ArrLength(_) => true,
+                _ => false
+            }
+        }
+
+        fn partial_apply(sym_memory: &SymMemory, expr: Expression) -> Expression{
+            let apply = |expr| partial_apply(sym_memory, expr);
+
+            match expr{
+                Expression::Identifier(id) => match sym_memory.stack_get(&id) {
+                    Some(SymExpression::Bool(SymValue::Expr(Substituted { expr }))) => {
+                         expr.apply_when(apply, when)
+                    }
+                    Some(SymExpression::Int(SymValue::Expr(Substituted { expr }))) => {
+                        expr.apply_when(apply, when)
+                    }
+                    Some(SymExpression::Ref(r)) => Expression::Literal(Literal::Ref(r)),
+                    Some(sym_expr) => panic_with_diagnostics(
+                        &format!(
+                            "identifier {} with value {:?} can't be substituted",
+                            id, sym_expr
+                        ),
+                        sym_memory,
+                    ),
+                    None => panic_with_diagnostics(&format!("{} was not declared", id), sym_memory),
+                },
+                Expression::ArrLength(arr_name) => {
+                    sym_memory.heap_get_arr_length(&arr_name).get().clone()
+                }
+                _ => expr
+            }
+        }
+        
         /// substitutes expression with the passed 
         fn substitute(sym_memory: &SymMemory, expr: Expression) -> Expression {
             match expr {
@@ -154,26 +194,7 @@ impl Substituted {
                 }
                 Expression::Not(expr) => Expression::Not(Box::new(substitute(sym_memory, *expr))),
                 Expression::Literal(_) => expr,
-                Expression::Identifier(id) => match sym_memory.stack_get(&id) {
-                    Some(SymExpression::Bool(SymValue::Expr(Substituted { expr }))) => {
-                        substitute(sym_memory, expr)
-                    }
-                    Some(SymExpression::Int(SymValue::Expr(Substituted { expr }))) => {
-                        substitute(sym_memory, expr)
-                    }
-                    Some(SymExpression::Ref(r)) => Expression::Literal(Literal::Ref(r)),
-                    Some(sym_expr) => panic_with_diagnostics(
-                        &format!(
-                            "identifier {} with value {:?} can't be substituted",
-                            id, sym_expr
-                        ),
-                        sym_memory,
-                    ),
-                    None => panic_with_diagnostics(&format!("{} was not declared", id), sym_memory),
-                },
-                Expression::ArrLength(arr_name) => {
-                    sym_memory.heap_get_arr_length(&arr_name).get().clone()
-                }
+
                 Expression::FreeVariable(_, _) => expr,
                 otherwise => panic_with_diagnostics(
                     &format!("{:?} is not yet implemented", otherwise),
