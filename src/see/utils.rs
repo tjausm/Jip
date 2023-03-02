@@ -231,7 +231,7 @@ pub fn assert(
 
     // if we have not solved by now, invoke z3
     diagnostics.z3_invocations = diagnostics.z3_invocations + 1;
-    z3::verify_constraints(ctx, &pc, &sym_memory)
+    z3::verify_constraints(ctx, &pc)
 }
 
 /// handles the assume in the SEE (used in `assume`, `require` and `ensure` statements)
@@ -267,7 +267,7 @@ pub fn assume(
     // if we have not solved by now, invoke z3
     if use_z3{
         diagnostics.z3_invocations = diagnostics.z3_invocations + 1;
-        if z3::expression_unsatisfiable(ctx, &pc.conjuct(), sym_memory) {return false};
+        if z3::expression_unsatisfiable(ctx, &pc.conjuct()) {return false};
     }
 
     return true;

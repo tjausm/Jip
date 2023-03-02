@@ -25,7 +25,6 @@ pub fn check_length<'ctx>(
     pc: &PathConstraints,
     length: &'ctx Substituted,
     index: &'ctx Substituted,
-    sym_memory: &SymMemory,
 ) -> Result<(), Error> {
     // combine in expression of form 'length > index'
     let to_gt = |len| Expression::GT(Box::new(len), Box::new(index.get().clone()));
@@ -35,7 +34,7 @@ pub fn check_length<'ctx>(
     let mut pc = pc.clone();
     pc.push_assertion(length_gt_index);
     let constraints = pc.combine_over_true();
-    let length_gt_index = expr_to_bool(ctx, Rc::new(sym_memory), constraints.get());
+    let length_gt_index = expr_to_bool(ctx, constraints.get());
 
     match check_ast(ctx, &length_gt_index) {
         (SatResult::Unsat, _) => return Ok(()),
@@ -57,12 +56,11 @@ pub fn check_length<'ctx>(
 /// `solve_constraints(ctx, vec![assume x, assert y, assume z] = x -> (y && z)`
 pub fn verify_constraints<'a>(
     ctx: &'a Context,
-    path_constraints: &PathConstraints,
-    sym_memory: &SymMemory,
+    path_constraints: &PathConstraints
 ) -> Result<(), Error> {
     //transform too z3 boolean
     let constraint_expr = path_constraints.combine_over_true();
-    let constraints = expr_to_bool(&ctx, Rc::new(sym_memory), &constraint_expr.get());
+    let constraints = expr_to_bool(&ctx, &constraint_expr.get());
 
     match check_ast(ctx, &constraints) {
         (SatResult::Unsat, _) => return Ok(()),
@@ -83,11 +81,10 @@ pub fn verify_constraints<'a>(
 pub fn expression_unsatisfiable<'a>(
     ctx: &'a Context,
     expression: &Substituted,
-    sym_memory: &SymMemory,
 ) -> bool {
     //negate assumption and try to find counter-example
     //no counter-example for !assumption means assumption is never true
-    let assumption_ast = expr_to_bool(&ctx, Rc::new(sym_memory), expression.get()).not();
+    let assumption_ast = expr_to_bool(&ctx, expression.get()).not();
 
     match check_ast(ctx, &assumption_ast) {
         (SatResult::Unsat, _) => true,
@@ -105,140 +102,123 @@ fn check_ast<'ctx>(ctx: &'ctx Context, ast: &Bool) -> (SatResult, Option<Model<'
 
 fn expr_to_int<'ctx, 'a>(
     ctx: &'ctx Context,
-    sym_memory: Rc<&SymMemory>,
     expr: &'a Expression,
 ) -> Int<'ctx> {
-    return unwrap_as_int(expr_to_dynamic(&ctx, sym_memory, expr));
+    return unwrap_as_int(expr_to_dynamic(&ctx,  expr));
 }
 
 fn expr_to_bool<'ctx, 'a>(
     ctx: &'ctx Context,
-    sym_memory: Rc<&SymMemory>,
     expr: &'a Expression,
 ) -> Bool<'ctx> {
-    return unwrap_as_bool(expr_to_dynamic(&ctx, sym_memory, expr));
+    return unwrap_as_bool(expr_to_dynamic(&ctx,  expr));
 }
 
 fn expr_to_dynamic<'ctx, 'a>(
     ctx: &'ctx Context,
-    sym_memory: Rc<&SymMemory>,
     expr: &'a Expression,
 ) -> Dynamic<'ctx> {
     match expr {
         Expression::And(l_expr, r_expr) => {
-            let l = expr_to_bool(ctx, Rc::clone(&sym_memory), l_expr);
-            let r = expr_to_bool(ctx, sym_memory, r_expr);
+            let l = expr_to_bool(ctx,  l_expr);
+            let r = expr_to_bool(ctx,  r_expr);
 
             return Dynamic::from(Bool::and(ctx, &[&l, &r]));
         }
         Expression::Or(l_expr, r_expr) => {
-            let l = expr_to_bool(ctx, Rc::clone(&sym_memory), l_expr);
-            let r = expr_to_bool(ctx, sym_memory, r_expr);
+            let l = expr_to_bool(ctx,  l_expr);
+            let r = expr_to_bool(ctx,  r_expr);
 
             return Dynamic::from(Bool::or(ctx, &[&l, &r]));
         }
         Expression::Implies(l_expr, r_expr) => {
-            let l = expr_to_bool(ctx, Rc::clone(&sym_memory), l_expr);
-            let r = expr_to_bool(ctx, sym_memory, r_expr);
+            let l = expr_to_bool(ctx,  l_expr);
+            let r = expr_to_bool(ctx,  r_expr);
 
             return Dynamic::from(l.implies(&r));
         }
         Expression::EQ(l_expr, r_expr) => {
-            let l = expr_to_dynamic(ctx, Rc::clone(&sym_memory), l_expr);
-            let r = expr_to_dynamic(ctx, sym_memory, r_expr);
+            let l = expr_to_dynamic(ctx,  l_expr);
+            let r = expr_to_dynamic(ctx,  r_expr);
 
             return Dynamic::from(l._eq(&r));
         }
         Expression::NE(l_expr, r_expr) => {
-            let l = expr_to_dynamic(ctx, Rc::clone(&sym_memory), l_expr);
-            let r = expr_to_dynamic(ctx, sym_memory, r_expr);
+            let l = expr_to_dynamic(ctx,  l_expr);
+            let r = expr_to_dynamic(ctx,  r_expr);
 
             return Dynamic::from(l._eq(&r).not());
         }
         Expression::LT(l_expr, r_expr) => {
-            let l = expr_to_int(ctx, Rc::clone(&sym_memory), l_expr);
-            let r = expr_to_int(ctx, sym_memory, r_expr);
+            let l = expr_to_int(ctx,  l_expr);
+            let r = expr_to_int(ctx,  r_expr);
 
             return Dynamic::from(l.lt(&r));
         }
         Expression::GT(l_expr, r_expr) => {
-            let l = expr_to_int(ctx, Rc::clone(&sym_memory), l_expr);
-            let r = expr_to_int(ctx, sym_memory, r_expr);
+            let l = expr_to_int(ctx,  l_expr);
+            let r = expr_to_int(ctx,  r_expr);
 
             return Dynamic::from(l.gt(&r));
         }
         Expression::GEQ(l_expr, r_expr) => {
-            let l = expr_to_int(ctx, Rc::clone(&sym_memory), l_expr);
-            let r = expr_to_int(ctx, sym_memory, r_expr);
+            let l = expr_to_int(ctx,  l_expr);
+            let r = expr_to_int(ctx,  r_expr);
 
             return Dynamic::from(l.ge(&r));
         }
         Expression::LEQ(l_expr, r_expr) => {
-            let l = expr_to_int(ctx, Rc::clone(&sym_memory), l_expr);
-            let r = expr_to_int(ctx, sym_memory, r_expr);
+            let l = expr_to_int(ctx,  l_expr);
+            let r = expr_to_int(ctx,  r_expr);
 
             return Dynamic::from(l.le(&r));
         }
         Expression::Plus(l_expr, r_expr) => {
-            let l = expr_to_int(ctx, Rc::clone(&sym_memory), l_expr);
-            let r = expr_to_int(ctx, sym_memory, r_expr);
+            let l = expr_to_int(ctx,  l_expr);
+            let r = expr_to_int(ctx,  r_expr);
 
             return Dynamic::from(ast::Int::add(&ctx, &[&l, &r]));
         }
         Expression::Minus(l_expr, r_expr) => {
-            let l = expr_to_int(ctx, Rc::clone(&sym_memory), l_expr);
-            let r = expr_to_int(ctx, sym_memory, r_expr);
+            let l = expr_to_int(ctx,  l_expr);
+            let r = expr_to_int(ctx,  r_expr);
 
             return Dynamic::from(ast::Int::sub(&ctx, &[&l, &r]));
         }
         Expression::Multiply(l_expr, r_expr) => {
-            let l = expr_to_int(ctx, Rc::clone(&sym_memory), l_expr);
-            let r = expr_to_int(ctx, sym_memory, r_expr);
+            let l = expr_to_int(ctx,  l_expr);
+            let r = expr_to_int(ctx,  r_expr);
 
             return Dynamic::from(ast::Int::mul(&ctx, &[&l, &r]));
         }
         Expression::Divide(l_expr, r_expr) => {
-            let l = expr_to_int(ctx, Rc::clone(&sym_memory), l_expr);
-            let r = expr_to_int(ctx, sym_memory, r_expr);
+            let l = expr_to_int(ctx,  l_expr);
+            let r = expr_to_int(ctx,  r_expr);
 
             return Dynamic::from(l.div(&r));
         }
         Expression::Mod(l_expr, r_expr) => {
-            let l = expr_to_int(ctx, Rc::clone(&sym_memory), l_expr);
-            let r = expr_to_int(ctx, sym_memory, r_expr);
+            let l = expr_to_int(ctx,  l_expr);
+            let r = expr_to_int(ctx,  r_expr);
 
             return Dynamic::from(l.modulo(&r));
         }
         Expression::Negative(expr) => {
-            let e = expr_to_int(ctx, Rc::clone(&sym_memory), expr);
+            let e = expr_to_int(ctx,  expr);
 
             return Dynamic::from(e.unary_minus());
         }
         Expression::Not(expr) => {
-            let expr = expr_to_bool(ctx, sym_memory, expr);
+            let expr = expr_to_bool(ctx,  expr);
 
             return Dynamic::from(expr.not());
         }
-        // type variable using stack or substitute one level deep??
-        Expression::Identifier(id) => match sym_memory.stack_get(id) {
-            Some(SymExpression::Bool(SymValue::Expr(expr))) => {
-                expr_to_dynamic(ctx, sym_memory, &expr.get())
-            }
-            Some(SymExpression::Int(SymValue::Expr(expr))) => {
-                expr_to_dynamic(ctx, sym_memory, &expr.get())
-            }
-            Some(sym_expr) => panic_with_diagnostics(
-                &format!("{:?} is not parseable to a z3 ast", sym_expr),
-                &sym_memory,
-            ),
-            None => panic_with_diagnostics(&format!("{} is undeclared", id), &sym_memory),
-        },
         Expression::FreeVariable(ty, id) => match ty {
             Type::Bool => Dynamic::from(Bool::new_const(ctx, id.clone())),
             Type::Int => Dynamic::from(Int::new_const(ctx, id.clone())),
             _ => panic_with_diagnostics(
                 &format!("Free variable can't be of type {:?}", ty),
-                &sym_memory,
+                &()
             ),
         },
         Expression::Literal(Literal::Integer(n)) => Dynamic::from(ast::Int::from_i64(ctx, *n)),
@@ -252,7 +232,7 @@ fn expr_to_dynamic<'ctx, 'a>(
                     "Expressions of the form {:?} are not parseable to a z3 ast",
                     otherwise
                 ),
-                &sym_memory,
+                &()
             );
         }
     }
