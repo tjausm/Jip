@@ -126,7 +126,7 @@ fn expr_to_dynamic<'ctx, 'a>(
 ) -> Dynamic<'ctx> {
     match expr {
         Expression::Forall(arr, index, value, expr) => {
-            let sym_memory = &mut **sym_memory.clone();
+
             return Dynamic::from(forall_to_bool(
                 ctx,
                 sym_memory,
@@ -271,7 +271,7 @@ fn expr_to_dynamic<'ctx, 'a>(
 
 fn forall_to_bool<'ctx, 'a>(
     ctx: &'ctx Context,
-    sym_memory: &mut SymMemory,
+    sym_memory: Rc<&SymMemory>,
     arr_name: &Identifier,
     index: &Identifier,
     value: &Identifier,
@@ -287,9 +287,36 @@ fn forall_to_bool<'ctx, 'a>(
     let mut o = Expression::Literal(Literal::Boolean(true));
     for (i, v) in arr.into_iter() {
 
-        let iv_memory = SymMemory::new();
-        iv_memory.stack_insert(index, SymExpression::Int(SymValue::Expr(i.clone())));
-        iv_memory.stack_insert(value, v.clone());
+        // using Expressions `apply_when` functions we substitute the identifiers of index and value
+        // with the expressions of given (i,v) pair in array
+        let substitute_with_iv_pair = |expr: Expression| {
+            
+            let c_panic = || panic_with_diagnostics("Should not trigger", &sym_memory);
+            
+            match expr {
+                Expression::Identifier(id) if &id == index => i.get().clone(),
+                Expression::Identifier(id) if &id == value => match v.clone() {
+                    SymExpression::Int(v) => match v {
+                        SymValue::Expr(e) => e.get().clone(),
+                        _ => c_panic()
+                    },
+                    SymExpression::Bool(v) => match v {
+                        SymValue::Expr(e) => e.get().clone(),
+                        _ => c_panic()
+                    },
+                    SymExpression::Ref(_) => c_panic(),
+                },
+                _ => expr
+            }
+        };
+        let is_index_or_value = |expr: &Expression| {
+            match expr {
+                Expression::Identifier(id) if id == index => true,
+                Expression::Identifier(id) if id == value => true,
+                _ => false   
+            }
+        };
+        let expr = &expr.clone().apply_when(substitute_with_iv_pair, is_index_or_value);
         
         let s = Substituted::new(&sym_memory, expr.clone()).get().clone();
         
@@ -309,7 +336,7 @@ fn forall_to_bool<'ctx, 'a>(
 
     expr_to_bool(
         ctx,
-        Rc::new(sym_memory),
+        sym_memory,
         &Expression::And(Box::new(c), Box::new(e)),
     )
 }
@@ -320,6 +347,8 @@ fn unwrap_as_bool(d: Dynamic) -> Bool {
         None => panic_with_diagnostics(&format!("{} is not of type Bool", d), &()),
     }
 }
+
+
 
 fn unwrap_as_int(d: Dynamic) -> Int {
     match d.as_int() {
