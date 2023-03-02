@@ -31,7 +31,6 @@ impl Default for PathConstraints {
 }
 
 impl PathConstraints {
-
     /// combine constraints over true as follows: `assume(a), assert(b) -> a ==> b && true`
     pub fn combine_over_true<'a>(&'a self) -> Substituted {
         let mut constraints = Expression::Literal(Literal::Boolean(true));
@@ -59,8 +58,7 @@ impl PathConstraints {
                     constraints = Expression::And(Box::new(expr.clone()), Box::new(constraints));
                 }
                 PathConstraint::Assume(Substituted { expr }) => {
-                    constraints =
-                        Expression::And(Box::new(expr.clone()), Box::new(constraints));
+                    constraints = Expression::And(Box::new(expr.clone()), Box::new(constraints));
                 }
             }
         }
@@ -84,31 +82,54 @@ pub struct Substituted {
 }
 
 impl Substituted {
-    /// generate a substituted expression from given expression
-    pub fn new(sym_memory: &SymMemory, expr: Expression) -> Self {
-        let substitute = |expr| partial_substitute(sym_memory, expr);
 
+    /// destructs forall and exists quantifiers and then 
+    /// generates a substituted expression from it
+    pub fn new(sym_memory: &SymMemory, expr: Expression) -> Self {
+        let substitute = |expr| substitute_fnonce(sym_memory, expr);
+        let destruct_quantifier = |expr| destruct_quantifier_fnonce(sym_memory, expr);
+        
+        let expr_without_quantifiers = expr.apply_when(destruct_quantifier, is_quantifier);
         return Substituted {
-            expr: expr.apply_when(substitute, is_identifier),
+            expr: expr_without_quantifiers.apply_when(substitute, is_identifier),
         };
 
-
-
-        fn is_identifier(expr: &Expression) -> bool{
-            match expr{
-                Expression::Identifier(_) => true,
-                Expression::ArrLength(_) => true,
-                _ => false
+        fn is_quantifier(expr: &Expression) -> bool {
+            match expr {
+                Expression::Forall(_, _, _, _) => true,
+                Expression::Exists(_, _, _, _) => true,
+                _ => false,
             }
         }
 
-        fn partial_substitute(sym_memory: &SymMemory, expr: Expression) -> Expression{
-            let substitute = |expr| partial_substitute(sym_memory, expr);
+        fn destruct_quantifier_fnonce(sym_memory: &SymMemory, expr: Expression) -> Expression {
+            let destruct_quantifier = |expr| destruct_quantifier_fnonce(sym_memory, expr);
+            match expr {
+                Expression::Forall(arr_name, index ,value ,expr ) => {
+                    let expr = expr.apply_when(destruct_quantifier, is_quantifier);
+                    destruct_forall(sym_memory.heap_get_array(&arr_name), &index, &value, &expr)
+                }
+                Expression::Exists(arr_name, index ,value ,expr ) => todo!(),
+                _ => expr
+            }
 
-            match expr{
+        }
+
+        fn is_identifier(expr: &Expression) -> bool {
+            match expr {
+                Expression::Identifier(_) => true,
+                Expression::ArrLength(_) => true,
+                _ => false,
+            }
+        }
+
+        fn substitute_fnonce(sym_memory: &SymMemory, expr: Expression) -> Expression {
+            let substitute = |expr| substitute_fnonce(sym_memory, expr);
+
+            match expr {
                 Expression::Identifier(id) => match sym_memory.stack_get(&id) {
                     Some(SymExpression::Bool(SymValue::Expr(Substituted { expr }))) => {
-                         expr.apply_when(substitute, is_identifier)
+                        expr.apply_when(substitute, is_identifier)
                     }
                     Some(SymExpression::Int(SymValue::Expr(Substituted { expr }))) => {
                         expr.apply_when(substitute, is_identifier)
@@ -126,7 +147,7 @@ impl Substituted {
                 Expression::ArrLength(arr_name) => {
                     sym_memory.heap_get_arr_length(&arr_name).get().clone()
                 }
-                _ => expr
+                _ => expr,
             }
         }
     }
@@ -152,7 +173,7 @@ impl Substituted {
 
 pub type Reference = Uuid;
 
-#[derive( Clone)]
+#[derive(Clone)]
 pub enum SymValue {
     Uninitialized,
     Expr(Substituted),
@@ -191,6 +212,85 @@ enum HashExpression {
     Identifier(Identifier),
     Literal(Literal),
     ArrLength(Identifier),
+}
+
+/// destructs a `Expression::forall(arr, index, value)` statement using the following algorithm:
+/// ```
+/// // asserts expression holds for all values in array
+/// c = true
+/// foreach (i, v) in arr { [i |->index, v |-> value] in expr}     /// // substitute (i,v) into expression
+///
+/// // asserts expression holds for all values > 0 and < #arr that are not in symbolic array
+/// o = true
+/// foreach (i,v) in arr {o = index != i && o}
+/// e = (0 < index && o && index < #arr && value == 0 ==> expr
+///
+/// return c && e
+/// ```
+fn destruct_forall<'a>(
+    (_, arr, len): &Array,
+    index: &Identifier,
+    value: &Identifier,
+    expr: &Expression,
+) -> Expression {
+    let index_id = Expression::Identifier(index.clone());
+
+    // foreach (i, v) pair in arr:
+    // - C = for each[i |-> index, v |-> value]expr && C
+    // - O = index != i && O
+    let mut c = Expression::Literal(Literal::Boolean(true));
+    let mut o = Expression::Literal(Literal::Boolean(true));
+    for (i, v) in arr.into_iter() {
+        // using Expressions `apply_when` functions we substitute the identifiers of index and value
+        // with the expressions of given (i,v) pair in array
+        let substitute_with_iv_pair = |expr: Expression| {
+            let c_panic = || panic_with_diagnostics("Should not trigger", &());
+
+            match expr {
+                Expression::Identifier(id) if &id == index => i.get().clone(),
+                Expression::Identifier(id) if &id == value => match v.clone() {
+                    SymExpression::Int(v) => match v {
+                        SymValue::Expr(e) => e.get().clone(),
+                        _ => c_panic(),
+                    },
+                    SymExpression::Bool(v) => match v {
+                        SymValue::Expr(e) => e.get().clone(),
+                        _ => c_panic(),
+                    },
+                    SymExpression::Ref(_) => c_panic(),
+                },
+                _ => expr,
+            }
+        };
+        let is_index_or_value = |expr: &Expression| match expr {
+            Expression::Identifier(id) if id == index => true,
+            Expression::Identifier(id) if id == value => true,
+            _ => false,
+        };
+        c = Expression::And(
+            Box::new(c),
+            Box::new(
+                expr.clone()
+                    .apply_when(substitute_with_iv_pair, is_index_or_value),
+            ),
+        );
+
+        let ne = Expression::NE(Box::new(index_id.clone()), Box::new(i.get().clone()));
+        o = Expression::And(Box::new(ne), Box::new(o));
+    }
+
+    // E = index >= 0 && O && index < #arr ==> expr
+    let i_geq_0 = Expression::GEQ(
+        Box::new(index_id.clone()),
+        Box::new(Expression::Literal(Literal::Integer(0))),
+    );
+    let i_lt_len = Expression::LT(Box::new(index_id.clone()), Box::new(len.get().clone()));
+    let e = Expression::And(
+        Box::new(i_geq_0),
+        Box::new(Expression::And(Box::new(o), Box::new(i_lt_len))),
+    );
+
+    Expression::And(Box::new(c), Box::new(e))
 }
 
 fn calculate_hash<T: Hash>(t: &T) -> u64 {

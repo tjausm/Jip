@@ -20,18 +20,15 @@ mod z3;
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]
 struct Cli {
-    /// How to load the program
-    #[clap(arg_enum)]
-    load_mode: LoadMode,
-
-    /// Filepath or program as string
-    program: String,
+    /// path to oox program
+    path: String,
 
     /// Print cfg in Dot format / print generated z3 formulas / verify program
     #[clap(subcommand)]
     mode: Mode,
 
-    /// TODO
+    /// number between 0 and 255 denoting how deep we should prune
+    /// , 0 = no pruning, 127 = prune 50% of depth and so on
     #[clap(default_value_t = 0)]
     prune_ratio: i8,
 
@@ -40,7 +37,6 @@ struct Cli {
     simplifier: bool,
 }
 
-/// BEWARE: flags are hardcoded in the test builder
 #[derive(Subcommand)]
 enum Mode {
     /// Verify program and print result
@@ -81,13 +77,10 @@ fn main() {
     };
 
     // attempt to load program, and exit with exitcode and error if fails
-    let program = match cli.load_mode {
-        LoadMode::File => match see::load_program(cli.program) {
+    let program = match see::load_program(cli.path) {
             Err(why) => exit(why),
             Ok(program) => program,
-        },
-        LoadMode::String => cli.program,
-    };
+        };
 
     // if program loaded execute function corresponding to cmd and exit with the result
     match cli.mode {

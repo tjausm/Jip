@@ -125,17 +125,6 @@ fn expr_to_dynamic<'ctx, 'a>(
     expr: &'a Expression,
 ) -> Dynamic<'ctx> {
     match expr {
-        Expression::Forall(arr, index, value, expr) => {
-
-            return Dynamic::from(forall_to_bool(
-                ctx,
-                sym_memory,
-                arr,
-                index,
-                value,
-                expr,
-            ));
-        }
         Expression::And(l_expr, r_expr) => {
             let l = expr_to_bool(ctx, Rc::clone(&sym_memory), l_expr);
             let r = expr_to_bool(ctx, sym_memory, r_expr);
@@ -269,77 +258,7 @@ fn expr_to_dynamic<'ctx, 'a>(
     }
 }
 
-fn forall_to_bool<'ctx, 'a>(
-    ctx: &'ctx Context,
-    sym_memory: Rc<&SymMemory>,
-    arr_name: &Identifier,
-    index: &Identifier,
-    value: &Identifier,
-    expr: &'a Expression,
-) -> Bool<'ctx> {
-    let (_, arr, len) = sym_memory.heap_get_array(arr_name).clone();
-    let index_id = Expression::Identifier(index.clone());
 
-    // foreach (i, v) pair in arr:
-    // - C = for each[i |-> index, v |-> value]expr && C
-    // - O = index != i && O
-    let mut c = Expression::Literal(Literal::Boolean(true));
-    let mut o = Expression::Literal(Literal::Boolean(true));
-    for (i, v) in arr.into_iter() {
-
-        // using Expressions `apply_when` functions we substitute the identifiers of index and value
-        // with the expressions of given (i,v) pair in array
-        let substitute_with_iv_pair = |expr: Expression| {
-            
-            let c_panic = || panic_with_diagnostics("Should not trigger", &sym_memory);
-            
-            match expr {
-                Expression::Identifier(id) if &id == index => i.get().clone(),
-                Expression::Identifier(id) if &id == value => match v.clone() {
-                    SymExpression::Int(v) => match v {
-                        SymValue::Expr(e) => e.get().clone(),
-                        _ => c_panic()
-                    },
-                    SymExpression::Bool(v) => match v {
-                        SymValue::Expr(e) => e.get().clone(),
-                        _ => c_panic()
-                    },
-                    SymExpression::Ref(_) => c_panic(),
-                },
-                _ => expr
-            }
-        };
-        let is_index_or_value = |expr: &Expression| {
-            match expr {
-                Expression::Identifier(id) if id == index => true,
-                Expression::Identifier(id) if id == value => true,
-                _ => false   
-            }
-        };
-        let expr = &expr.clone().apply_when(substitute_with_iv_pair, is_index_or_value);
-        
-        let s = Substituted::new(&sym_memory, expr.clone()).get().clone();
-        
-        c = Expression::And(Box::new(s), Box::new(c));
-
-        let ne = Expression::NE(Box::new(index_id.clone()), Box::new(i.get().clone()));
-        o = Expression::And(Box::new(ne), Box::new(o));
-    }
-
-    // E = index >= 0 && O && index < #arr ==> expr
-    let iGeq0 = Expression::GEQ(
-        Box::new(index_id.clone()),
-        Box::new(Expression::Literal(Literal::Integer(0))),
-    );
-    let iLtLen = Expression::LT(Box::new(index_id.clone()), Box::new(len.get().clone()));
-    let e = Expression::Literal(Literal::Boolean(true));
-
-    expr_to_bool(
-        ctx,
-        sym_memory,
-        &Expression::And(Box::new(c), Box::new(e)),
-    )
-}
 
 fn unwrap_as_bool(d: Dynamic) -> Bool {
     match d.as_bool() {
