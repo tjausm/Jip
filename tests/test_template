@@ -3,7 +3,6 @@
 fn {name}() {{
     let mut cmd = Command::cargo_bin("jip").unwrap();
     let assert = cmd
-        .arg("file")
         .arg(r#"{path}"#)
         .arg("verify")
         .assert();
@@ -14,7 +13,6 @@ fn {name}() {{
     let mut cmd_simple = Command::cargo_bin("jip").unwrap();
     let assert_simple = cmd_simple
     .arg("-s")
-        .arg("file")
         .arg(r#"{path}"#)
         .arg("verify")
         .assert();
