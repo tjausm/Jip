@@ -57,7 +57,7 @@ impl PathConstraints {
                 PathConstraint::Assert(expr) => {
                     constraints = SymExpression::And(Box::new(expr.clone()), Box::new(constraints));
                 }
-                PathConstraint::Assume(expr ) => {
+                PathConstraint::Assume(expr) => {
                     constraints = SymExpression::And(Box::new(expr.clone()), Box::new(constraints));
                 }
             }
@@ -108,18 +108,14 @@ pub enum SymExpression {
     Uninitialized,
 }
 
-
 impl SymExpression {
     /// destructs forall and exists quantifiers and then
     /// generates a substituted expression from it
     pub fn new(sym_memory: &SymMemory, expr: Expression) -> Self {
         match expr {
-            Expression::Forall(arr_name, index, value, expr) => destruct_forall(
-                sym_memory.heap_get_array(&arr_name),
-                &index,
-                &value,
-                &SymExpression::new(sym_memory, *expr),
-            ),
+            Expression::Forall(arr_name, index, value, expr) => {
+                destruct_forall(sym_memory.heap_get_array(&arr_name), &index, &value, &expr)
+            }
             Expression::Exists(arr_name, index, value, expr) => todo!(),
             Expression::Identifier(id) => match sym_memory.stack_get(&id) {
                 Some(sym_expr) => sym_expr,
@@ -183,21 +179,15 @@ impl SymExpression {
                 Box::new(SymExpression::new(sym_memory, *r)),
             ),
             Expression::Negative(expr) => {
-                Expression::Negative(Box::new(SymExpression::new(sym_memory, *expr)))
+                SymExpression::Negative(Box::new(SymExpression::new(sym_memory, *expr)))
             }
             Expression::Not(expr) => {
                 SymExpression::Not(Box::new(SymExpression::new(sym_memory, *expr)))
-            },
-            _ => todo!()
+            }
+            _ => todo!(),
         }
-
     }
-
 }
-
-
-
-
 
 /// Consists of `identifier` (= classname) and a hashmap describing it's fields
 pub type Object = (Identifier, FxHashMap<Identifier, (Type, SymExpression)>);
@@ -211,20 +201,6 @@ pub enum ReferenceValue {
     Array(Array),
     /// Takes classname as input
     UninitializedObj(Class),
-}
-
-/// Intermediate type use to implement custom `Hash` for Expression
-/// while also using the default hasher for the 'base values'
-#[derive(Hash)]
-enum HashExpression {
-    Plus(Vec<u64>),
-    Multiply(Vec<u64>),
-    Divide(u64, u64),
-    Mod(u64, u64),
-    Negative(u64),
-    Identifier(Identifier),
-    Literal(Literal),
-    ArrLength(Identifier),
 }
 
 /// destructs a `Expression::forall(arr, index, value)` statement using the following algorithm:
@@ -296,6 +272,19 @@ fn destruct_forall<'a>(
     Expression::And(Box::new(c), Box::new(e))
 }
 
+/// Intermediate type use to implement custom `Hash` for Expression
+/// while also using the default hasher for the 'base values'
+#[derive(Hash)]
+enum HashExpression {
+    Plus(Vec<u64>),
+    Multiply(Vec<u64>),
+    Divide(u64, u64),
+    Mod(u64, u64),
+    Negative(u64),
+    FreeVariable(SymType, Identifier),
+    Reference(Type, Reference),
+}
+
 fn calculate_hash<T: Hash>(t: &T) -> u64 {
     let mut s = DefaultHasher::new();
     t.hash(&mut s);
@@ -307,26 +296,26 @@ fn map_hash<T: Hash>(v: &Vec<T>) -> Vec<u64> {
         .collect::<Vec<u64>>()
 }
 
-impl Hash for Expression {
+impl Hash for SymExpression {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        fn collect_sum(expr: Expression) -> Vec<Expression> {
+        fn collect_sum(expr: SymExpression) -> Vec<SymExpression> {
             match expr {
-                Expression::Plus(l_expr, r_expr) => {
+                SymExpression::Plus(l_expr, r_expr) => {
                     let mut sum = collect_sum(*l_expr);
                     sum.append(&mut collect_sum(*r_expr));
                     sum
                 }
-                Expression::Minus(l_expr, r_expr) => collect_sum(Expression::Plus(
+                SymExpression::Minus(l_expr, r_expr) => collect_sum(SymExpression::Plus(
                     l_expr,
-                    Box::new(Expression::Negative(r_expr)),
+                    Box::new(SymExpression::Negative(r_expr)),
                 )),
                 _ => vec![expr],
             }
         }
 
-        fn collect_mult(expr: Expression) -> Vec<Expression> {
+        fn collect_mult(expr: SymExpression) -> Vec<SymExpression> {
             match expr {
-                Expression::Multiply(l_expr, r_expr) => {
+                SymExpression::Multiply(l_expr, r_expr) => {
                     let mut mult = collect_mult(*l_expr);
                     mult.append(&mut collect_mult(*r_expr));
                     mult
@@ -336,57 +325,50 @@ impl Hash for Expression {
         }
 
         match self {
-            Expression::Plus(_, _) => {
+            SymExpression::Plus(_, _) => {
                 let sum = collect_sum(self.clone());
                 let mut hashed_sum = map_hash(&sum);
                 hashed_sum.sort();
                 HashExpression::Plus(hashed_sum).hash(state)
             }
-            Expression::Multiply(_, _) => {
+            SymExpression::Multiply(_, _) => {
                 let mult = collect_mult(self.clone());
                 let mut hashed_mult = map_hash(&mult);
                 hashed_mult.sort();
                 HashExpression::Multiply(hashed_mult).hash(state)
             }
-            Expression::Minus(l_expr, r_expr) => SymExpression::Plus(
+            SymExpression::Minus(l_expr, r_expr) => SymExpression::Plus(
                 l_expr.clone(),
-                Box::new(Expression::Negative(r_expr.clone())),
+                Box::new(SymExpression::Negative(r_expr.clone())),
             )
             .hash(state),
-            Expression::Divide(l_expr, r_expr) => {
+            SymExpression::Divide(l_expr, r_expr) => {
                 HashExpression::Divide(calculate_hash(&*l_expr), calculate_hash(&*r_expr))
                     .hash(state)
             }
-            Expression::Mod(l_expr, r_expr) => {
+            SymExpression::Mod(l_expr, r_expr) => {
                 HashExpression::Mod(calculate_hash(&*l_expr), calculate_hash(&*r_expr)).hash(state)
             }
-            Expression::Negative(expr) => {
+            SymExpression::Negative(expr) => {
                 HashExpression::Negative(calculate_hash(&*expr)).hash(state)
             }
-            Expression::Identifier(id) => HashExpression::Identifier(id.clone()).hash(state),
-            Expression::Literal(lit) => HashExpression::Literal(lit.clone()).hash(state),
-            Expression::ArrLength(id) => HashExpression::ArrLength(id.clone()).hash(state),
+            SymExpression::FreeVariable(ty, id) => {
+                HashExpression::FreeVariable(ty.clone(), id.clone()).hash(state)
+            }
+            SymExpression::Reference(ty, r) => {
+                HashExpression::FreeVariable(ty.clone(), r).hash(state)
+            }
             _ => panic_with_diagnostics(&format!("Cannot hash expression {:?}", self), &()),
         }
     }
 }
 
-impl PartialEq for Expression {
+impl PartialEq for SymExpression {
     fn eq(&self, other: &Self) -> bool {
         calculate_hash(&self) == calculate_hash(other)
     }
 }
-impl Eq for Expression {}
-
-impl fmt::Debug for SymValue {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            SymValue::Uninitialized => write!(f, "Uninitialized"),
-            SymValue::Expr(expr) => write!(f, "{:?}", expr.get()),
-        }
-    }
-}
-
+impl Eq for SymExpression {}
 
 impl fmt::Debug for PathConstraints {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
