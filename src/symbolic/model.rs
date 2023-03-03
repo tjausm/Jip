@@ -205,7 +205,7 @@ pub enum ReferenceValue {
 }
 
 /// destructs a `Expression::forall(arr, index, value)` statement using the following algorithm:
-/// ```
+/// ``` ignore
 /// // asserts expression holds for all values in array
 /// c = true
 /// foreach (i, v) in arr { [i |->index, v |-> value] in expr}     /// // substitute (i,v) into expression
@@ -346,7 +346,8 @@ impl Hash for SymExpression {
             }
             SymExpression::Reference(ty, r) => {
                 HashExpression::Reference(ty.clone(), r.clone()).hash(state)
-            }
+            },
+            SymExpression::Literal(lit) => lit.hash(state),
             _ => panic_with_diagnostics(&format!("Cannot hash expression {:?}", self), &()),
         }
     }
