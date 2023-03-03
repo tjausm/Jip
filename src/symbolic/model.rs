@@ -77,7 +77,7 @@ impl PathConstraints {
 
 pub type Reference = Uuid;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Hash)]
 pub enum SymType {
     Int,
     Bool,
@@ -114,7 +114,7 @@ impl SymExpression {
     pub fn new(substitutions : FxHashMap<Identifier, SymExpression>, sym_memory: &SymMemory, expr: Expression) -> Self {
         match expr {
             Expression::Forall(arr_name, index, value, expr) => {
-                destruct_forall(sym_memory.heap_get_array(&arr_name), &index, &value, &expr)
+                destruct_forall(sym_memory.heap_get_array(&arr_name), &index, &value, &expr, sym_memory)
             }
             Expression::Exists(arr_name, index, value, expr) => todo!(),
             Expression::Identifier(id) => match (substitutions.get(&id), sym_memory.stack_get(&id)) {
@@ -222,8 +222,9 @@ fn destruct_forall<'a>(
     index: &Identifier,
     value: &Identifier,
     expr: &Expression,
+    sym_memory: &SymMemory
 ) -> SymExpression {
-    let index_id = Expression::Identifier(index.clone());
+    let index_id = SymExpression::FreeVariable(SymType::Int, index.clone());
 
     // foreach (i, v) pair in arr:
     // - C = for each[i |-> index, v |-> value]expr && C
@@ -233,44 +234,31 @@ fn destruct_forall<'a>(
     for (i, v) in arr.into_iter() {
         // using Expressions `apply_when` functions we substitute the identifiers of index and value
         // with the expressions of given (i,v) pair in array
-        let substitute_with_iv_pair = |expr: Expression| {
-            let c_panic = || panic_with_diagnostics("Should not trigger", &());
+        let mapping = FxHashMap::default();
+        mapping.insert(index.clone(), i.clone());
+        mapping.insert(value.clone(), v.clone());
 
-            match expr {
-                Expression::Identifier(id) if &id == index => i.clone(),
-                Expression::Identifier(id) if &id == value => v.clone(),
-                _ => expr,
-            }
-        };
-        let is_index_or_value = |expr: &Expression| match expr {
-            Expression::Identifier(id) if id == index => true,
-            Expression::Identifier(id) if id == value => true,
-            _ => false,
-        };
-        c = Expression::And(
+        c = SymExpression::And(
             Box::new(c),
-            Box::new(
-                expr.clone()
-                    .apply_when(substitute_with_iv_pair, is_index_or_value),
-            ),
+            Box::new(SymExpression::new(mapping, sym_memory, expr.clone())),
         );
 
-        let ne = Expression::NE(Box::new(index_id.clone()), Box::new(i.get().clone()));
-        o = Expression::And(Box::new(ne), Box::new(o));
+        let ne = SymExpression::NE(Box::new(index_id.clone()), Box::new(i.clone()));
+        o = SymExpression::And(Box::new(ne), Box::new(o));
     }
 
     // E = index >= 0 && O && index < #arr ==> expr
-    let i_geq_0 = Expression::GEQ(
+    let i_geq_0 = SymExpression::GEQ(
         Box::new(index_id.clone()),
-        Box::new(Expression::Literal(Literal::Integer(0))),
+        Box::new(SymExpression::Literal(Literal::Integer(0))),
     );
-    let i_lt_len = Expression::LT(Box::new(index_id.clone()), Box::new(len.get().clone()));
-    let e = Expression::And(
+    let i_lt_len = SymExpression::LT(Box::new(index_id.clone()), Box::new(len.clone()));
+    let e = SymExpression::And(
         Box::new(i_geq_0),
-        Box::new(Expression::And(Box::new(o), Box::new(i_lt_len))),
+        Box::new(SymExpression::And(Box::new(o), Box::new(i_lt_len))),
     );
 
-    Expression::And(Box::new(c), Box::new(e))
+    SymExpression::And(Box::new(c), Box::new(e))
 }
 
 /// Intermediate type use to implement custom `Hash` for Expression
@@ -357,7 +345,7 @@ impl Hash for SymExpression {
                 HashExpression::FreeVariable(ty.clone(), id.clone()).hash(state)
             }
             SymExpression::Reference(ty, r) => {
-                HashExpression::FreeVariable(ty.clone(), r).hash(state)
+                HashExpression::Reference(ty.clone(), r.clone()).hash(state)
             }
             _ => panic_with_diagnostics(&format!("Cannot hash expression {:?}", self), &()),
         }
@@ -389,10 +377,11 @@ mod tests {
 
     lalrpop_mod!(pub parser);
 
-    fn parse(i: &str) -> Expression {
-        return parser::VerificationExpressionParser::new()
+    fn parse(i: &str) -> SymExpression {
+        let expr = parser::VerificationExpressionParser::new()
             .parse(i)
             .unwrap();
+        SymExpression::new(FxHashMap::default(), &SymMemory::new(), expr)
     }
 
     #[test]
