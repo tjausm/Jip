@@ -21,6 +21,7 @@ use crate::z3::build_ctx;
 use colored::Colorize;
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
+use rustc_hash::FxHashMap;
 use uuid::Uuid;
 
 use std::collections::VecDeque;
@@ -245,7 +246,7 @@ fn verify_program(
 
                         // add return value to stack
                         sym_memory
-                            .stack_insert(retval_id, SymExpression::new(&sym_memory, expr.clone()));
+                            .stack_insert(retval_id, SymExpression::new(FxHashMap::default(), &sym_memory, expr.clone()));
                     }
                     _ => (),
                 }
