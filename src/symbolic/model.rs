@@ -185,13 +185,13 @@ impl SymExpression {
             Expression::Not(expr) => {
                 SymExpression::Not(Box::new(SymExpression::new(FxHashMap::default(), sym_memory, *expr)))
             }
-            _ => todo!(),
+            Expression::Literal(lit) => SymExpression::Literal(lit),
         }
     }
 }
 
 /// Consists of `identifier` (= classname) and a hashmap describing it's fields
-pub type Object = (Identifier, FxHashMap<Identifier, (Type, SymExpression)>);
+pub type Object = (Identifier, FxHashMap<Identifier, SymExpression>);
 
 /// Consists of type, a mapping from expression to symbolic expression and Substituted expression representing length
 pub type Array = (Type, FxHashMap<SymExpression, SymExpression>, SymExpression);
@@ -234,7 +234,7 @@ fn destruct_forall<'a>(
     for (i, v) in arr.into_iter() {
         // using Expressions `apply_when` functions we substitute the identifiers of index and value
         // with the expressions of given (i,v) pair in array
-        let mapping = FxHashMap::default();
+        let mut mapping = FxHashMap::default();
         mapping.insert(index.clone(), i.clone());
         mapping.insert(value.clone(), v.clone());
 

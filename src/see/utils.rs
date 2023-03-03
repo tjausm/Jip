@@ -146,7 +146,7 @@ pub fn assert(
 
     // add (simplified) assertion
     if simplify {
-        let simple_assertion = sym_memory.simplify_expr(subt_assertion);
+        let simple_assertion = sym_memory.simplify(subt_assertion);
         //let simple_assertion = assertion;
         match simple_assertion {
             SymExpression::Literal(Literal::Boolean(true)) => (),
@@ -159,7 +159,7 @@ pub fn assert(
     // calculate (simplified) constraints
     let mut constraints = pc.combine_over_true();
     if simplify {
-        constraints = sym_memory.simplify_expr(constraints)
+        constraints = sym_memory.simplify(constraints)
     };
     match constraints {
         SymExpression::Literal(Literal::Boolean(true)) => return Ok(()),
@@ -185,7 +185,7 @@ pub fn assume(
     let subt_assumption = SymExpression::new(FxHashMap::default(), &sym_memory, assumption.clone());
     
     if simplify {
-        let simple_assumption = sym_memory.simplify_expr(subt_assumption.clone());
+        let simple_assumption = sym_memory.simplify(subt_assumption.clone());
 
         //  let z3_subt = z3::expression_unsatisfiable(ctx, &subt_assumption, sym_memory);
         //  let z3_simple = z3::expression_unsatisfiable(ctx, &simple_assumption, sym_memory);

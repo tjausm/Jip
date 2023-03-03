@@ -1,5 +1,3 @@
-use uuid::Uuid;
-
 use crate::shared::panic_with_diagnostics;
 use std::fmt;
 use std::hash::{Hash};
@@ -210,86 +208,6 @@ pub enum Expression {
     Identifier(Identifier),
     Literal(Literal),
     ArrLength(Identifier),
-
-    //free var flows in the program from main() args
-    FreeVariable(Type, Identifier),
-}
-
-impl Expression {
-        /// recurses over the expression and `if when(se) then {se = apply(se)}`
-        pub fn apply_when<F, G>(self, mut apply: F, mut when : G) -> Self 
-        where
-            F: FnMut(Expression) -> Expression,
-            F: Clone,
-            G: FnMut(&Expression) -> bool,
-            G: Clone
-        {
-            match self {
-                expr if when(&self) => apply(expr),
-                Expression::Implies(l, r) => Expression::Implies(
-                    Box::new(l.apply_when(apply.clone(), when.clone())),
-                    Box::new(r.apply_when(apply, when)),
-                ),
-                Expression::And(l, r) => Expression::And(
-                    Box::new(l.apply_when(apply.clone(), when.clone())),
-                    Box::new(r.apply_when(apply, when)),
-                ),
-                Expression::Or(l, r) => Expression::Or(
-                    Box::new(l.apply_when(apply.clone(), when.clone())),
-                    Box::new(r.apply_when(apply, when)),
-                ),
-                Expression::EQ(l, r) => Expression::EQ(
-                    Box::new(l.apply_when(apply.clone(), when.clone())),
-                    Box::new(r.apply_when(apply, when)),
-                ),
-                Expression::NE(l, r) => Expression::NE(
-                    Box::new(l.apply_when(apply.clone(), when.clone())),
-                    Box::new(r.apply_when(apply, when)),
-                ),
-                Expression::LT(l, r) => Expression::LT(
-                    Box::new(l.apply_when(apply.clone(), when.clone())),
-                    Box::new(r.apply_when(apply, when)),
-                ),
-                Expression::GT(l, r) => Expression::GT(
-                    Box::new(l.apply_when(apply.clone(), when.clone())),
-                    Box::new(r.apply_when(apply, when)),
-                ),
-                Expression::GEQ(l, r) => Expression::GEQ(
-                    Box::new(l.apply_when(apply.clone(), when.clone())),
-                    Box::new(r.apply_when(apply, when)),
-                ),
-                Expression::LEQ(l, r) => Expression::LEQ(
-                    Box::new(l.apply_when(apply.clone(), when.clone())),
-                    Box::new(r.apply_when(apply, when)),
-                ),
-                Expression::Plus(l, r) => Expression::Plus(
-                    Box::new(l.apply_when(apply.clone(), when.clone())),
-                    Box::new(r.apply_when(apply, when)),
-                ),
-                Expression::Minus(l, r) => Expression::Minus(
-                    Box::new(l.apply_when(apply.clone(), when.clone())),
-                    Box::new(r.apply_when(apply, when)),
-                ),
-                Expression::Multiply(l, r) => Expression::Multiply(
-                    Box::new(l.apply_when(apply.clone(), when.clone())),
-                    Box::new(r.apply_when(apply, when)),
-                ),
-                Expression::Divide(l, r) => Expression::Divide(
-                    Box::new(l.apply_when(apply.clone(), when.clone())),
-                    Box::new(r.apply_when(apply, when)),
-                ),
-                Expression::Mod(l, r) => Expression::Mod(
-                    Box::new(l.apply_when(apply.clone(), when.clone())),
-                    Box::new(r.apply_when(apply, when)),
-                ),
-                Expression::Negative(expr) => {
-                    Expression::Negative(Box::new(expr.apply_when(apply, when)))
-                }
-                Expression::Not(expr) => Expression::Not(Box::new(expr.apply_when(apply, when))),
-                _ => self
-            }
-        }
-
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -346,7 +264,6 @@ impl fmt::Debug for Expression {
             Expression::Negative(expr) => write!(f, "-{:?}", expr),
             Expression::Not(expr) => write!(f, "!{:?}", expr),
             Expression::Identifier(id) => write!(f, "{}", id),
-            Expression::FreeVariable(_, id) => write!(f, "{}", id),
             Expression::Literal(Literal::Boolean(val)) => write!(f, "{:?}", val),
             Expression::Literal(Literal::Integer(val)) => write!(f, "{:?}", val),
             Expression::ArrLength(id) => write!(f, "#{}", id),

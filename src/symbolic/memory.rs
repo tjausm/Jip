@@ -9,7 +9,7 @@ use crate::ast::*;
 use crate::shared::{panic_with_diagnostics, Error, Scope};
 use crate::z3;
 
-use super::model::{Reference, ReferenceValue, SymExpression,  PathConstraints, Array, SymType};
+use super::model::{Array, PathConstraints, Reference, ReferenceValue, SymExpression, SymType};
 
 //-----------------//
 // Symbolic memory //
@@ -46,15 +46,16 @@ impl<'ctx> SymMemory {
 impl<'a> SymMemory {
     /// inserts a free variable (meaning we don't substitute's)
     pub fn stack_insert_free_var(&mut self, ty: Type, id: &'a Identifier) -> () {
-
         if let Some(s) = self.stack.last_mut() {
             match ty {
-                Type::Int => s
-                    .env
-                    .insert(id.clone(), SymExpression::FreeVariable(SymType::Int, id.clone())),
-                Type::Bool => s
-                    .env
-                    .insert(id.clone(), SymExpression::FreeVariable(SymType::Bool, id.clone())),
+                Type::Int => s.env.insert(
+                    id.clone(),
+                    SymExpression::FreeVariable(SymType::Int, id.clone()),
+                ),
+                Type::Bool => s.env.insert(
+                    id.clone(),
+                    SymExpression::FreeVariable(SymType::Bool, id.clone()),
+                ),
                 _ => None,
             };
         };
@@ -134,7 +135,7 @@ impl<'a> SymMemory {
         match self.stack_get(obj_name) {
             Some(SymExpression::Reference(_, r)) => match self.heap.get_mut(&r) {
                 Some(ReferenceValue::Object((_, fields))) => {
-                    let (ty, expr) = match fields.get(field_name) {
+                    let expr = match fields.get(field_name) {
                         Some(field) => field,
                         None => panic_with_diagnostics(
                             &format!("Field {} does not exist on {}", field_name, obj_name),
@@ -143,8 +144,7 @@ impl<'a> SymMemory {
                     };
                     match var {
                         Some(var) => {
-                            let ty = ty.clone();
-                            fields.insert(field_name.clone(), (ty, var.clone()));
+                            fields.insert(field_name.clone(),  var.clone());
                             var
                         }
                         None => expr.clone(),
@@ -169,14 +169,20 @@ impl<'a> SymMemory {
     }
 
     pub fn heap_get_array(&self, arr_name: &Identifier) -> &Array {
-        match self.stack_get(arr_name){
-            Some(SymExpression::Reference(_, r)) => match self.heap.get(&r){
+        match self.stack_get(arr_name) {
+            Some(SymExpression::Reference(_, r)) => match self.heap.get(&r) {
                 Some(ReferenceValue::Array(arr)) => arr,
-                otherwise => panic_with_diagnostics(&format!("{:?} is not an array, it has value {:?} on the heap", otherwise, arr_name), &self),
+                otherwise => panic_with_diagnostics(
+                    &format!(
+                        "{:?} is not an array, it has value {:?} on the heap",
+                        otherwise, arr_name
+                    ),
+                    &self,
+                ),
             },
             _ => panic_with_diagnostics(&format!("{} is not a reference", arr_name), &self),
-        
-    }}
+        }
+    }
 
     /// Possibly update with passed `var` and return current symbolic expression at arrays index
     pub fn heap_access_array(
@@ -189,15 +195,15 @@ impl<'a> SymMemory {
         var: Option<SymExpression>,
     ) -> Result<SymExpression, Error> {
         // substitute expr and simplify
-        let subt_index = SymExpression::new(self, index);
+        let subt_index = SymExpression::new(FxHashMap::default(), self, index);
 
         //get immutable length(immutable)
         let mut length = self.heap_get_array(arr_name).2.clone();
 
         // make length owned and simplify if toggled
-        let simple_index = self.simplify_expr(subt_index.clone());
+        let simple_index = self.simplify(subt_index.clone());
         if simplify {
-            length = self.simplify_expr(length);
+            length = self.simplify(length);
         };
 
         // check if index is always < length
@@ -222,21 +228,21 @@ impl<'a> SymMemory {
             Some(var) => {
                 arr.insert(simple_index, var.clone());
                 Ok(var)
-            },
+            }
             None => match arr.get(&simple_index) {
                 Some(v) => Ok(v.clone()),
                 None => {
                     let fv_id = format!("{}[{:?}]", arr_name.clone(), simple_index);
                     let fv = match ty {
-                    Type::Int => SymExpression::FreeVariable(SymType::Int, fv_id),
-                    Type::Bool => SymExpression::FreeVariable(SymType::Bool, fv_id), 
-                    Type::ClassType(_) => todo!(),
-                    Type::ArrayType(_) => todo!(),
-                    _ => todo!(),
-                };
-                arr.insert(simple_index, fv.clone());
-                Ok(fv)
-            },
+                        Type::Int => SymExpression::FreeVariable(SymType::Int, fv_id),
+                        Type::Bool => SymExpression::FreeVariable(SymType::Bool, fv_id),
+                        Type::ClassType(_) => todo!(),
+                        Type::ArrayType(_) => todo!(),
+                        _ => todo!(),
+                    };
+                    arr.insert(simple_index, fv.clone());
+                    Ok(fv)
+                }
             },
         }
     }
@@ -262,31 +268,18 @@ impl<'a> SymMemory {
                 Member::Field((ty, field)) => match ty {
                     Type::Int => {
                         let field_name = format!("{}.{}", &r.to_string()[0..6], field);
+
                         fields.insert(
                             field.clone(),
-                            (
-                                Type::Int,
-                                SymExpression::Int(SymValue::Expr(SymExpression::new(
-                                    self,
-                                    Expression::FreeVariable(Type::Int, field_name),
-                                ))),
-                            ),
+                            SymExpression::FreeVariable(SymType::Int, field_name),
                         );
                     }
                     Type::Bool => {
                         let field_name = format!("{}.{}", &r.to_string()[0..6], field);
-                        (
-                            Type::Bool,
-                            fields.insert(
-                                field.clone(),
-                                (
-                                    Type::Bool,
-                                    SymExpression::Bool(SymValue::Expr(SymExpression::new(
-                                        self,
-                                        Expression::FreeVariable(Type::Bool, field_name),
-                                    ))),
-                                ),
-                            ),
+
+                        fields.insert(
+                            field.clone(),
+                            SymExpression::FreeVariable(SymType::Bool, field_name),
                         );
                     }
                     Type::ClassType(class) => {
@@ -296,13 +289,7 @@ impl<'a> SymMemory {
                             None,
                             ReferenceValue::UninitializedObj((class.clone(), members.clone())),
                         );
-                        fields.insert(
-                            field.clone(),
-                            (
-                                Type::ClassType(class.to_string()),
-                                SymExpression::Ref((ty, r)),
-                            ),
-                        );
+                        fields.insert(field.clone(), SymExpression::Reference(ty, r));
                     }
                     Type::Void => panic_with_diagnostics(
                         &format!("Type of {}.{} can't be void", class, field),
@@ -322,227 +309,194 @@ impl<'a> SymMemory {
     }
 
     /// front end simplifier
-    pub fn simplify_expr(&self, expr: SymExpression) -> SymExpression {
-        // map closure with sym_memory over expression
-        let partial_simplify = |expr| simplify(self, expr);
-        return expr.map(partial_simplify);
-
-        fn simplify(sym_memory: &SymMemory, expr: Expression) -> Expression {
-            match expr {
-                Expression::And(l_expr, r_expr) => {
-                    match (simplify(sym_memory, *l_expr), simplify(sym_memory, *r_expr)) {
-                        (Expression::Literal(Literal::Boolean(false)), _) => {
-                            Expression::Literal(Literal::Boolean(false))
-                        }
-                        (_, Expression::Literal(Literal::Boolean(false))) => {
-                            Expression::Literal(Literal::Boolean(false))
-                        }
-                        (
-                            Expression::Literal(Literal::Boolean(true)),
-                            Expression::Literal(Literal::Boolean(true)),
-                        ) => Expression::Literal(Literal::Boolean(true)),
-                        (l_simple, r_simple) => {
-                            Expression::And(Box::new(l_simple), Box::new(r_simple))
-                        }
+    pub fn simplify(&self, expr: SymExpression) -> SymExpression {
+        match expr {
+            SymExpression::And(l_expr, r_expr) => {
+                match (self.simplify(*l_expr), self.simplify(*r_expr)) {
+                    (SymExpression::Literal(Literal::Boolean(false)), _) => {
+                        SymExpression::Literal(Literal::Boolean(false))
                     }
+                    (_, SymExpression::Literal(Literal::Boolean(false))) => {
+                        SymExpression::Literal(Literal::Boolean(false))
+                    }
+                    (
+                        SymExpression::Literal(Literal::Boolean(true)),
+                        SymExpression::Literal(Literal::Boolean(true)),
+                    ) => SymExpression::Literal(Literal::Boolean(true)),
+                    (l_simple, r_simple) => SymExpression::And(Box::new(l_simple), Box::new(r_simple)),
                 }
-                Expression::Or(l_expr, r_expr) => {
-                    match (simplify(sym_memory, *l_expr), simplify(sym_memory, *r_expr)) {
-                        (Expression::Literal(Literal::Boolean(true)), _) => {
-                            Expression::Literal(Literal::Boolean(true))
-                        }
-                        (_, Expression::Literal(Literal::Boolean(true))) => {
-                            Expression::Literal(Literal::Boolean(true))
-                        }
-                        (l_simple, r_simple) => {
-                            Expression::Or(Box::new(l_simple), Box::new(r_simple))
-                        }
-                    }
-                }
-                Expression::Implies(l_expr, r_expr) => {
-                    match (simplify(sym_memory, *l_expr), simplify(sym_memory, *r_expr)) {
-                        (Expression::Literal(Literal::Boolean(false)), _) => {
-                            Expression::Literal(Literal::Boolean(true))
-                        }
-                        (_, Expression::Literal(Literal::Boolean(true))) => {
-                            Expression::Literal(Literal::Boolean(true))
-                        }
-                        (
-                            Expression::Literal(Literal::Boolean(_)),
-                            Expression::Literal(Literal::Boolean(_)),
-                        ) => Expression::Literal(Literal::Boolean(false)),
-                        (l_simple, r_simple) => {
-                            Expression::Implies(Box::new(l_simple), Box::new(r_simple))
-                        }
-                    }
-                }
-                Expression::EQ(l_expr, r_expr) => {
-                    match (simplify(sym_memory, *l_expr), simplify(sym_memory, *r_expr)) {
-                        (Expression::Literal(l_lit), Expression::Literal(r_lit)) => {
-                            Expression::Literal(Literal::Boolean(l_lit == r_lit))
-                        }
-                        (l_simple, r_simple) => {
-                            Expression::EQ(Box::new(l_simple), Box::new(r_simple))
-                        }
-                    }
-                }
-                Expression::NE(l_expr, r_expr) => {
-                    match (simplify(sym_memory, *l_expr), simplify(sym_memory, *r_expr)) {
-                        (Expression::Literal(l_lit), Expression::Literal(r_lit)) => {
-                            Expression::Literal(Literal::Boolean(l_lit != r_lit))
-                        }
-                        (l_simple, r_simple) => {
-                            Expression::NE(Box::new(l_simple), Box::new(r_simple))
-                        }
-                    }
-                }
-                Expression::LT(l_expr, r_expr) => {
-                    match (simplify(sym_memory, *l_expr), simplify(sym_memory, *r_expr)) {
-                        (
-                            Expression::Literal(Literal::Integer(l_lit)),
-                            Expression::Literal(Literal::Integer(r_lit)),
-                        ) => Expression::Literal(Literal::Boolean(l_lit < r_lit)),
-                        (l_simple, r_simple) => {
-                            Expression::LT(Box::new(l_simple), Box::new(r_simple))
-                        }
-                    }
-                }
-                Expression::GT(l_expr, r_expr) => {
-                    match (simplify(sym_memory, *l_expr), simplify(sym_memory, *r_expr)) {
-                        (
-                            Expression::Literal(Literal::Integer(l_lit)),
-                            Expression::Literal(Literal::Integer(r_lit)),
-                        ) => Expression::Literal(Literal::Boolean(l_lit > r_lit)),
-                        (l_simple, r_simple) => {
-                            Expression::GT(Box::new(l_simple), Box::new(r_simple))
-                        }
-                    }
-                }
-                Expression::GEQ(l_expr, r_expr) => {
-                    match (simplify(sym_memory, *l_expr), simplify(sym_memory, *r_expr)) {
-                        (
-                            Expression::Literal(Literal::Integer(l_lit)),
-                            Expression::Literal(Literal::Integer(r_lit)),
-                        ) => Expression::Literal(Literal::Boolean(l_lit >= r_lit)),
-                        (l_simple, r_simple) => {
-                            Expression::GEQ(Box::new(l_simple), Box::new(r_simple))
-                        }
-                    }
-                }
-
-                Expression::LEQ(l_expr, r_expr) => {
-                    match (simplify(sym_memory, *l_expr), simplify(sym_memory, *r_expr)) {
-                        (
-                            Expression::Literal(Literal::Integer(l_lit)),
-                            Expression::Literal(Literal::Integer(r_lit)),
-                        ) => Expression::Literal(Literal::Boolean(l_lit <= r_lit)),
-                        (l_simple, r_simple) => {
-                            Expression::LEQ(Box::new(l_simple), Box::new(r_simple))
-                        }
-                    }
-                }
-
-                Expression::Plus(l_expr, r_expr) => {
-                    match (simplify(sym_memory, *l_expr), simplify(sym_memory, *r_expr)) {
-                        (
-                            Expression::Literal(Literal::Integer(l_lit)),
-                            Expression::Literal(Literal::Integer(r_lit)),
-                        ) => Expression::Literal(Literal::Integer(l_lit + r_lit)),
-                        (l_simple, r_simple) => {
-                            Expression::Plus(Box::new(l_simple), Box::new(r_simple))
-                        }
-                    }
-                }
-                Expression::Minus(l_expr, r_expr) => {
-                    match (simplify(sym_memory, *l_expr), simplify(sym_memory, *r_expr)) {
-                        (
-                            Expression::Literal(Literal::Integer(l_lit)),
-                            Expression::Literal(Literal::Integer(r_lit)),
-                        ) => Expression::Literal(Literal::Integer(l_lit - r_lit)),
-                        (l_simple, r_simple) => {
-                            Expression::Minus(Box::new(l_simple), Box::new(r_simple))
-                        }
-                    }
-                }
-                Expression::Multiply(l_expr, r_expr) => {
-                    match (simplify(sym_memory, *l_expr), simplify(sym_memory, *r_expr)) {
-                        (
-                            Expression::Literal(Literal::Integer(l_lit)),
-                            Expression::Literal(Literal::Integer(r_lit)),
-                        ) => Expression::Literal(Literal::Integer(l_lit * r_lit)),
-                        (l_simple, r_simple) => {
-                            Expression::Multiply(Box::new(l_simple), Box::new(r_simple))
-                        }
-                    }
-                }
-                Expression::Divide(l_expr, r_expr) => {
-                    match (simplify(sym_memory, *l_expr), simplify(sym_memory, *r_expr)) {
-                        (
-                            Expression::Literal(Literal::Integer(l_lit)),
-                            Expression::Literal(Literal::Integer(r_lit)),
-                        ) => Expression::Literal(Literal::Integer(l_lit / r_lit)),
-                        (l_simple, r_simple) => {
-                            Expression::Divide(Box::new(l_simple), Box::new(r_simple))
-                        }
-                    }
-                }
-                Expression::Mod(l_expr, r_expr) => {
-                    match (simplify(sym_memory, *l_expr), simplify(sym_memory, *r_expr)) {
-                        (
-                            Expression::Literal(Literal::Integer(l_lit)),
-                            Expression::Literal(Literal::Integer(r_lit)),
-                        ) => Expression::Literal(Literal::Integer(l_lit % r_lit)),
-                        (l_simple, r_simple) => {
-                            Expression::Mod(Box::new(l_simple), Box::new(r_simple))
-                        }
-                    }
-                }
-                Expression::Not(expr) => match simplify(sym_memory, *expr) {
-                    Expression::Literal(Literal::Boolean(b)) => {
-                        Expression::Literal(Literal::Boolean(!b))
-                    }
-                    simple_expr => Expression::Not(Box::new(simple_expr)),
-                },
-                Expression::Literal(_) => expr,
-                Expression::Identifier(id) => match sym_memory.stack_get(&id) {
-                    Some(SymExpression::Bool(SymValue::Expr(expr))) => {
-                        simplify(sym_memory, expr.get().clone())
-                    }
-                    Some(SymExpression::Int(SymValue::Expr(expr))) => {
-                        simplify(sym_memory, expr.get().clone())
-                    }
-                    _ => todo!(),
-                },
-                Expression::FreeVariable(_, _) => expr,
-                otherwise => panic_with_diagnostics(
-                    &format!("{:?} is not yet implemented", otherwise),
-                    &sym_memory,
-                ),
             }
+            SymExpression::Or(l_expr, r_expr) => {
+                match (self.simplify(*l_expr), self.simplify(*r_expr)) {
+                    (SymExpression::Literal(Literal::Boolean(true)), _) => {
+                        SymExpression::Literal(Literal::Boolean(true))
+                    }
+                    (_, SymExpression::Literal(Literal::Boolean(true))) => {
+                        SymExpression::Literal(Literal::Boolean(true))
+                    }
+                    (l_simple, r_simple) => SymExpression::Or(Box::new(l_simple), Box::new(r_simple)),
+                }
+            }
+            SymExpression::Implies(l_expr, r_expr) => {
+                match (self.simplify(*l_expr), self.simplify(*r_expr)) {
+                    (SymExpression::Literal(Literal::Boolean(false)), _) => {
+                        SymExpression::Literal(Literal::Boolean(true))
+                    }
+                    (_, SymExpression::Literal(Literal::Boolean(true))) => {
+                        SymExpression::Literal(Literal::Boolean(true))
+                    }
+                    (
+                        SymExpression::Literal(Literal::Boolean(_)),
+                        SymExpression::Literal(Literal::Boolean(_)),
+                    ) => SymExpression::Literal(Literal::Boolean(false)),
+                    (l_simple, r_simple) => {
+                        SymExpression::Implies(Box::new(l_simple), Box::new(r_simple))
+                    }
+                }
+            }
+            SymExpression::EQ(l_expr, r_expr) => {
+                match (self.simplify(*l_expr), self.simplify(*r_expr)) {
+                    (SymExpression::Literal(l_lit), SymExpression::Literal(r_lit)) => {
+                        SymExpression::Literal(Literal::Boolean(l_lit == r_lit))
+                    }
+                    (l_simple, r_simple) => SymExpression::EQ(Box::new(l_simple), Box::new(r_simple)),
+                }
+            }
+            SymExpression::NE(l_expr, r_expr) => {
+                match (self.simplify(*l_expr), self.simplify(*r_expr)) {
+                    (SymExpression::Literal(l_lit), SymExpression::Literal(r_lit)) => {
+                        SymExpression::Literal(Literal::Boolean(l_lit != r_lit))
+                    }
+                    (l_simple, r_simple) => SymExpression::NE(Box::new(l_simple), Box::new(r_simple)),
+                }
+            }
+            SymExpression::LT(l_expr, r_expr) => {
+                match (self.simplify(*l_expr), self.simplify(*r_expr)) {
+                    (
+                        SymExpression::Literal(Literal::Integer(l_lit)),
+                        SymExpression::Literal(Literal::Integer(r_lit)),
+                    ) => SymExpression::Literal(Literal::Boolean(l_lit < r_lit)),
+                    (l_simple, r_simple) => SymExpression::LT(Box::new(l_simple), Box::new(r_simple)),
+                }
+            }
+            SymExpression::GT(l_expr, r_expr) => {
+                match (self.simplify(*l_expr), self.simplify(*r_expr)) {
+                    (
+                        SymExpression::Literal(Literal::Integer(l_lit)),
+                        SymExpression::Literal(Literal::Integer(r_lit)),
+                    ) => SymExpression::Literal(Literal::Boolean(l_lit > r_lit)),
+                    (l_simple, r_simple) => SymExpression::GT(Box::new(l_simple), Box::new(r_simple)),
+                }
+            }
+            SymExpression::GEQ(l_expr, r_expr) => {
+                match (self.simplify(*l_expr), self.simplify(*r_expr)) {
+                    (
+                        SymExpression::Literal(Literal::Integer(l_lit)),
+                        SymExpression::Literal(Literal::Integer(r_lit)),
+                    ) => SymExpression::Literal(Literal::Boolean(l_lit >= r_lit)),
+                    (l_simple, r_simple) => SymExpression::GEQ(Box::new(l_simple), Box::new(r_simple)),
+                }
+            }
+
+            SymExpression::LEQ(l_expr, r_expr) => {
+                match (self.simplify(*l_expr), self.simplify(*r_expr)) {
+                    (
+                        SymExpression::Literal(Literal::Integer(l_lit)),
+                        SymExpression::Literal(Literal::Integer(r_lit)),
+                    ) => SymExpression::Literal(Literal::Boolean(l_lit <= r_lit)),
+                    (l_simple, r_simple) => SymExpression::LEQ(Box::new(l_simple), Box::new(r_simple)),
+                }
+            }
+
+            SymExpression::Plus(l_expr, r_expr) => {
+                match (self.simplify(*l_expr), self.simplify(*r_expr)) {
+                    (
+                        SymExpression::Literal(Literal::Integer(l_lit)),
+                        SymExpression::Literal(Literal::Integer(r_lit)),
+                    ) => SymExpression::Literal(Literal::Integer(l_lit + r_lit)),
+                    (l_simple, r_simple) => {
+                        SymExpression::Plus(Box::new(l_simple), Box::new(r_simple))
+                    }
+                }
+            }
+            SymExpression::Minus(l_expr, r_expr) => {
+                match (self.simplify(*l_expr), self.simplify(*r_expr)) {
+                    (
+                        SymExpression::Literal(Literal::Integer(l_lit)),
+                        SymExpression::Literal(Literal::Integer(r_lit)),
+                    ) => SymExpression::Literal(Literal::Integer(l_lit - r_lit)),
+                    (l_simple, r_simple) => {
+                        SymExpression::Minus(Box::new(l_simple), Box::new(r_simple))
+                    }
+                }
+            }
+            SymExpression::Multiply(l_expr, r_expr) => {
+                match (self.simplify(*l_expr), self.simplify(*r_expr)) {
+                    (
+                        SymExpression::Literal(Literal::Integer(l_lit)),
+                        SymExpression::Literal(Literal::Integer(r_lit)),
+                    ) => SymExpression::Literal(Literal::Integer(l_lit * r_lit)),
+                    (l_simple, r_simple) => {
+                        SymExpression::Multiply(Box::new(l_simple), Box::new(r_simple))
+                    }
+                }
+            }
+            SymExpression::Divide(l_expr, r_expr) => {
+                match (self.simplify(*l_expr), self.simplify(*r_expr)) {
+                    (
+                        SymExpression::Literal(Literal::Integer(l_lit)),
+                        SymExpression::Literal(Literal::Integer(r_lit)),
+                    ) => SymExpression::Literal(Literal::Integer(l_lit / r_lit)),
+                    (l_simple, r_simple) => {
+                        SymExpression::Divide(Box::new(l_simple), Box::new(r_simple))
+                    }
+                }
+            }
+            SymExpression::Mod(l_expr, r_expr) => {
+                match (self.simplify(*l_expr), self.simplify(*r_expr)) {
+                    (
+                        SymExpression::Literal(Literal::Integer(l_lit)),
+                        SymExpression::Literal(Literal::Integer(r_lit)),
+                    ) => SymExpression::Literal(Literal::Integer(l_lit % r_lit)),
+                    (l_simple, r_simple) => SymExpression::Mod(Box::new(l_simple), Box::new(r_simple)),
+                }
+            }
+            SymExpression::Not(expr) => match self.simplify(*expr) {
+                SymExpression::Literal(Literal::Boolean(b)) => {
+                    SymExpression::Literal(Literal::Boolean(!b))
+                }
+                simple_expr => SymExpression::Not(Box::new(simple_expr)),
+            },
+            SymExpression::Literal(_) => expr,
+            SymExpression::FreeVariable(_, _) => expr,
+            SymExpression::Reference(_ , _) => expr,
+            otherwise => panic_with_diagnostics(
+                &format!("{:?} is not yet implemented", otherwise),
+                &self,
+            ),
         }
     }
 }
 
 impl fmt::Debug for ReferenceValue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-
-
         match self {
             ReferenceValue::Object((ty, fields)) => {
                 let mut formated_obj = format!("{}", ty);
-                for (field_name, (_, expr)) in fields{
-                    formated_obj.push_str(&format!("\n                .{} := {:?}", field_name, expr))
+                for (field_name, expr) in fields {
+                    formated_obj
+                        .push_str(&format!("\n                .{} := {:?}", field_name, expr))
                 }
                 write!(f, "{}", formated_obj)
-            },
+            }
             ReferenceValue::Array((ty, entries, len)) => {
                 let mut formated_obj = format!("{:?}[] with length {:?}", ty, len);
-                for (index, value) in entries{
-                    
-                    formated_obj.push_str(&format!("\n                [{:?}] := {:?}", index, value))
+                for (index, value) in entries {
+                    formated_obj
+                        .push_str(&format!("\n                [{:?}] := {:?}", index, value))
                 }
                 write!(f, "{}", formated_obj)
-            },
+            }
             ReferenceValue::UninitializedObj((class, _)) => write!(f, "Uninitialized {}", class),
         }
     }
@@ -569,11 +523,7 @@ impl fmt::Debug for SymMemory {
         }
         let mut formated_sym_heap = "".to_string();
         for (id, ref_val) in &self.heap {
-            formated_sym_heap.push_str(&format!(
-                "   {} := {:?}\n",
-                &id.to_string()[0..6],
-                ref_val
-            ))
+            formated_sym_heap.push_str(&format!("   {} := {:?}\n", &id.to_string()[0..6], ref_val))
         }
 
         write!(
