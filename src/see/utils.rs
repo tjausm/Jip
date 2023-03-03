@@ -23,7 +23,7 @@ pub fn parse_rhs<'a, 'b>(
 
         // generate reference, build arrayname from said reference, insert array into heap and return reference
         Rhs::NewArray(ty, len) => {
-            let subt_len = SymExpression::new(FxHashMap::default(), sym_memory, len.clone());
+            let subt_len = SymExpression::new(&FxHashMap::default(), sym_memory, len.clone());
             let arr = sym_memory.init_array(ty.clone(), subt_len);
             let r = sym_memory.heap_insert(None, arr);
             Ok(SymExpression::Reference(ty.clone(), r))
@@ -33,7 +33,7 @@ pub fn parse_rhs<'a, 'b>(
             sym_memory.heap_access_array(ctx, pc, simplify, arr_name, index.clone(), None)
         }
 
-        Rhs::Expression(expr) => Ok(SymExpression::new(FxHashMap::default(), &sym_memory, expr.clone())),
+        Rhs::Expression(expr) => Ok(SymExpression::new(&FxHashMap::default(), &sym_memory, expr.clone())),
         _ => panic_with_diagnostics(
             &format!(
                 "Rhs of the form {:?} should not be in the cfg",
@@ -107,7 +107,7 @@ pub fn params_to_vars<'ctx>(
                 variables.push((
                     arg_id,
                     SymExpression::new(
-                        FxHashMap::default(),
+                        &FxHashMap::default(),
                         &sym_memory,
                         expr.clone(),
                     ),
@@ -142,7 +142,7 @@ pub fn assert(
     pc: &mut PathConstraints,
     diagnostics: &mut Diagnostics,
 ) -> Result<(), Error> {
-    let subt_assertion = SymExpression::new(FxHashMap::default(), &sym_memory, assertion.clone());
+    let subt_assertion = SymExpression::new(&FxHashMap::default(), &sym_memory, assertion.clone());
 
     // add (simplified) assertion
     if simplify {
@@ -182,7 +182,7 @@ pub fn assume(
     pc: &mut PathConstraints,
     diagnostics: &mut Diagnostics,
 ) -> bool {
-    let subt_assumption = SymExpression::new(FxHashMap::default(), &sym_memory, assumption.clone());
+    let subt_assumption = SymExpression::new(&FxHashMap::default(), &sym_memory, assumption.clone());
     
     if simplify {
         let simple_assumption = sym_memory.simplify(subt_assumption.clone());

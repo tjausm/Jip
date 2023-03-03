@@ -246,7 +246,7 @@ fn verify_program(
 
                         // add return value to stack
                         sym_memory
-                            .stack_insert(retval_id, SymExpression::new(FxHashMap::default(), &sym_memory, expr.clone()));
+                            .stack_insert(retval_id, SymExpression::new(&FxHashMap::default(), &sym_memory, expr.clone()));
                     }
                     _ => (),
                 }

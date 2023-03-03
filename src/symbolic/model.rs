@@ -111,80 +111,93 @@ pub enum SymExpression {
 impl SymExpression {
     /// destructs forall and exists quantifiers and then
     /// generates a substituted expression from it
-    pub fn new(substitutions : FxHashMap<Identifier, SymExpression>, sym_memory: &SymMemory, expr: Expression) -> Self {
+    pub fn new(
+        substitutions: &FxHashMap<Identifier, SymExpression>,
+        sym_memory: &SymMemory,
+        expr: Expression,
+    ) -> Self {
         match expr {
-            Expression::Forall(arr_name, index, value, expr) => {
-                destruct_forall(sym_memory.heap_get_array(&arr_name), &index, &value, &expr, sym_memory)
-            }
+            Expression::Forall(arr_name, index, value, expr) => destruct_forall(
+                sym_memory.heap_get_array(&arr_name),
+                &index,
+                &value,
+                &expr,
+                sym_memory,
+            ),
             Expression::Exists(arr_name, index, value, expr) => todo!(),
-            Expression::Identifier(id) => match (substitutions.get(&id), sym_memory.stack_get(&id)) {
+            Expression::Identifier(id) => match (substitutions.get(&id), sym_memory.stack_get(&id))
+            {
                 (Some(sym_expr), _) => sym_expr.clone(),
                 (_, Some(sym_expr)) => sym_expr,
-                _ => panic_with_diagnostics(&format!("{} was not declared", id), sym_memory),
+                _ => panic_with_diagnostics(&format!("{} was not declared", id), &(substitutions, sym_memory)),
             },
             Expression::ArrLength(arr_name) => sym_memory.heap_get_arr_length(&arr_name),
             Expression::Implies(l, r) => SymExpression::Implies(
-                Box::new(SymExpression::new(FxHashMap::default(), sym_memory, *l)),
-                Box::new(SymExpression::new(FxHashMap::default(), sym_memory, *r)),
+                Box::new(SymExpression::new(substitutions, sym_memory, *l)),
+                Box::new(SymExpression::new(substitutions, sym_memory, *r)),
             ),
             Expression::And(l, r) => SymExpression::And(
-                Box::new(SymExpression::new(FxHashMap::default(), sym_memory, *l)),
-                Box::new(SymExpression::new(FxHashMap::default(), sym_memory, *r)),
+                Box::new(SymExpression::new(substitutions, sym_memory, *l)),
+                Box::new(SymExpression::new(substitutions, sym_memory, *r)),
             ),
             Expression::Or(l, r) => SymExpression::Or(
-                Box::new(SymExpression::new(FxHashMap::default(), sym_memory, *l)),
-                Box::new(SymExpression::new(FxHashMap::default(), sym_memory, *r)),
+                Box::new(SymExpression::new(substitutions, sym_memory, *l)),
+                Box::new(SymExpression::new(substitutions, sym_memory, *r)),
             ),
             Expression::EQ(l, r) => SymExpression::EQ(
-                Box::new(SymExpression::new(FxHashMap::default(), sym_memory, *l)),
-                Box::new(SymExpression::new(FxHashMap::default(), sym_memory, *r)),
+                Box::new(SymExpression::new(substitutions, sym_memory, *l)),
+                Box::new(SymExpression::new(substitutions, sym_memory, *r)),
             ),
             Expression::NE(l, r) => SymExpression::NE(
-                Box::new(SymExpression::new(FxHashMap::default(), sym_memory, *l)),
-                Box::new(SymExpression::new(FxHashMap::default(), sym_memory, *r)),
+                Box::new(SymExpression::new(substitutions, sym_memory, *l)),
+                Box::new(SymExpression::new(substitutions, sym_memory, *r)),
             ),
             Expression::LT(l, r) => SymExpression::LT(
-                Box::new(SymExpression::new(FxHashMap::default(), sym_memory, *l)),
-                Box::new(SymExpression::new(FxHashMap::default(), sym_memory, *r)),
+                Box::new(SymExpression::new(substitutions, sym_memory, *l)),
+                Box::new(SymExpression::new(substitutions, sym_memory, *r)),
             ),
             Expression::GT(l, r) => SymExpression::GT(
-                Box::new(SymExpression::new(FxHashMap::default(), sym_memory, *l)),
-                Box::new(SymExpression::new(FxHashMap::default(), sym_memory, *r)),
+                Box::new(SymExpression::new(substitutions, sym_memory, *l)),
+                Box::new(SymExpression::new(substitutions, sym_memory, *r)),
             ),
             Expression::GEQ(l, r) => SymExpression::GEQ(
-                Box::new(SymExpression::new(FxHashMap::default(), sym_memory, *l)),
-                Box::new(SymExpression::new(FxHashMap::default(), sym_memory, *r)),
+                Box::new(SymExpression::new(substitutions, sym_memory, *l)),
+                Box::new(SymExpression::new(substitutions, sym_memory, *r)),
             ),
             Expression::LEQ(l, r) => SymExpression::LEQ(
-                Box::new(SymExpression::new(FxHashMap::default(), sym_memory, *l)),
-                Box::new(SymExpression::new(FxHashMap::default(), sym_memory, *r)),
+                Box::new(SymExpression::new(substitutions, sym_memory, *l)),
+                Box::new(SymExpression::new(substitutions, sym_memory, *r)),
             ),
             Expression::Plus(l, r) => SymExpression::Plus(
-                Box::new(SymExpression::new(FxHashMap::default(), sym_memory, *l)),
-                Box::new(SymExpression::new(FxHashMap::default(), sym_memory, *r)),
+                Box::new(SymExpression::new(substitutions, sym_memory, *l)),
+                Box::new(SymExpression::new(substitutions, sym_memory, *r)),
             ),
             Expression::Minus(l, r) => SymExpression::Minus(
-                Box::new(SymExpression::new(FxHashMap::default(), sym_memory, *l)),
-                Box::new(SymExpression::new(FxHashMap::default(), sym_memory, *r)),
+                Box::new(SymExpression::new(substitutions, sym_memory, *l)),
+                Box::new(SymExpression::new(substitutions, sym_memory, *r)),
             ),
             Expression::Multiply(l, r) => SymExpression::Multiply(
-                Box::new(SymExpression::new(FxHashMap::default(), sym_memory, *l)),
-                Box::new(SymExpression::new(FxHashMap::default(), sym_memory, *r)),
+                Box::new(SymExpression::new(substitutions, sym_memory, *l)),
+                Box::new(SymExpression::new(substitutions, sym_memory, *r)),
             ),
             Expression::Divide(l, r) => SymExpression::Divide(
-                Box::new(SymExpression::new(FxHashMap::default(), sym_memory, *l)),
-                Box::new(SymExpression::new(FxHashMap::default(), sym_memory, *r)),
+                Box::new(SymExpression::new(substitutions, sym_memory, *l)),
+                Box::new(SymExpression::new(substitutions, sym_memory, *r)),
             ),
             Expression::Mod(l, r) => SymExpression::Mod(
-                Box::new(SymExpression::new(FxHashMap::default(), sym_memory, *l)),
-                Box::new(SymExpression::new(FxHashMap::default(), sym_memory, *r)),
+                Box::new(SymExpression::new(substitutions, sym_memory, *l)),
+                Box::new(SymExpression::new(substitutions, sym_memory, *r)),
             ),
-            Expression::Negative(expr) => {
-                SymExpression::Negative(Box::new(SymExpression::new(FxHashMap::default(), sym_memory, *expr)))
-            }
-            Expression::Not(expr) => {
-                SymExpression::Not(Box::new(SymExpression::new(FxHashMap::default(), sym_memory, *expr)))
-            }
+            Expression::Negative(expr) => SymExpression::Negative(Box::new(SymExpression::new(
+                substitutions,
+                sym_memory,
+                *expr,
+            ))),
+            Expression::Not(expr) => SymExpression::Not(Box::new(SymExpression::new(
+                substitutions,
+                sym_memory,
+                *expr,
+            ))),
             Expression::Literal(lit) => SymExpression::Literal(lit),
         }
     }
@@ -218,14 +231,18 @@ pub enum ReferenceValue {
 /// return c && e
 /// ```
 fn destruct_forall<'a>(
-    (_, arr, len): &Array,
+    (ty, arr, len): &Array,
     index: &Identifier,
     value: &Identifier,
-    expr: &Expression,
-    sym_memory: &SymMemory
+    inner_expr: &Expression,
+    sym_memory: &SymMemory,
 ) -> SymExpression {
     let index_id = SymExpression::FreeVariable(SymType::Int, index.clone());
-
+    let sym_ty = match ty {
+        Type::Int => SymType::Int,
+        Type::Bool => SymType::Bool,
+        _ => SymType::Ref(ty.clone()),
+    };
     // foreach (i, v) pair in arr:
     // - C = for each[i |-> index, v |-> value]expr && C
     // - O = index != i && O
@@ -240,7 +257,7 @@ fn destruct_forall<'a>(
 
         c = SymExpression::And(
             Box::new(c),
-            Box::new(SymExpression::new(mapping, sym_memory, expr.clone())),
+            Box::new(SymExpression::new(&mapping, sym_memory, inner_expr.clone())),
         );
 
         let ne = SymExpression::NE(Box::new(index_id.clone()), Box::new(i.clone()));
@@ -253,9 +270,22 @@ fn destruct_forall<'a>(
         Box::new(SymExpression::Literal(Literal::Integer(0))),
     );
     let i_lt_len = SymExpression::LT(Box::new(index_id.clone()), Box::new(len.clone()));
-    let e = SymExpression::And(
-        Box::new(i_geq_0),
-        Box::new(SymExpression::And(Box::new(o), Box::new(i_lt_len))),
+
+    // build inner expression with index and value as freevars
+    let mut mapping = FxHashMap::default();
+    mapping.insert(
+        index.clone(),
+        SymExpression::FreeVariable(SymType::Int, index.clone()),
+    );
+    mapping.insert(value.clone(), SymExpression::FreeVariable(sym_ty, value.clone()));
+    let inner_expr = SymExpression::new(&mapping, sym_memory, inner_expr.clone());
+
+    let e = SymExpression::Implies(
+        Box::new(SymExpression::And(
+            Box::new(i_geq_0),
+            Box::new(SymExpression::And(Box::new(o), Box::new(i_lt_len))),
+        )),
+        Box::new(inner_expr),
     );
 
     SymExpression::And(Box::new(c), Box::new(e))
@@ -346,7 +376,7 @@ impl Hash for SymExpression {
             }
             SymExpression::Reference(ty, r) => {
                 HashExpression::Reference(ty.clone(), r.clone()).hash(state)
-            },
+            }
             SymExpression::Literal(lit) => lit.hash(state),
             _ => panic_with_diagnostics(&format!("Cannot hash expression {:?}", self), &()),
         }
@@ -387,12 +417,13 @@ impl fmt::Debug for SymExpression {
             SymExpression::Not(expr) => write!(f, "!{:?}", expr),
             SymExpression::Literal(Literal::Boolean(val)) => write!(f, "{:?}", val),
             SymExpression::Literal(Literal::Integer(val)) => write!(f, "{:?}", val),
-            SymExpression::FreeVariable(_, fv) => write!(f, "{:?}", fv),
+            SymExpression::FreeVariable(_, fv) => write!(f, "{}", fv),
             SymExpression::Reference(_, r) => {
                 let mut formated = "".to_string();
-                formated.push_str( &r.clone().to_string()[0..4]);
-                write!(f, "Ref({})", formated)},
-            SymExpression::Uninitialized =>write!(f, "Unitialized)"),
+                formated.push_str(&r.clone().to_string()[0..4]);
+                write!(f, "Ref({})", formated)
+            }
+            SymExpression::Uninitialized => write!(f, "Unitialized)"),
         }
     }
 }
@@ -407,7 +438,7 @@ mod tests {
         let expr = parser::VerificationExpressionParser::new()
             .parse(i)
             .unwrap();
-        SymExpression::new(FxHashMap::default(), &SymMemory::new(), expr)
+        SymExpression::new(&FxHashMap::default(), &SymMemory::new(), expr)
     }
 
     #[test]

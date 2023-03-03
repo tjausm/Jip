@@ -55,6 +55,7 @@ pub fn verify_constraints<'a>(
 ) -> Result<(), Error> {
     //transform too z3 boolean
     let constraint_expr = path_constraints.combine_over_true();
+
     let constraints = expr_to_bool(&ctx, &constraint_expr);
 
     match check_ast(ctx, &constraints) {
