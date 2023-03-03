@@ -84,7 +84,7 @@ pub enum SymType {
     Ref(Type),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub enum SymExpression {
     Implies(Box<SymExpression>, Box<SymExpression>),
     And(Box<SymExpression>, Box<SymExpression>),
@@ -366,11 +366,36 @@ impl fmt::Debug for PathConstraints {
     }
 }
 
-// impl fmt::Debug for SymExpression {
-//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-//         match &
-//     }
-// }
+impl fmt::Debug for SymExpression {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SymExpression::Implies(l_expr, r_expr) => write!(f, "({:?} ==> {:?})", l_expr, r_expr),
+            SymExpression::And(l_expr, r_expr) => write!(f, "({:?} && {:?})", l_expr, r_expr),
+            SymExpression::Or(l_expr, r_expr) => write!(f, "({:?} || {:?})", l_expr, r_expr),
+            SymExpression::EQ(l_expr, r_expr) => write!(f, "({:?} == {:?})", l_expr, r_expr),
+            SymExpression::NE(l_expr, r_expr) => write!(f, "({:?} != {:?})", l_expr, r_expr),
+            SymExpression::LT(l_expr, r_expr) => write!(f, "({:?} < {:?})", l_expr, r_expr),
+            SymExpression::GT(l_expr, r_expr) => write!(f, "({:?} > {:?})", l_expr, r_expr),
+            SymExpression::GEQ(l_expr, r_expr) => write!(f, "({:?} >= {:?})", l_expr, r_expr),
+            SymExpression::LEQ(l_expr, r_expr) => write!(f, "({:?} <= {:?})", l_expr, r_expr),
+            SymExpression::Plus(l_expr, r_expr) => write!(f, "({:?} + {:?})", l_expr, r_expr),
+            SymExpression::Minus(l_expr, r_expr) => write!(f, "({:?} - {:?})", l_expr, r_expr),
+            SymExpression::Multiply(l_expr, r_expr) => write!(f, "({:?} * {:?})", l_expr, r_expr),
+            SymExpression::Divide(l_expr, r_expr) => write!(f, "({:?} / {:?})", l_expr, r_expr),
+            SymExpression::Mod(l_expr, r_expr) => write!(f, "({:?} % {:?})", l_expr, r_expr),
+            SymExpression::Negative(expr) => write!(f, "-{:?}", expr),
+            SymExpression::Not(expr) => write!(f, "!{:?}", expr),
+            SymExpression::Literal(Literal::Boolean(val)) => write!(f, "{:?}", val),
+            SymExpression::Literal(Literal::Integer(val)) => write!(f, "{:?}", val),
+            SymExpression::FreeVariable(_, fv) => write!(f, "{:?}", fv),
+            SymExpression::Reference(_, r) => {
+                let mut formated = "".to_string();
+                formated.push_str( &r.clone().to_string()[0..4]);
+                write!(f, "Ref({})", formated)},
+            SymExpression::Uninitialized =>write!(f, "Unitialized)"),
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
