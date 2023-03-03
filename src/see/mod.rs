@@ -16,8 +16,7 @@ use crate::shared::Config;
 use crate::shared::ExitCode;
 use crate::shared::{panic_with_diagnostics, Diagnostics, Error};
 use crate::symbolic::memory::SymMemory;
-use crate::symbolic::model::Substituted;
-use crate::symbolic::model::{PathConstraints, ReferenceValue, SymExpression, SymValue};
+use crate::symbolic::model::{PathConstraints, ReferenceValue, SymExpression, SymType};
 use crate::z3::build_ctx;
 use colored::Colorize;
 use petgraph::graph::NodeIndex;
@@ -72,7 +71,9 @@ fn print_result(r: Result<Diagnostics, Error>) -> (ExitCode, String) {
             }
             msg.push_str(&format!(
                 "{}\nPaths checked    {}\nZ3 invocations   {}",
-                "Program is correct".green().bold(), d.paths_explored, d.z3_invocations
+                "Program is correct".green().bold(),
+                d.paths_explored,
+                d.z3_invocations
             ));
             (ExitCode::Valid, msg)
         }
@@ -112,7 +113,7 @@ pub fn print_verification(
 /// prints the verbose debug info
 fn print_debug(node: &Node, sym_memory: &SymMemory, pc: &PathConstraints) {
     let print_node = format!("{:?}", node);
-    let print_pc = format!("Path constraints -> {:?}", pc.combine_over_true().get());
+    let print_pc = format!("Path constraints -> {:?}", pc.combine_over_true());
     let print_sym_memory = format!("{:?}", sym_memory);
 
     let dump_state = match node {
@@ -134,8 +135,7 @@ fn verify_program(
     config: Config,
     verbose: bool,
 ) -> Result<Diagnostics, Error> {
-
-    let prune_coefficient = f64::from(prune_ratio) /  f64::from(i8::MAX);
+    let prune_coefficient = f64::from(prune_ratio) / f64::from(i8::MAX);
     let prune_depth = (f64::from(d) - f64::from(d) * prune_coefficient) as i32;
 
     // init global z3 context
@@ -178,18 +178,18 @@ fn verify_program(
                         (Type::ArrayType(ty), id) => {
                             let arr = sym_memory.init_array(
                                 *ty.clone(),
-                                Substituted::mk_freevar(Type::Int, format!("#{}", id)),
+                                SymExpression::FreeVariable(SymType::Int, format!("#{}", id)),
                             );
                             let r = sym_memory.heap_insert(None, arr);
                             sym_memory
-                                .stack_insert(id, SymExpression::Ref((parameter.0.clone(), r)));
+                                .stack_insert(id, SymExpression::Reference(parameter.0.clone(), r));
                         }
                         (Type::ClassType(ty), id) => {
                             let class = prog.get_class(ty);
                             let r = sym_memory
                                 .heap_insert(None, ReferenceValue::UninitializedObj(class.clone()));
                             sym_memory
-                                .stack_insert(id, SymExpression::Ref((parameter.0.clone(), r)));
+                                .stack_insert(id, SymExpression::Reference(parameter.0.clone(), r));
                         }
                         (ty, id) => panic_with_diagnostics(
                             &format!("Can't call main with parameter {} of type {:?}", id, ty),
@@ -203,20 +203,26 @@ fn verify_program(
                 match stmt {
                     Statement::Declaration((ty, id)) => match ty {
                         Type::Int => {
-                            sym_memory
-                                .stack_insert(&id, SymExpression::Int(SymValue::Uninitialized));
+                            sym_memory.stack_insert(&id, SymExpression::Uninitialized);
                         }
                         Type::Bool => {
-                            sym_memory
-                                .stack_insert(&id, SymExpression::Bool(SymValue::Uninitialized));
+                            sym_memory.stack_insert(&id, SymExpression::Uninitialized);
                         }
                         ty => {
                             let r = Uuid::new_v4();
-                            sym_memory.stack_insert(&id, SymExpression::Ref((ty.clone(), r)))
+                            sym_memory.stack_insert(&id, SymExpression::Reference(ty.clone(), r))
                         }
                     },
                     Statement::Assume(assumption) => {
-                        if !assume(&ctx, config.simplify, d > prune_depth, &mut sym_memory, assumption, &mut pc, &mut diagnostics) {
+                        if !assume(
+                            &ctx,
+                            config.simplify,
+                            d > prune_depth,
+                            &mut sym_memory,
+                            assumption,
+                            &mut pc,
+                            &mut diagnostics,
+                        ) {
                             continue;
                         }
                     }
@@ -237,50 +243,9 @@ fn verify_program(
                             continue;
                         };
 
-                        // evaluate return expression with type of retval and add to stack
-                        match sym_memory.stack_get(retval_id) {
-                            Some(SymExpression::Ref(_)) => match expr {
-                                Expression::Identifier(id) => match sym_memory.stack_get(id) {
-                                    Some(SymExpression::Ref(r)) => {
-                                        sym_memory.stack_insert(retval_id, SymExpression::Ref(r))
-                                    }
-                                    Some(expr) => panic_with_diagnostics(
-                                        &format!("Can't return '{:?}' as a referencevalue", expr),
-                                        &sym_memory,
-                                    ),
-                                    None => panic_with_diagnostics(
-                                        &format!("{} is undeclared", id),
-                                        &sym_memory,
-                                    ),
-                                },
-                                _ => panic_with_diagnostics(
-                                    &format!("Can't return expression '{:?}'", expr),
-                                    &sym_memory,
-                                ),
-                            },
-                            Some(SymExpression::Bool(_)) => {
-                                sym_memory.stack_insert(
-                                    retval_id,
-                                    SymExpression::Int(SymValue::Expr(Substituted::new(
-                                        &sym_memory,
-                                        expr.clone(),
-                                    ))),
-                                );
-                            }
-                            Some(SymExpression::Int(_)) => {
-                                sym_memory.stack_insert(
-                                    retval_id,
-                                    SymExpression::Int(SymValue::Expr(Substituted::new(
-                                        &sym_memory,
-                                        expr.clone(),
-                                    ))),
-                                );
-                            }
-                            None => panic_with_diagnostics(
-                                &format!("retval is undeclared in expression 'return {:?}'", expr),
-                                &sym_memory,
-                            ),
-                        }
+                        // add return value to stack
+                        sym_memory
+                            .stack_insert(retval_id, SymExpression::new(&sym_memory, expr.clone()));
                     }
                     _ => (),
                 }
@@ -297,28 +262,6 @@ fn verify_program(
             for action in edge.weight() {
                 match action {
                     Action::EnterScope { to: scope } => sym_memory.stack_push(scope.clone()),
-                    Action::DeclareRetval { ty } => {
-                        // declare retval with correct type in new scope
-                        match ty {
-                            Type::Int => sym_memory.stack_insert(
-                                retval_id,
-                                SymExpression::Int(SymValue::Uninitialized),
-                            ),
-                            Type::Bool => sym_memory.stack_insert(
-                                retval_id,
-                                SymExpression::Bool(SymValue::Uninitialized),
-                            ),
-                            Type::ClassType(ty) => sym_memory.stack_insert(
-                                retval_id,
-                                SymExpression::Ref((Type::ClassType(ty.clone()), Uuid::nil())),
-                            ),
-                            Type::ArrayType(_) => sym_memory.stack_insert(
-                                retval_id,
-                                SymExpression::Ref((ty.clone(), Uuid::nil())),
-                            ),
-                            Type::Void => panic!("Cannot declare retval of type void"),
-                        }
-                    }
                     Action::AssignArgs { params, args } => {
                         let variables = params_to_vars(&mut sym_memory, &params, &args);
 
@@ -328,9 +271,8 @@ fn verify_program(
                     }
                     Action::DeclareThis { class, obj } => match obj {
                         Lhs::Identifier(id) => match sym_memory.stack_get(id) {
-                            Some(SymExpression::Ref(r)) => {
-                                sym_memory.stack_insert(this_id, SymExpression::Ref(r))
-                            }
+                            Some(SymExpression::Reference(Type::ClassType(lhs_class), r)) if class == &lhs_class => sym_memory.stack_insert(this_id, SymExpression::Reference(Type::ClassType(lhs_class), r)),
+                        
                             Some(_) => panic_with_diagnostics(
                                 &format!("{} is not of type {}", id, class),
                                 &sym_memory,
@@ -353,7 +295,7 @@ fn verify_program(
                         match lhs {
                             Lhs::Identifier(id) => {
                                 match sym_memory.stack_get( id) {
-                                    Some(SymExpression::Ref((_, r))) => {
+                                    Some(SymExpression::Reference(_, r)) => {
                                         // make an empty object
                                         let obj = sym_memory.init_object(r, class.clone());
                                         // insert into heap
@@ -414,7 +356,7 @@ fn verify_program(
                                         &mut sym_memory,
                                         assumption,
                                         &mut pc,
-                                        &mut diagnostics
+                                        &mut diagnostics,
                                     ) {
                                         continue;
                                     };
@@ -422,6 +364,7 @@ fn verify_program(
                             };
                         }
                     }
+                    _ => ()
                 }
             }
             let next = edge.target();

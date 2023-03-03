@@ -18,8 +18,8 @@ pub struct PathConstraints {
 
 #[derive(Clone)]
 pub enum PathConstraint {
-    Assert(Substituted),
-    Assume(Substituted),
+    Assert(SymExpression),
+    Assume(SymExpression),
 }
 
 impl Default for PathConstraints {
@@ -32,165 +32,178 @@ impl Default for PathConstraints {
 
 impl PathConstraints {
     /// combine constraints over true as follows: `assume(a), assert(b) -> a ==> b && true`
-    pub fn combine_over_true<'a>(&'a self) -> Substituted {
-        let mut constraints = Expression::Literal(Literal::Boolean(true));
+    pub fn combine_over_true<'a>(&'a self) -> SymExpression {
+        let mut constraints = SymExpression::Literal(Literal::Boolean(true));
 
         for constraint in self.constraints.iter().rev() {
             match constraint {
-                PathConstraint::Assert(Substituted { expr }) => {
-                    constraints = Expression::And(Box::new(expr.clone()), Box::new(constraints));
+                PathConstraint::Assert(expr) => {
+                    constraints = SymExpression::And(Box::new(expr.clone()), Box::new(constraints));
                 }
-                PathConstraint::Assume(Substituted { expr }) => {
+                PathConstraint::Assume(expr) => {
                     constraints =
-                        Expression::Implies(Box::new(expr.clone()), Box::new(constraints));
+                        SymExpression::Implies(Box::new(expr.clone()), Box::new(constraints));
                 }
             }
         }
-        return Substituted { expr: constraints };
+        return constraints;
     }
     /// combine constraints as a conjunction as follows: `assume(a), assert(b) -> a && b`
-    pub fn conjuct<'a>(&'a self) -> Substituted {
-        let mut constraints = Expression::Literal(Literal::Boolean(true));
+    pub fn conjuct<'a>(&'a self) -> SymExpression {
+        let mut constraints = SymExpression::Literal(Literal::Boolean(true));
 
         for constraint in self.constraints.iter().rev() {
             match constraint {
-                PathConstraint::Assert(Substituted { expr }) => {
-                    constraints = Expression::And(Box::new(expr.clone()), Box::new(constraints));
+                PathConstraint::Assert(expr) => {
+                    constraints = SymExpression::And(Box::new(expr.clone()), Box::new(constraints));
                 }
-                PathConstraint::Assume(Substituted { expr }) => {
-                    constraints = Expression::And(Box::new(expr.clone()), Box::new(constraints));
+                PathConstraint::Assume(expr ) => {
+                    constraints = SymExpression::And(Box::new(expr.clone()), Box::new(constraints));
                 }
             }
         }
-        return Substituted { expr: constraints };
+        return constraints;
     }
 
     /// adds a new constraint
-    pub fn push_assertion(&mut self, s: Substituted) {
+    pub fn push_assertion(&mut self, s: SymExpression) {
         self.constraints.push(PathConstraint::Assert(s));
     }
     /// adds a new constraint
-    pub fn push_assumption(&mut self, s: Substituted) {
+    pub fn push_assumption(&mut self, s: SymExpression) {
         self.constraints.push(PathConstraint::Assume(s));
-    }
-}
-
-/// containertype to indicate substitution of variables has already occured on expression
-#[derive(Clone, Hash, PartialEq, Eq)]
-pub struct Substituted {
-    expr: Expression,
-}
-
-impl Substituted {
-
-    /// destructs forall and exists quantifiers and then 
-    /// generates a substituted expression from it
-    pub fn new(sym_memory: &SymMemory, expr: Expression) -> Self {
-        let substitute = |expr| substitute_fnonce(sym_memory, expr);
-        let destruct_quantifier = |expr| destruct_quantifier_fnonce(sym_memory, expr);
-        
-        let expr_without_quantifiers = expr.apply_when(destruct_quantifier, is_quantifier);
-        return Substituted {
-            expr: expr_without_quantifiers.apply_when(substitute, is_identifier),
-        };
-
-        fn is_quantifier(expr: &Expression) -> bool {
-            match expr {
-                Expression::Forall(_, _, _, _) => true,
-                Expression::Exists(_, _, _, _) => true,
-                _ => false,
-            }
-        }
-
-        fn destruct_quantifier_fnonce(sym_memory: &SymMemory, expr: Expression) -> Expression {
-            let destruct_quantifier = |expr| destruct_quantifier_fnonce(sym_memory, expr);
-            match expr {
-                Expression::Forall(arr_name, index ,value ,expr ) => {
-                    let expr = expr.apply_when(destruct_quantifier, is_quantifier);
-                    destruct_forall(sym_memory.heap_get_array(&arr_name), &index, &value, &expr)
-                }
-                Expression::Exists(arr_name, index ,value ,expr ) => todo!(),
-                _ => expr
-            }
-
-        }
-
-        fn is_identifier(expr: &Expression) -> bool {
-            match expr {
-                Expression::Identifier(_) => true,
-                Expression::ArrLength(_) => true,
-                _ => false,
-            }
-        }
-
-        fn substitute_fnonce(sym_memory: &SymMemory, expr: Expression) -> Expression {
-            let substitute = |expr| substitute_fnonce(sym_memory, expr);
-
-            match expr {
-                Expression::Identifier(id) => match sym_memory.stack_get(&id) {
-                    Some(SymExpression::Bool(SymValue::Expr(Substituted { expr }))) => {
-                        expr.apply_when(substitute, is_identifier)
-                    }
-                    Some(SymExpression::Int(SymValue::Expr(Substituted { expr }))) => {
-                        expr.apply_when(substitute, is_identifier)
-                    }
-                    Some(SymExpression::Ref(r)) => Expression::Literal(Literal::Ref(r)),
-                    Some(sym_expr) => panic_with_diagnostics(
-                        &format!(
-                            "identifier {} with value {:?} can't be substituted",
-                            id, sym_expr
-                        ),
-                        sym_memory,
-                    ),
-                    None => panic_with_diagnostics(&format!("{} was not declared", id), sym_memory),
-                },
-                Expression::ArrLength(arr_name) => {
-                    sym_memory.heap_get_arr_length(&arr_name).get().clone()
-                }
-                _ => expr,
-            }
-        }
-    }
-
-    /// be cautious that `f` doesn't introduce unsubstitued values in the inner-expression
-    pub fn map<F>(self, mut f: F) -> Self
-    where
-        F: FnMut(Expression) -> Expression,
-    {
-        Substituted { expr: f(self.expr) }
-    }
-
-    pub fn get(&self) -> &Expression {
-        &self.expr
-    }
-
-    pub fn mk_freevar(ty: Type, name: Identifier) -> Substituted {
-        Substituted {
-            expr: Expression::FreeVariable(ty, name),
-        }
     }
 }
 
 pub type Reference = Uuid;
 
-#[derive(Clone)]
-pub enum SymValue {
-    Uninitialized,
-    Expr(Substituted),
+#[derive(Clone, Debug)]
+pub enum SymType {
+    Int,
+    Bool,
+    Ref(Type),
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum SymExpression {
-    Int(SymValue),
-    Bool(SymValue),
-    Ref((Type, Reference)),
+    Implies(Box<SymExpression>, Box<SymExpression>),
+    And(Box<SymExpression>, Box<SymExpression>),
+    Or(Box<SymExpression>, Box<SymExpression>),
+    EQ(Box<SymExpression>, Box<SymExpression>),
+    NE(Box<SymExpression>, Box<SymExpression>),
+    LT(Box<SymExpression>, Box<SymExpression>),
+    GT(Box<SymExpression>, Box<SymExpression>),
+    GEQ(Box<SymExpression>, Box<SymExpression>),
+    LEQ(Box<SymExpression>, Box<SymExpression>),
+    Plus(Box<SymExpression>, Box<SymExpression>),
+    Minus(Box<SymExpression>, Box<SymExpression>),
+    Multiply(Box<SymExpression>, Box<SymExpression>),
+    Divide(Box<SymExpression>, Box<SymExpression>),
+    Mod(Box<SymExpression>, Box<SymExpression>),
+    Negative(Box<SymExpression>),
+    Not(Box<SymExpression>),
+    Literal(Literal),
+    FreeVariable(SymType, Identifier),
+    Reference(Type, Reference),
+    Uninitialized,
 }
+
+
+impl SymExpression {
+    /// destructs forall and exists quantifiers and then
+    /// generates a substituted expression from it
+    pub fn new(sym_memory: &SymMemory, expr: Expression) -> Self {
+        match expr {
+            Expression::Forall(arr_name, index, value, expr) => destruct_forall(
+                sym_memory.heap_get_array(&arr_name),
+                &index,
+                &value,
+                &SymExpression::new(sym_memory, *expr),
+            ),
+            Expression::Exists(arr_name, index, value, expr) => todo!(),
+            Expression::Identifier(id) => match sym_memory.stack_get(&id) {
+                Some(sym_expr) => sym_expr,
+                None => panic_with_diagnostics(&format!("{} was not declared", id), sym_memory),
+            },
+            Expression::ArrLength(arr_name) => sym_memory.heap_get_arr_length(&arr_name),
+            Expression::Implies(l, r) => SymExpression::Implies(
+                Box::new(SymExpression::new(sym_memory, *l)),
+                Box::new(SymExpression::new(sym_memory, *r)),
+            ),
+            Expression::And(l, r) => SymExpression::And(
+                Box::new(SymExpression::new(sym_memory, *l)),
+                Box::new(SymExpression::new(sym_memory, *r)),
+            ),
+            Expression::Or(l, r) => SymExpression::Or(
+                Box::new(SymExpression::new(sym_memory, *l)),
+                Box::new(SymExpression::new(sym_memory, *r)),
+            ),
+            Expression::EQ(l, r) => SymExpression::EQ(
+                Box::new(SymExpression::new(sym_memory, *l)),
+                Box::new(SymExpression::new(sym_memory, *r)),
+            ),
+            Expression::NE(l, r) => SymExpression::NE(
+                Box::new(SymExpression::new(sym_memory, *l)),
+                Box::new(SymExpression::new(sym_memory, *r)),
+            ),
+            Expression::LT(l, r) => SymExpression::LT(
+                Box::new(SymExpression::new(sym_memory, *l)),
+                Box::new(SymExpression::new(sym_memory, *r)),
+            ),
+            Expression::GT(l, r) => SymExpression::GT(
+                Box::new(SymExpression::new(sym_memory, *l)),
+                Box::new(SymExpression::new(sym_memory, *r)),
+            ),
+            Expression::GEQ(l, r) => SymExpression::GEQ(
+                Box::new(SymExpression::new(sym_memory, *l)),
+                Box::new(SymExpression::new(sym_memory, *r)),
+            ),
+            Expression::LEQ(l, r) => SymExpression::LEQ(
+                Box::new(SymExpression::new(sym_memory, *l)),
+                Box::new(SymExpression::new(sym_memory, *r)),
+            ),
+            Expression::Plus(l, r) => SymExpression::Plus(
+                Box::new(SymExpression::new(sym_memory, *l)),
+                Box::new(SymExpression::new(sym_memory, *r)),
+            ),
+            Expression::Minus(l, r) => SymExpression::Minus(
+                Box::new(SymExpression::new(sym_memory, *l)),
+                Box::new(SymExpression::new(sym_memory, *r)),
+            ),
+            Expression::Multiply(l, r) => SymExpression::Multiply(
+                Box::new(SymExpression::new(sym_memory, *l)),
+                Box::new(SymExpression::new(sym_memory, *r)),
+            ),
+            Expression::Divide(l, r) => SymExpression::Divide(
+                Box::new(SymExpression::new(sym_memory, *l)),
+                Box::new(SymExpression::new(sym_memory, *r)),
+            ),
+            Expression::Mod(l, r) => SymExpression::Mod(
+                Box::new(SymExpression::new(sym_memory, *l)),
+                Box::new(SymExpression::new(sym_memory, *r)),
+            ),
+            Expression::Negative(expr) => {
+                Expression::Negative(Box::new(SymExpression::new(sym_memory, *expr)))
+            }
+            Expression::Not(expr) => {
+                SymExpression::Not(Box::new(SymExpression::new(sym_memory, *expr)))
+            },
+            _ => todo!()
+        }
+
+    }
+
+}
+
+
+
+
 
 /// Consists of `identifier` (= classname) and a hashmap describing it's fields
 pub type Object = (Identifier, FxHashMap<Identifier, (Type, SymExpression)>);
 
 /// Consists of type, a mapping from expression to symbolic expression and Substituted expression representing length
-pub type Array = (Type, FxHashMap<Substituted, SymExpression>, Substituted);
+pub type Array = (Type, FxHashMap<SymExpression, SymExpression>, SymExpression);
 
 #[derive(Clone)]
 pub enum ReferenceValue {
@@ -232,14 +245,14 @@ fn destruct_forall<'a>(
     index: &Identifier,
     value: &Identifier,
     expr: &Expression,
-) -> Expression {
+) -> SymExpression {
     let index_id = Expression::Identifier(index.clone());
 
     // foreach (i, v) pair in arr:
     // - C = for each[i |-> index, v |-> value]expr && C
     // - O = index != i && O
-    let mut c = Expression::Literal(Literal::Boolean(true));
-    let mut o = Expression::Literal(Literal::Boolean(true));
+    let mut c = SymExpression::Literal(Literal::Boolean(true));
+    let mut o = SymExpression::Literal(Literal::Boolean(true));
     for (i, v) in arr.into_iter() {
         // using Expressions `apply_when` functions we substitute the identifiers of index and value
         // with the expressions of given (i,v) pair in array
@@ -247,18 +260,8 @@ fn destruct_forall<'a>(
             let c_panic = || panic_with_diagnostics("Should not trigger", &());
 
             match expr {
-                Expression::Identifier(id) if &id == index => i.get().clone(),
-                Expression::Identifier(id) if &id == value => match v.clone() {
-                    SymExpression::Int(v) => match v {
-                        SymValue::Expr(e) => e.get().clone(),
-                        _ => c_panic(),
-                    },
-                    SymExpression::Bool(v) => match v {
-                        SymValue::Expr(e) => e.get().clone(),
-                        _ => c_panic(),
-                    },
-                    SymExpression::Ref(_) => c_panic(),
-                },
+                Expression::Identifier(id) if &id == index => i.clone(),
+                Expression::Identifier(id) if &id == value => v.clone(),
                 _ => expr,
             }
         };
@@ -345,7 +348,7 @@ impl Hash for Expression {
                 hashed_mult.sort();
                 HashExpression::Multiply(hashed_mult).hash(state)
             }
-            Expression::Minus(l_expr, r_expr) => Expression::Plus(
+            Expression::Minus(l_expr, r_expr) => SymExpression::Plus(
                 l_expr.clone(),
                 Box::new(Expression::Negative(r_expr.clone())),
             )
@@ -383,26 +386,19 @@ impl fmt::Debug for SymValue {
         }
     }
 }
-impl fmt::Debug for SymExpression {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            SymExpression::Int(val) => write!(f, "{:?}", val),
-            SymExpression::Bool(val) => write!(f, "{:?}", val),
-            SymExpression::Ref(r) => write!(f, "{:?}", r),
-        }
-    }
-}
+
 
 impl fmt::Debug for PathConstraints {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:?}", self.combine_over_true())
     }
 }
-impl fmt::Debug for Substituted {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}", self.get())
-    }
-}
+
+// impl fmt::Debug for SymExpression {
+//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+//         match &
+//     }
+// }
 
 #[cfg(test)]
 mod tests {

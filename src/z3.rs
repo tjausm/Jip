@@ -7,7 +7,7 @@ use z3::{ast, Config, Context, Model, SatResult, Solver};
 use crate::ast::*;
 use crate::shared::{panic_with_diagnostics, Error};
 use crate::symbolic::memory::SymMemory;
-use crate::symbolic::model::{PathConstraints, Substituted, SymExpression, SymValue};
+use crate::symbolic::model::{PathConstraints, SymExpression, SymType};
 
 //--------------//
 // z3 bindings //
@@ -23,18 +23,16 @@ pub fn build_ctx() -> (Config, Context) {
 pub fn check_length<'ctx>(
     ctx: &'ctx Context,
     pc: &PathConstraints,
-    length: &'ctx Substituted,
-    index: &'ctx Substituted,
+    length: &'ctx SymExpression,
+    index: &'ctx SymExpression,
 ) -> Result<(), Error> {
-    // combine in expression of form 'length > index'
-    let to_gt = |len| Expression::GT(Box::new(len), Box::new(index.get().clone()));
-    let length_gt_index = length.clone().map(to_gt);
+    let length_gt_index = SymExpression::GT(Box::new(length.clone()), Box::new(index.clone()));
 
     // build new path constraints and get z3 bool
     let mut pc = pc.clone();
     pc.push_assertion(length_gt_index);
     let constraints = pc.combine_over_true();
-    let length_gt_index = expr_to_bool(ctx, constraints.get());
+    let length_gt_index = expr_to_bool(ctx, &constraints);
 
     match check_ast(ctx, &length_gt_index) {
         (SatResult::Unsat, _) => return Ok(()),
@@ -60,7 +58,7 @@ pub fn verify_constraints<'a>(
 ) -> Result<(), Error> {
     //transform too z3 boolean
     let constraint_expr = path_constraints.combine_over_true();
-    let constraints = expr_to_bool(&ctx, &constraint_expr.get());
+    let constraints = expr_to_bool(&ctx, &constraint_expr);
 
     match check_ast(ctx, &constraints) {
         (SatResult::Unsat, _) => return Ok(()),
@@ -80,11 +78,11 @@ pub fn verify_constraints<'a>(
 /// returns true if an expression can never be satisfied
 pub fn expression_unsatisfiable<'a>(
     ctx: &'a Context,
-    expression: &Substituted,
+    expression: &SymExpression,
 ) -> bool {
     //negate assumption and try to find counter-example
     //no counter-example for !assumption means assumption is never true
-    let assumption_ast = expr_to_bool(&ctx, expression.get()).not();
+    let assumption_ast = expr_to_bool(&ctx, expression).not();
 
     match check_ast(ctx, &assumption_ast) {
         (SatResult::Unsat, _) => true,
@@ -102,129 +100,126 @@ fn check_ast<'ctx>(ctx: &'ctx Context, ast: &Bool) -> (SatResult, Option<Model<'
 
 fn expr_to_int<'ctx, 'a>(
     ctx: &'ctx Context,
-    expr: &'a Expression,
+    expr: &'a SymExpression,
 ) -> Int<'ctx> {
     return unwrap_as_int(expr_to_dynamic(&ctx,  expr));
 }
 
 fn expr_to_bool<'ctx, 'a>(
     ctx: &'ctx Context,
-    expr: &'a Expression,
+    expr: &'a SymExpression,
 ) -> Bool<'ctx> {
     return unwrap_as_bool(expr_to_dynamic(&ctx,  expr));
 }
 
 fn expr_to_dynamic<'ctx, 'a>(
     ctx: &'ctx Context,
-    expr: &'a Expression,
+    expr: &'a SymExpression,
 ) -> Dynamic<'ctx> {
     match expr {
-        Expression::And(l_expr, r_expr) => {
+        SymExpression::And(l_expr, r_expr) => {
             let l = expr_to_bool(ctx,  l_expr);
             let r = expr_to_bool(ctx,  r_expr);
 
             return Dynamic::from(Bool::and(ctx, &[&l, &r]));
         }
-        Expression::Or(l_expr, r_expr) => {
+        SymExpression::Or(l_expr, r_expr) => {
             let l = expr_to_bool(ctx,  l_expr);
             let r = expr_to_bool(ctx,  r_expr);
 
             return Dynamic::from(Bool::or(ctx, &[&l, &r]));
         }
-        Expression::Implies(l_expr, r_expr) => {
+        SymExpression::Implies(l_expr, r_expr) => {
             let l = expr_to_bool(ctx,  l_expr);
             let r = expr_to_bool(ctx,  r_expr);
 
             return Dynamic::from(l.implies(&r));
         }
-        Expression::EQ(l_expr, r_expr) => {
+        SymExpression::EQ(l_expr, r_expr) => {
             let l = expr_to_dynamic(ctx,  l_expr);
             let r = expr_to_dynamic(ctx,  r_expr);
 
             return Dynamic::from(l._eq(&r));
         }
-        Expression::NE(l_expr, r_expr) => {
+        SymExpression::NE(l_expr, r_expr) => {
             let l = expr_to_dynamic(ctx,  l_expr);
             let r = expr_to_dynamic(ctx,  r_expr);
 
             return Dynamic::from(l._eq(&r).not());
         }
-        Expression::LT(l_expr, r_expr) => {
+        SymExpression::LT(l_expr, r_expr) => {
             let l = expr_to_int(ctx,  l_expr);
             let r = expr_to_int(ctx,  r_expr);
 
             return Dynamic::from(l.lt(&r));
         }
-        Expression::GT(l_expr, r_expr) => {
+        SymExpression::GT(l_expr, r_expr) => {
             let l = expr_to_int(ctx,  l_expr);
             let r = expr_to_int(ctx,  r_expr);
 
             return Dynamic::from(l.gt(&r));
         }
-        Expression::GEQ(l_expr, r_expr) => {
+        SymExpression::GEQ(l_expr, r_expr) => {
             let l = expr_to_int(ctx,  l_expr);
             let r = expr_to_int(ctx,  r_expr);
 
             return Dynamic::from(l.ge(&r));
         }
-        Expression::LEQ(l_expr, r_expr) => {
+        SymExpression::LEQ(l_expr, r_expr) => {
             let l = expr_to_int(ctx,  l_expr);
             let r = expr_to_int(ctx,  r_expr);
 
             return Dynamic::from(l.le(&r));
         }
-        Expression::Plus(l_expr, r_expr) => {
+        SymExpression::Plus(l_expr, r_expr) => {
             let l = expr_to_int(ctx,  l_expr);
             let r = expr_to_int(ctx,  r_expr);
 
             return Dynamic::from(ast::Int::add(&ctx, &[&l, &r]));
         }
-        Expression::Minus(l_expr, r_expr) => {
+        SymExpression::Minus(l_expr, r_expr) => {
             let l = expr_to_int(ctx,  l_expr);
             let r = expr_to_int(ctx,  r_expr);
 
             return Dynamic::from(ast::Int::sub(&ctx, &[&l, &r]));
         }
-        Expression::Multiply(l_expr, r_expr) => {
+        SymExpression::Multiply(l_expr, r_expr) => {
             let l = expr_to_int(ctx,  l_expr);
             let r = expr_to_int(ctx,  r_expr);
 
             return Dynamic::from(ast::Int::mul(&ctx, &[&l, &r]));
         }
-        Expression::Divide(l_expr, r_expr) => {
+        SymExpression::Divide(l_expr, r_expr) => {
             let l = expr_to_int(ctx,  l_expr);
             let r = expr_to_int(ctx,  r_expr);
 
             return Dynamic::from(l.div(&r));
         }
-        Expression::Mod(l_expr, r_expr) => {
+        SymExpression::Mod(l_expr, r_expr) => {
             let l = expr_to_int(ctx,  l_expr);
             let r = expr_to_int(ctx,  r_expr);
 
             return Dynamic::from(l.modulo(&r));
         }
-        Expression::Negative(expr) => {
+        SymExpression::Negative(expr) => {
             let e = expr_to_int(ctx,  expr);
 
             return Dynamic::from(e.unary_minus());
         }
-        Expression::Not(expr) => {
+        SymExpression::Not(expr) => {
             let expr = expr_to_bool(ctx,  expr);
 
             return Dynamic::from(expr.not());
         }
-        Expression::FreeVariable(ty, id) => match ty {
-            Type::Bool => Dynamic::from(Bool::new_const(ctx, id.clone())),
-            Type::Int => Dynamic::from(Int::new_const(ctx, id.clone())),
-            _ => panic_with_diagnostics(
-                &format!("Free variable can't be of type {:?}", ty),
-                &()
-            ),
+        SymExpression::FreeVariable(ty, id) => match ty {
+            SymType::Bool => Dynamic::from(Bool::new_const(ctx, id.clone())),
+            SymType::Int => Dynamic::from(Int::new_const(ctx, id.clone())),
+            SymType::Ref(_) => Dynamic::from(Int::new_const(ctx, id.clone())),
         },
-        Expression::Literal(Literal::Integer(n)) => Dynamic::from(ast::Int::from_i64(ctx, *n)),
-        Expression::Literal(Literal::Boolean(b)) => Dynamic::from(ast::Bool::from_bool(ctx, *b)),
-        Expression::Literal(Literal::Ref(r)) => {
-            Dynamic::from(ast::Int::from_u64(ctx, r.1.as_u64_pair().0))
+        SymExpression::Literal(Literal::Integer(n)) => Dynamic::from(ast::Int::from_i64(ctx, *n)),
+        SymExpression::Literal(Literal::Boolean(b)) => Dynamic::from(ast::Bool::from_bool(ctx, *b)),
+        SymExpression::Reference(_, r) => {
+            Dynamic::from(ast::Int::from_u64(ctx, r.as_u64_pair().0))
         }
         otherwise => {
             panic_with_diagnostics(

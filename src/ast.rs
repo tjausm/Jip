@@ -296,7 +296,6 @@ impl Expression {
 pub enum Literal {
     Boolean(bool),
     Integer(i64),
-    Ref((Type, Uuid))
 }
 
 pub type Identifier = String;
@@ -350,7 +349,6 @@ impl fmt::Debug for Expression {
             Expression::FreeVariable(_, id) => write!(f, "{}", id),
             Expression::Literal(Literal::Boolean(val)) => write!(f, "{:?}", val),
             Expression::Literal(Literal::Integer(val)) => write!(f, "{:?}", val),
-            Expression::Literal(Literal::Ref(r)) => write!(f, "Ref{:?}", r),
             Expression::ArrLength(id) => write!(f, "#{}", id),
         }
     }
