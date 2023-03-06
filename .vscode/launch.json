@@ -19,7 +19,7 @@
                     "kind": "bin"
                 }
             },
-            "args": ["file", "tests/programs/arguments", "verify"],
+            "args": ["tests/programs/conditions/max_faulty.oox", "verify"],
             "cwd": "${workspaceFolder}"
         },
         {

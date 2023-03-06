@@ -1,6 +1,5 @@
 //! Symbolic model representing the stack and heap while symbolically executing a program
 //!
-use ::z3::Context;
 use rustc_hash::FxHashMap;
 use std::fmt;
 use uuid::Uuid;
@@ -187,7 +186,6 @@ impl<'a> SymMemory {
     /// Possibly update with passed `var` and return current symbolic expression at arrays index
     pub fn heap_access_array(
         &mut self,
-        ctx: &Context,
         pc: &PathConstraints,
         simplify: bool,
         arr_name: &Identifier,

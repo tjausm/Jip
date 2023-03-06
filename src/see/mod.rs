@@ -17,7 +17,6 @@ use crate::shared::ExitCode;
 use crate::shared::{panic_with_diagnostics, Diagnostics, Error};
 use crate::symbolic::memory::SymMemory;
 use crate::symbolic::model::{PathConstraints, ReferenceValue, SymExpression, SymType};
-use crate::z3::build_ctx;
 use colored::Colorize;
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
@@ -139,9 +138,6 @@ fn verify_program(
     let prune_coefficient = f64::from(prune_ratio) / f64::from(i8::MAX);
     let prune_depth = (f64::from(d) - f64::from(d) * prune_coefficient) as i32;
 
-    // init global z3 context
-    let (_, ctx) = build_ctx();
-
     //init diagnostic info
     let mut diagnostics = Diagnostics::default();
 
@@ -216,7 +212,6 @@ fn verify_program(
                     },
                     Statement::Assume(assumption) => {
                         if !assume(
-                            &ctx,
                             config.simplify,
                             d > prune_depth,
                             &mut sym_memory,
@@ -228,7 +223,6 @@ fn verify_program(
                         }
                     }
                     Statement::Assert(assertion) => assert(
-                        &ctx,
                         config.simplify,
                         &mut sym_memory,
                         assertion,
@@ -236,7 +230,7 @@ fn verify_program(
                         &mut diagnostics,
                     )?,
                     Statement::Assignment((lhs, rhs)) => {
-                        lhs_from_rhs(&ctx, &pc, config.simplify, &mut sym_memory, lhs, rhs)?;
+                        lhs_from_rhs(&pc, config.simplify, &mut sym_memory, lhs, rhs)?;
                     }
                     Statement::Return(expr) => {
                         // stop path if current scope `id == None`, indicating we are in main scope
@@ -337,7 +331,6 @@ fn verify_program(
                             match (specification, from_main_scope) {
                                 // if require is called outside main scope we assert
                                 (Specification::Requires(assertion), false) => assert(
-                                    &ctx,
                                     config.simplify,
                                     &mut sym_memory,
                                     assertion,
@@ -351,7 +344,6 @@ fn verify_program(
                                         Specification::Ensures(expr) => expr,
                                     };
                                     if !assume(
-                                        &ctx,
                                         config.simplify,
                                         prune_depth < d,
                                         &mut sym_memory,

@@ -5,7 +5,6 @@
 extern crate lalrpop_util;
 
 use clap::{ArgEnum, Parser, Subcommand};
-use rsmt2::{print::{ModelParser, IdentParser}, SmtRes};
 use see::types::Depth;
 use shared::{Config, ExitCode};
 use std::process::exit;
