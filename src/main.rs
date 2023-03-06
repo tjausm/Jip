@@ -74,18 +74,6 @@ enum LoadMode {
 
 fn main() {
 
-    use rsmt2::Solver;
-    let mut solver = Solver::default_z3(RSMTParser).unwrap();
-    solver.declare_const("m", "Int").unwrap();
-    solver.declare_const("n", "Int").unwrap();
-    solver.assert("(and (< n 5) (> n 0) (> m 0))").unwrap();
-
-    let is_sat = solver.check_sat().unwrap();
-    assert!(is_sat);
-
-    println!("{:?}", solver.get_model().unwrap());
-    todo!();
-
     let cli = Cli::parse();
     let exit = |(exit_code, result): (ExitCode, String)| {
         println!("{}", result);

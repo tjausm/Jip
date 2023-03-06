@@ -77,7 +77,7 @@ impl PathConstraints {
 
 pub type Reference = Uuid;
 
-#[derive(Clone, Debug, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum SymType {
     Int,
     Bool,

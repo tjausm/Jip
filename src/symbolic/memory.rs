@@ -212,7 +212,7 @@ impl<'a> SymMemory {
                 SymExpression::Literal(Literal::Integer(lit_index)),
                 SymExpression::Literal(Literal::Integer(lit_lenght)),
             ) if lit_index < lit_lenght => (),
-            _ => z3::check_length(ctx, pc, &length, &simple_index)?,
+            _ => z3::check_length(pc, &length, &simple_index)?,
         };
 
         //get mutable HashMap representing array

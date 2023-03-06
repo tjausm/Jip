@@ -1,24 +1,46 @@
 //! Transforms a program path to a logical formula and test satisfiability using theorem prover Z3
-use z3::ast::{Ast, Bool, Dynamic, Int};
-use z3::{ast, Config, Context, Model, SatResult, Solver};
-use rsmt2;
+use std::collections::HashSet;
+
+use rsmt2::print::{IdentParser, ModelParser};
+use rsmt2::{self, Solver, SmtRes};
+use rustc_hash::FxHashSet;
 use crate::ast::*;
 use crate::shared::{panic_with_diagnostics, Error};
 use crate::symbolic::model::{PathConstraints, SymExpression, SymType};
 
-//--------------//
-// z3 bindings //
-//-------------//
+//---------------------//
+// smt-solver bindings //
+//--------------------//
 
-pub fn build_ctx() -> (Config, Context) {
-    let z3_cfg = z3::Config::new();
-    let ctx = z3::Context::new(&z3_cfg);
-    (z3_cfg, ctx)
+
+#[derive(Clone, Copy)]
+struct Parser;
+
+impl<'a> IdentParser<String, String, & 'a str> for Parser {
+    fn parse_ident(self, input: & 'a str) -> SmtRes<String> {
+        Ok(input.into())
+    }
+    fn parse_type(self, input: & 'a str) -> SmtRes<String> {
+        Ok("".to_string())
+    }
+}
+
+impl<'a> ModelParser<String, String, String, & 'a str> for Parser {
+    fn parse_value(
+      self, input: & 'a str,
+      ident: & String, _: & [ (String, String) ], _: & String,
+    ) -> SmtRes<String> {
+      Ok(format!("  {} -> {}\n", ident, input))
+    }
+}
+
+pub enum SMTResult {
+    Valid,
+    Invalid(String)
 }
 
 /// Combine pathconstraints to assert `pc ==> length > index` == always true
 pub fn check_length<'ctx>(
-    ctx: &'ctx Context,
     pc: &PathConstraints,
     length: &'ctx SymExpression,
     index: &'ctx SymExpression,
@@ -30,7 +52,7 @@ pub fn check_length<'ctx>(
     // let mut pc = pc.clone();
     // pc.push_assertion(length_gt_index);
     // let constraints = pc.combine_over_true();
-    // let length_gt_index = expr_to_bool(ctx, &constraints);
+    // let (l, fv_l)ength_gt_index = expr_to_bool(ctx, &constraints);
 
     // match verify_expr(ctx, &length_gt_index) {
     //     (SatResult::Unsat, _) => return Ok(()),
@@ -51,7 +73,6 @@ pub fn check_length<'ctx>(
 /// Combine the constraints in reversed order and check correctness using z3
 /// `solve_constraints(ctx, vec![assume x, assert y, assume z] = x -> (y && z)`
 pub fn verify_constraints<'a>(
-    ctx: &'a Context,
     path_constraints: &PathConstraints
 ) -> Result<(), Error> {
     todo!();
@@ -77,7 +98,6 @@ pub fn verify_constraints<'a>(
 }
 /// returns true if an expression can never be satisfied
 pub fn expression_unsatisfiable<'a>(
-    ctx: &'a Context,
     expression: &SymExpression,
 ) -> bool {
     todo!()
@@ -93,10 +113,11 @@ pub fn expression_unsatisfiable<'a>(
 
 /// returns error if there exists a counterexample for given formula
 /// in other words, given formula `a > b`, counterexample: a -> 0, b -> 0
-fn verify_expr<'ctx>(expr: &SymExpression) -> (bool, Option<rsmt2::print::Model<String, String, String>>) {
+fn verify_expr<'ctx>(expr: &SymExpression) -> SMTResult {
     let mut solver = rsmt2::Solver::default_z3(()).unwrap();
 
-    for fv in get_freevars(expr){
+    let (expr_str, fvs) = expr_to_str(expr);
+    for fv in fvs{
         match fv {
             (SymType::Bool, id) => todo!(),
             (SymType::Int, id) => todo!(),
@@ -104,129 +125,131 @@ fn verify_expr<'ctx>(expr: &SymExpression) -> (bool, Option<rsmt2::print::Model<
         }
     }
 
-    solver.assert(expr_to_str(&SymExpression::Not(Box::new(*expr))));
+    solver.assert(expr_str);
 
-    let x = solver.get_model().unwrap();
-    match (solver.check_sat(), solver.get_model()){
-        (Ok(b), Ok(m)) => (b, Some(m)),
-        (Ok(b), _) => (b, None),
-        _ => todo!(),
-    }
+    // either return valid or get model and format it
+   if solver.check_sat().unwrap() {
+         SMTResult::Valid
+   } else {
+        let model = solver.get_model().unwrap();
+        let model_str = "";
+        for var in model {
+            model_str = &format!("{}{}\n", model_str, var.3);
+        }
+        SMTResult::Invalid(model_str.to_owned())
+   }
 
 }
 
 
-
+/// returns an expression as RSMT parseable string
+/// with a set of all it's free variables  
 fn expr_to_str<'a>(
     expr: &'a SymExpression,
-) -> String {
+) -> (String, FxHashSet<(SymType, String)>) {
 
-    todo!()
     match expr {
         SymExpression::And(l_expr, r_expr) => {
-            let l = expr_to_bool(ctx,  l_expr);
-            let r = expr_to_bool(ctx,  r_expr);
-
-            return Dynamic::from(Bool::and(ctx, &[&l, &r]));
+            let (l, fv_l) = expr_to_str(l_expr);
+            let (r, fv_r) = expr_to_str(r_expr);
+            fv_l.extend(fv_r);
+            return (format!("(and {} {})", l, r), fv_l);
         }
         SymExpression::Or(l_expr, r_expr) => {
-            let l = expr_to_bool(ctx,  l_expr);
-            let r = expr_to_bool(ctx,  r_expr);
+            let (l, fv_l) = expr_to_str(l_expr);
+            let (r, fv_r) = expr_to_str(r_expr);
 
-            return Dynamic::from(Bool::or(ctx, &[&l, &r]));
+fv_l.extend(fv_r);return (format!("(or {} {})", l, r), fv_l);
         }
         SymExpression::Implies(l_expr, r_expr) => {
-            let l = expr_to_bool(ctx,  l_expr);
-            let r = expr_to_bool(ctx,  r_expr);
+            let (l, fv_l) = expr_to_str(l_expr);
+            let (r, fv_r) = expr_to_str(r_expr);
 
-            return Dynamic::from(l.implies(&r));
+fv_l.extend(fv_r);return (format!("(=> {} {})", l, r), fv_l);
         }
         SymExpression::EQ(l_expr, r_expr) => {
-            let l = expr_to_str(ctx,  l_expr);
-            let r = expr_to_str(ctx,  r_expr);
+            let (l, fv_l) = expr_to_str(l_expr);
+            let (r, fv_r) = expr_to_str(r_expr);
 
-            return Dynamic::from(l._eq(&r));
+fv_l.extend(fv_r);return (format!("(= {} {})", l, r), fv_l);
         }
         SymExpression::NE(l_expr, r_expr) => {
-            let l = expr_to_str(ctx,  l_expr);
-            let r = expr_to_str(ctx,  r_expr);
+            let (l, fv_l) = expr_to_str(l_expr);
+            let (r, fv_r) = expr_to_str(r_expr);
 
-            return Dynamic::from(l._eq(&r).not());
+fv_l.extend(fv_r);return (format!("(distinct {} {})", l, r), fv_l);
         }
         SymExpression::LT(l_expr, r_expr) => {
-            let l = expr_to_int(ctx,  l_expr);
-            let r = expr_to_int(ctx,  r_expr);
+            let (l, fv_l) = expr_to_str(l_expr);
+            let (r, fv_r) = expr_to_str(r_expr);
 
-            return Dynamic::from(l.lt(&r));
+fv_l.extend(fv_r);return (format!("(< {} {})", l, r), fv_l);
         }
         SymExpression::GT(l_expr, r_expr) => {
-            let l = expr_to_int(ctx,  l_expr);
-            let r = expr_to_int(ctx,  r_expr);
+            let (l, fv_l) = expr_to_str(l_expr);
+            let (r, fv_r) = expr_to_str(r_expr);
 
-            return Dynamic::from(l.gt(&r));
+fv_l.extend(fv_r);return (format!("(> {} {})", l, r), fv_l);
         }
         SymExpression::GEQ(l_expr, r_expr) => {
-            let l = expr_to_int(ctx,  l_expr);
-            let r = expr_to_int(ctx,  r_expr);
+            let (l, fv_l) = expr_to_str(l_expr);
+            let (r, fv_r) = expr_to_str(r_expr);
 
-            return Dynamic::from(l.ge(&r));
+fv_l.extend(fv_r);return (format!("(>= {} {})", l, r), fv_l);
         }
         SymExpression::LEQ(l_expr, r_expr) => {
-            let l = expr_to_int(ctx,  l_expr);
-            let r = expr_to_int(ctx,  r_expr);
+            let (l, fv_l) = expr_to_str(l_expr);
+            let (r, fv_r) = expr_to_str(r_expr);
 
-            return Dynamic::from(l.le(&r));
+fv_l.extend(fv_r);return (format!("(<= {} {})", l, r), fv_l);
         }
         SymExpression::Plus(l_expr, r_expr) => {
-            let l = expr_to_int(ctx,  l_expr);
-            let r = expr_to_int(ctx,  r_expr);
+            let (l, fv_l) = expr_to_str(l_expr);
+            let (r, fv_r) = expr_to_str(r_expr);
 
-            return Dynamic::from(ast::Int::add(&ctx, &[&l, &r]));
+fv_l.extend(fv_r);return (format!("(+ {} {})", l, r), fv_l);
         }
         SymExpression::Minus(l_expr, r_expr) => {
-            let l = expr_to_int(ctx,  l_expr);
-            let r = expr_to_int(ctx,  r_expr);
+            let (l, fv_l) = expr_to_str(l_expr);
+            let (r, fv_r) = expr_to_str(r_expr);
 
-            return Dynamic::from(ast::Int::sub(&ctx, &[&l, &r]));
+fv_l.extend(fv_r);return (format!("(- {} {})", l, r), fv_l);
         }
         SymExpression::Multiply(l_expr, r_expr) => {
-            let l = expr_to_int(ctx,  l_expr);
-            let r = expr_to_int(ctx,  r_expr);
+            let (l, fv_l) = expr_to_str(l_expr);
+            let (r, fv_r) = expr_to_str(r_expr);
 
-            return Dynamic::from(ast::Int::mul(&ctx, &[&l, &r]));
+fv_l.extend(fv_r);return (format!("(* {} {})", l, r), fv_l);
         }
         SymExpression::Divide(l_expr, r_expr) => {
-            let l = expr_to_int(ctx,  l_expr);
-            let r = expr_to_int(ctx,  r_expr);
+            let (l, fv_l) = expr_to_str(l_expr);
+            let (r, fv_r) = expr_to_str(r_expr);
 
-            return Dynamic::from(l.div(&r));
+fv_l.extend(fv_r);return (format!("(/ {} {})", l, r), fv_l);
         }
         SymExpression::Mod(l_expr, r_expr) => {
-            let l = expr_to_int(ctx,  l_expr);
-            let r = expr_to_int(ctx,  r_expr);
+            let (l, fv_l) = expr_to_str(l_expr);
+            let (r, fv_r) = expr_to_str(r_expr);
 
-            return Dynamic::from(l.modulo(&r));
+fv_l.extend(fv_r);return (format!("(% {} {})", l, r), fv_l);
         }
         SymExpression::Negative(expr) => {
-            let e = expr_to_int(ctx,  expr);
+            let (expr, fv) = expr_to_str(expr);
 
-            return Dynamic::from(e.unary_minus());
+        return (format!("(- {})", expr), fv);
         }
         SymExpression::Not(expr) => {
-            let expr = expr_to_bool(ctx,  expr);
+            let (expr, fv) = expr_to_str(expr);
 
-            return Dynamic::from(expr.not());
+    return (format!("(! {})", expr), fv);
         }
-        SymExpression::FreeVariable(ty, id) => match ty {
-            SymType::Bool => Dynamic::from(Bool::new_const(ctx, id.clone())),
-            SymType::Int => Dynamic::from(Int::new_const(ctx, id.clone())),
-            SymType::Ref(_) => Dynamic::from(Int::new_const(ctx, id.clone())),
-        },
-        SymExpression::Literal(Literal::Integer(n)) => Dynamic::from(ast::Int::from_i64(ctx, *n)),
-        SymExpression::Literal(Literal::Boolean(b)) => Dynamic::from(ast::Bool::from_bool(ctx, *b)),
-        SymExpression::Reference(_, r) => {
-            Dynamic::from(ast::Int::from_u64(ctx, r.as_u64_pair().0))
-        }
+        SymExpression::FreeVariable(ty, id) =>{ 
+            let fv = FxHashSet::default();
+            fv.insert((ty.clone(), id.clone()));
+            (format!("({})", id), fv)},
+        SymExpression::Literal(Literal::Integer(n)) => (format!("{}", n), FxHashSet::default()),
+        SymExpression::Literal(Literal::Boolean(b)) => (format!("{}", b), FxHashSet::default()),
+        SymExpression::Reference(_, r) => (format!("{}", r.as_u64_pair().0), FxHashSet::default()),
         otherwise => {
             panic_with_diagnostics(
                 &format!(
@@ -236,81 +259,5 @@ fn expr_to_str<'a>(
                 &()
             );
         }
-    }
-}
-
-
-fn get_freevars<'a>(
-    expr: &'a SymExpression,
-) -> Vec<(SymType, Identifier)> {
-    todo!()
-}
-
-fn unwrap_as_bool(d: Dynamic) -> Bool {
-    match d.as_bool() {
-        Some(b) => b,
-        None => panic_with_diagnostics(&format!("{} is not of type Bool", d), &()),
-    }
-}
-
-
-
-fn unwrap_as_int(d: Dynamic) -> Int {
-    match d.as_int() {
-        Some(b) => b,
-        None => panic_with_diagnostics(&format!("{} is not of type Int", d), &()),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-
-    use super::*;
-    use z3::Config;
-
-    #[test]
-    fn test_solving() {
-        let cfg = Config::new();
-        let ctx = Context::new(&cfg);
-        let x = Int::new_const(&ctx, "x");
-        let y = Int::new_const(&ctx, "y");
-        let solver = Solver::new(&ctx);
-        solver.assert(&x.gt(&y));
-        assert_eq!(solver.check(), SatResult::Sat);
-    }
-
-    #[test]
-    fn manual_max() {
-        let cfg = Config::new();
-        let ctx = Context::new(&cfg);
-        let x = ast::Real::new_const(&ctx, "x");
-        let y = ast::Real::new_const(&ctx, "y");
-        let z = ast::Real::new_const(&ctx, "z");
-        let x_plus_y = ast::Real::add(&ctx, &[&x, &y]);
-        let x_plus_z = ast::Real::add(&ctx, &[&x, &z]);
-        let substitutions = &[(&y, &z)];
-        assert!(x_plus_y.substitute(substitutions) == x_plus_z);
-    }
-    #[test]
-    fn exist_example() {
-        let cfg = Config::new();
-        let ctx = Context::new(&cfg);
-        let solver = Solver::new(&ctx);
-
-        let x = ast::Int::new_const(&ctx, "x");
-        let one = ast::Int::from_i64(&ctx, 1);
-
-        let exists: ast::Bool = ast::exists_const(
-            &ctx,
-            &[&x],
-            &[],
-            &x._eq(&one), // hier gaat expression in
-        )
-        .try_into()
-        .unwrap();
-
-        println!("{:?}", exists);
-
-        solver.assert(&exists.not());
     }
 }
