@@ -1,7 +1,7 @@
 //! Transforms a program path to a logical formula and test satisfiability using theorem prover Z3
 use z3::ast::{Ast, Bool, Dynamic, Int};
 use z3::{ast, Config, Context, Model, SatResult, Solver};
-
+use rsmt2;
 use crate::ast::*;
 use crate::shared::{panic_with_diagnostics, Error};
 use crate::symbolic::model::{PathConstraints, SymExpression, SymType};
@@ -23,28 +23,29 @@ pub fn check_length<'ctx>(
     length: &'ctx SymExpression,
     index: &'ctx SymExpression,
 ) -> Result<(), Error> {
+    todo!();
     let length_gt_index = SymExpression::GT(Box::new(length.clone()), Box::new(index.clone()));
 
     // build new path constraints and get z3 bool
-    let mut pc = pc.clone();
-    pc.push_assertion(length_gt_index);
-    let constraints = pc.combine_over_true();
-    let length_gt_index = expr_to_bool(ctx, &constraints);
+    // let mut pc = pc.clone();
+    // pc.push_assertion(length_gt_index);
+    // let constraints = pc.combine_over_true();
+    // let length_gt_index = expr_to_bool(ctx, &constraints);
 
-    match check_ast(ctx, &length_gt_index) {
-        (SatResult::Unsat, _) => return Ok(()),
-        (SatResult::Sat, Some(model)) => {
-            return Err(Error::Verification(format!(
-                "Following input could (potentially) accesses an array out of bounds:\n{:?}",
-                model
-            )));
-        }
-        _ => {
-            return Err(Error::Verification(
-                "Huh, verification gave an unkown result".to_string(),
-            ))
-        }
-    }
+    // match verify_expr(ctx, &length_gt_index) {
+    //     (SatResult::Unsat, _) => return Ok(()),
+    //     (SatResult::Sat, Some(model)) => {
+    //         return Err(Error::Verification(format!(
+    //             "Following input could (potentially) accesses an array out of bounds:\n{:?}",
+    //             model
+    //         )));
+    //     }
+    //     _ => {
+    //         return Err(Error::Verification(
+    //             "Huh, verification gave an unkown result".to_string(),
+    //         ))
+    //     }
+    // }
 }
 
 /// Combine the constraints in reversed order and check correctness using z3
@@ -53,67 +54,74 @@ pub fn verify_constraints<'a>(
     ctx: &'a Context,
     path_constraints: &PathConstraints
 ) -> Result<(), Error> {
+    todo!();
     //transform too z3 boolean
     let constraint_expr = path_constraints.combine_over_true();
 
-    let constraints = expr_to_bool(&ctx, &constraint_expr);
+    // let constraints = expr_to_bool(&ctx, &constraint_expr);
 
-    match check_ast(ctx, &constraints) {
-        (SatResult::Unsat, _) => return Ok(()),
-        (SatResult::Sat, Some(model)) => {
-            return Err(Error::Verification(format!(
-                "Following input violates one of the assertion:\n{:?}",
-                model
-            )));
-        }
-        _ => {
-            return Err(Error::Verification(
-                "Huh, verification gave an unkown result".to_string(),
-            ))
-        }
-    }
+    // match verify_expr(ctx, &constraints) {
+    //     (SatResult::Unsat, _) => return Ok(()),
+    //     (SatResult::Sat, Some(model)) => {
+    //         return Err(Error::Verification(format!(
+    //             "Following input violates one of the assertion:\n{:?}",
+    //             model
+    //         )));
+    //     }
+    //     _ => {
+    //         return Err(Error::Verification(
+    //             "Huh, verification gave an unkown result".to_string(),
+    //         ))
+    //     }
+    // }
 }
 /// returns true if an expression can never be satisfied
 pub fn expression_unsatisfiable<'a>(
     ctx: &'a Context,
     expression: &SymExpression,
 ) -> bool {
+    todo!()
     //negate assumption and try to find counter-example
     //no counter-example for !assumption means assumption is never true
-    let assumption_ast = expr_to_bool(&ctx, expression).not();
+    // let assumption_ast = expr_to_bool(&ctx, expression).not();
 
-    match check_ast(ctx, &assumption_ast) {
-        (SatResult::Unsat, _) => true,
-        _ => false,
-    }
+    // match verify_expr(ctx, &assumption_ast) {
+    //     (SatResult::Unsat, _) => true,
+    //     _ => false,
+    // }
 }
 
 /// returns error if there exists a counterexample for given formula
 /// in other words, given formula `a > b`, counterexample: a -> 0, b -> 0
-fn check_ast<'ctx>(ctx: &'ctx Context, ast: &Bool) -> (SatResult, Option<Model<'ctx>>) {
-    let solver = Solver::new(&ctx);
-    solver.assert(&ast.not());
-    (solver.check(), solver.get_model())
+fn verify_expr<'ctx>(expr: &SymExpression) -> (bool, Option<rsmt2::print::Model<String, String, String>>) {
+    let mut solver = rsmt2::Solver::default_z3(()).unwrap();
+
+    for fv in get_freevars(expr){
+        match fv {
+            (SymType::Bool, id) => todo!(),
+            (SymType::Int, id) => todo!(),
+            (SymType::Ref(_), id) => todo!()
+        }
+    }
+
+    solver.assert(expr_to_str(&SymExpression::Not(Box::new(*expr))));
+
+    let x = solver.get_model().unwrap();
+    match (solver.check_sat(), solver.get_model()){
+        (Ok(b), Ok(m)) => (b, Some(m)),
+        (Ok(b), _) => (b, None),
+        _ => todo!(),
+    }
+
 }
 
-fn expr_to_int<'ctx, 'a>(
-    ctx: &'ctx Context,
-    expr: &'a SymExpression,
-) -> Int<'ctx> {
-    return unwrap_as_int(expr_to_dynamic(&ctx,  expr));
-}
 
-fn expr_to_bool<'ctx, 'a>(
-    ctx: &'ctx Context,
-    expr: &'a SymExpression,
-) -> Bool<'ctx> {
-    return unwrap_as_bool(expr_to_dynamic(&ctx,  expr));
-}
 
-fn expr_to_dynamic<'ctx, 'a>(
-    ctx: &'ctx Context,
+fn expr_to_str<'a>(
     expr: &'a SymExpression,
-) -> Dynamic<'ctx> {
+) -> String {
+
+    todo!()
     match expr {
         SymExpression::And(l_expr, r_expr) => {
             let l = expr_to_bool(ctx,  l_expr);
@@ -134,14 +142,14 @@ fn expr_to_dynamic<'ctx, 'a>(
             return Dynamic::from(l.implies(&r));
         }
         SymExpression::EQ(l_expr, r_expr) => {
-            let l = expr_to_dynamic(ctx,  l_expr);
-            let r = expr_to_dynamic(ctx,  r_expr);
+            let l = expr_to_str(ctx,  l_expr);
+            let r = expr_to_str(ctx,  r_expr);
 
             return Dynamic::from(l._eq(&r));
         }
         SymExpression::NE(l_expr, r_expr) => {
-            let l = expr_to_dynamic(ctx,  l_expr);
-            let r = expr_to_dynamic(ctx,  r_expr);
+            let l = expr_to_str(ctx,  l_expr);
+            let r = expr_to_str(ctx,  r_expr);
 
             return Dynamic::from(l._eq(&r).not());
         }
@@ -232,6 +240,11 @@ fn expr_to_dynamic<'ctx, 'a>(
 }
 
 
+fn get_freevars<'a>(
+    expr: &'a SymExpression,
+) -> Vec<(SymType, Identifier)> {
+    todo!()
+}
 
 fn unwrap_as_bool(d: Dynamic) -> Bool {
     match d.as_bool() {

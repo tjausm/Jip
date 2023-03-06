@@ -5,6 +5,7 @@
 extern crate lalrpop_util;
 
 use clap::{ArgEnum, Parser, Subcommand};
+use rsmt2::{print::{ModelParser, IdentParser}, SmtRes};
 use see::types::Depth;
 use shared::{Config, ExitCode};
 use std::process::exit;
@@ -28,7 +29,7 @@ struct Cli {
     mode: Mode,
 
     /// number between 0 and 255 denoting how deep we should prune
-    /// , 0 = no pruning, 127 = prune 50% of depth and so on
+    /// , 0 = no pruning, 127 = prune to 50% of depth and so on
     #[clap(default_value_t = 0)]
     prune_ratio: i8,
 
@@ -69,7 +70,22 @@ enum LoadMode {
     String,
 }
 
+
+
 fn main() {
+
+    use rsmt2::Solver;
+    let mut solver = Solver::default_z3(RSMTParser).unwrap();
+    solver.declare_const("m", "Int").unwrap();
+    solver.declare_const("n", "Int").unwrap();
+    solver.assert("(and (< n 5) (> n 0) (> m 0))").unwrap();
+
+    let is_sat = solver.check_sat().unwrap();
+    assert!(is_sat);
+
+    println!("{:?}", solver.get_model().unwrap());
+    todo!();
+
     let cli = Cli::parse();
     let exit = |(exit_code, result): (ExitCode, String)| {
         println!("{}", result);
