@@ -136,10 +136,7 @@ impl Solver {
         }
 
         self.s.assert(expr_str.clone()).unwrap();
-        let satisfiable = match self.s.check_sat() {
-            Ok(b) => b,
-            Err(err) => todo!("{}", err),
-        };
+        let satisfiable = self.s.check_sat().unwrap(); 
         self.s.pop(1).unwrap();
         //either return Sat(formated model) or Unsat
         if satisfiable {

@@ -231,7 +231,7 @@ impl<'a> SymMemory {
             None => match arr.get(&simple_index) {
                 Some(v) => Ok(v.clone()),
                 None => {
-                    let fv_id = format!("{}[{:?}]", arr_name.clone(), simple_index);
+                    let fv_id = format!("|{}[{:?}]|", arr_name.clone(), simple_index);
                     let fv = match ty {
                         Type::Int => SymExpression::FreeVariable(SymType::Int, fv_id),
                         Type::Bool => SymExpression::FreeVariable(SymType::Bool, fv_id),
