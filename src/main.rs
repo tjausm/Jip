@@ -4,9 +4,9 @@
 #[macro_use]
 extern crate lalrpop_util;
 
-use clap::{ArgEnum, Parser, Subcommand};
+use clap::{ Parser, Subcommand};
 use see::types::Depth;
-use shared::{Config, ExitCode};
+use shared::{Config, ExitCode, SolverType};
 use std::process::exit;
 
 // module declarations
@@ -15,7 +15,7 @@ mod cfg;
 mod see;
 mod shared;
 mod symbolic;
-mod z3;
+mod smt_solver;
 
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]
@@ -26,6 +26,10 @@ struct Cli {
     /// Print cfg in Dot format / print generated z3 formulas / verify program
     #[clap(subcommand)]
     mode: Mode,
+
+    /// How to load the program
+    #[clap(arg_enum, default_value_t = SolverType::Z3)]
+    solver: SolverType,
 
     /// number between 0 and 255 denoting how deep we should prune
     /// , 0 = no pruning, 127 = prune to 50% of depth and so on
@@ -63,11 +67,7 @@ enum Mode {
     },
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ArgEnum)]
-enum LoadMode {
-    File,
-    String,
-}
+
 
 
 
@@ -91,8 +91,10 @@ fn main() {
         Mode::Verify { depth, verbose } => {
             let config = Config {
                 simplify: cli.simplifier,
+                prune_ratio: cli.prune_ratio,
+                solver_type: cli.solver
             };
-            exit(see::print_verification(&program, depth, cli.prune_ratio, config, verbose))
+            exit(see::print_verification(&program, depth,  config, verbose))
         }
         Mode::Bench {
             start,
@@ -101,8 +103,10 @@ fn main() {
         } => {
             let config = Config {
                 simplify: cli.simplifier,
+                prune_ratio: cli.prune_ratio,
+                solver_type: cli.solver
             };
-            exit(see::bench(&program, cli.prune_ratio, start, end, interval, config))
+            exit(see::bench(&program,  start, end, interval, config))
         }
     };
 }

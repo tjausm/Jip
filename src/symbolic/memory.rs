@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use crate::ast::*;
 use crate::shared::{panic_with_diagnostics, Error, Scope};
-use crate::z3;
+use crate::smt_solver::{self, Solver};
 
 use super::model::{Array, PathConstraints, Reference, ReferenceValue, SymExpression, SymType};
 
@@ -186,6 +186,7 @@ impl<'a> SymMemory {
     /// Possibly update with passed `var` and return current symbolic expression at arrays index
     pub fn heap_access_array(
         &mut self,
+        solver: &mut Solver,
         pc: &PathConstraints,
         simplify: bool,
         arr_name: &Identifier,
@@ -210,7 +211,7 @@ impl<'a> SymMemory {
                 SymExpression::Literal(Literal::Integer(lit_index)),
                 SymExpression::Literal(Literal::Integer(lit_lenght)),
             ) if lit_index < lit_lenght => (),
-            _ => z3::check_length(pc, &length, &simple_index)?,
+            _ => solver.check_length(pc, &length, &simple_index)?,
         };
 
         //get mutable HashMap representing array

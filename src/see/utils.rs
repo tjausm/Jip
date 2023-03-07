@@ -4,10 +4,11 @@ use crate::shared::Error;
 use crate::shared::{panic_with_diagnostics, Diagnostics};
 use crate::symbolic::memory::SymMemory;
 use crate::symbolic::model::{PathConstraints, SymExpression};
-use crate::z3;
+use crate::smt_solver::{self, Solver};
 
 /// returns the symbolic expression rhs refers to
 pub fn parse_rhs<'a, 'b>(
+    solver: &mut Solver,
     pc: &PathConstraints,
     simplify: bool,
     sym_memory: &mut SymMemory,
@@ -27,7 +28,7 @@ pub fn parse_rhs<'a, 'b>(
         }
 
         Rhs::AccessArray(arr_name, index) => {
-            sym_memory.heap_access_array(pc, simplify, arr_name, index.clone(), None)
+            sym_memory.heap_access_array(solver, pc, simplify, arr_name, index.clone(), None)
         }
 
         Rhs::Expression(expr) => Ok(SymExpression::new(&FxHashMap::default(), &sym_memory, expr.clone())),
@@ -43,20 +44,21 @@ pub fn parse_rhs<'a, 'b>(
 
 // gets type of lhs, parses expression on rhs and assign value of rhs to lhs on stack / heap
 pub fn lhs_from_rhs<'a>(
+    solver: &mut Solver,
     pc: &PathConstraints,
     simplify: bool,
     sym_memory: &mut SymMemory,
     lhs: &'a Lhs,
     rhs: &'a Rhs,
 ) -> Result<(), Error> {
-    let var = parse_rhs(pc, simplify, sym_memory, rhs)?;
+    let var = parse_rhs(solver, pc, simplify, sym_memory, rhs)?;
     match lhs {
         Lhs::Identifier(id) => sym_memory.stack_insert(id, var),
         Lhs::AccessField(obj_name, field_name) => {
             sym_memory.heap_access_object(obj_name, field_name, Some(var));
         }
         Lhs::AccessArray(arr_name, index) => {
-            sym_memory.heap_access_array( pc, simplify, arr_name, index.clone(), Some(var))?;
+            sym_memory.heap_access_array(solver, pc, simplify, arr_name, index.clone(), Some(var))?;
         }
     };
     Ok(())
@@ -133,6 +135,7 @@ pub fn params_to_vars<'ctx>(
 pub fn assert(
     simplify: bool,
     sym_memory: &mut SymMemory,
+    solver: &mut Solver,
     assertion: &Expression,
     pc: &mut PathConstraints,
     diagnostics: &mut Diagnostics,
@@ -163,7 +166,7 @@ pub fn assert(
 
     // if we have not solved by now, invoke z3
     diagnostics.z3_invocations = diagnostics.z3_invocations + 1;
-    z3::verify_constraints(&pc)
+    solver.verify_constraints(&pc)
 }
 
 /// handles the assume in the SEE (used in `assume`, `require` and `ensure` statements)
@@ -172,6 +175,7 @@ pub fn assume(
     simplify: bool,
     use_z3: bool,
     sym_memory: &mut SymMemory,
+    solver: &mut Solver,
     assumption: &Expression,
     pc: &mut PathConstraints,
     diagnostics: &mut Diagnostics,
@@ -181,8 +185,8 @@ pub fn assume(
     if simplify {
         let simple_assumption = sym_memory.simplify(subt_assumption.clone());
 
-        //  let z3_subt = z3::expression_unsatisfiable(ctx, &subt_assumption, sym_memory);
-        //  let z3_simple = z3::expression_unsatisfiable(ctx, &simple_assumption, sym_memory);
+        //  let z3_subt = smt_solver::expression_unsatisfiable(ctx, &subt_assumption, sym_memory);
+        //  let z3_simple = smt_solver::expression_unsatisfiable(ctx, &simple_assumption, sym_memory);
         //  println!("\nsubt_assumption: {:?}\n z3_subt: {:?}\n simplified: {:?}\n z3_simplified: {:?}\n", subt_assumption, z3_subt, simple_assumption, z3_simple);
 
         match simple_assumption {
@@ -198,7 +202,7 @@ pub fn assume(
     // if we have not solved by now, invoke z3
     if use_z3{
         diagnostics.z3_invocations = diagnostics.z3_invocations + 1;
-        if z3::expression_unsatisfiable( &pc.conjuct()) {return false};
+        if solver.expression_unsatisfiable( &pc.conjuct()) {return false};
     }
 
     return true;

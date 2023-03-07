@@ -4,6 +4,7 @@
 use std::fmt::Debug;
 use std::panic;
 use std::process::exit;
+use clap::ArgEnum;
 use uuid::Uuid;
 
 /// Indicates if program is valid, counterexample was found or other error occured
@@ -25,9 +26,17 @@ pub struct Scope {
     pub id: Option<Uuid>,
 }
 
+
+#[derive(Copy, Debug, Clone, PartialEq, Eq, PartialOrd, Ord, ArgEnum)]
+pub enum SolverType {
+    Z3,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Config {
     pub simplify: bool,
+    pub prune_ratio: i8,
+    pub solver_type: SolverType
 }
 
 #[derive(Clone)]

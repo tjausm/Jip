@@ -15,6 +15,7 @@ use crate::see::utils::*;
 use crate::shared::Config;
 use crate::shared::ExitCode;
 use crate::shared::{panic_with_diagnostics, Diagnostics, Error};
+use crate::smt_solver::Solver;
 use crate::symbolic::memory::SymMemory;
 use crate::symbolic::model::{PathConstraints, ReferenceValue, SymExpression, SymType};
 use colored::Colorize;
@@ -29,7 +30,6 @@ use std::time::Instant;
 
 pub fn bench(
     program: &str,
-    prune_ratio: i8,
     start: Depth,
     end: Option<Depth>,
     step: i32,
@@ -44,7 +44,7 @@ pub fn bench(
 
         // Code block to measure.
         {
-            match verify_program(program, d, prune_ratio, config.clone(), false) {
+            match verify_program(program, d,  config.clone(), false) {
                 Ok(_) => (),
                 r => return print_result(r),
             }
@@ -102,11 +102,10 @@ pub fn print_cfg(program: &str) -> (ExitCode, String) {
 pub fn print_verification(
     program: &str,
     d: Depth,
-    prune_ratio: i8,
     config: Config,
     verbose: bool,
 ) -> (ExitCode, String) {
-    let result = verify_program(program, d, prune_ratio, config, verbose);
+    let result = verify_program(program, d, config, verbose);
     print_result(result.clone())
 }
 
@@ -131,15 +130,17 @@ fn print_debug(node: &Node, sym_memory: &SymMemory, pc: &PathConstraints) {
 fn verify_program(
     prog_string: &str,
     d: Depth,
-    prune_ratio: i8,
     config: Config,
     verbose: bool,
 ) -> Result<Diagnostics, Error> {
-    let prune_coefficient = f64::from(prune_ratio) / f64::from(i8::MAX);
+    let prune_coefficient = f64::from(config.prune_ratio) / f64::from(i8::MAX);
     let prune_depth = (f64::from(d) - f64::from(d) * prune_coefficient) as i32;
 
     //init diagnostic info
     let mut diagnostics = Diagnostics::default();
+
+    //init solver
+    let mut solver = Solver::new(config.solver_type);
 
     // init retval and this such that it outlives env
     let retval_id = &"retval".to_string();
@@ -215,6 +216,7 @@ fn verify_program(
                             config.simplify,
                             d > prune_depth,
                             &mut sym_memory,
+                            &mut solver,
                             assumption,
                             &mut pc,
                             &mut diagnostics,
@@ -225,12 +227,13 @@ fn verify_program(
                     Statement::Assert(assertion) => assert(
                         config.simplify,
                         &mut sym_memory,
+                        &mut solver,
                         assertion,
                         &mut pc,
                         &mut diagnostics,
                     )?,
                     Statement::Assignment((lhs, rhs)) => {
-                        lhs_from_rhs(&pc, config.simplify, &mut sym_memory, lhs, rhs)?;
+                        lhs_from_rhs(&mut solver, &pc, config.simplify, &mut sym_memory, lhs, rhs)?;
                     }
                     Statement::Return(expr) => {
                         // stop path if current scope `id == None`, indicating we are in main scope
@@ -333,6 +336,7 @@ fn verify_program(
                                 (Specification::Requires(assertion), false) => assert(
                                     config.simplify,
                                     &mut sym_memory,
+                                    &mut solver,
                                     assertion,
                                     &mut pc,
                                     &mut diagnostics,
@@ -347,6 +351,7 @@ fn verify_program(
                                         config.simplify,
                                         prune_depth < d,
                                         &mut sym_memory,
+                                        &mut solver,
                                         assumption,
                                         &mut pc,
                                         &mut diagnostics,
