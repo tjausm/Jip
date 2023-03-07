@@ -266,7 +266,7 @@ impl fmt::Debug for Expression {
             Expression::Identifier(id) => write!(f, "{}", id),
             Expression::Literal(Literal::Boolean(val)) => write!(f, "{:?}", val),
             Expression::Literal(Literal::Integer(val)) => write!(f, "{:?}", val),
-            Expression::ArrLength(id) => write!(f, "#{}", id),
+            Expression::ArrLength(id) => write!(f, "{}", id),
         }
     }
 }

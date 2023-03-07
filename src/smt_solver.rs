@@ -123,6 +123,10 @@ impl Solver {
         self.s.push(1).unwrap();
 
         let (expr_str, fvs) = expr_to_str(expr);
+
+        let x = format!("{}", expr_str);
+        let y = format!("{:?}", fvs);
+
         for fv in fvs {
             match fv {
                 (SymType::Bool, id) => self.s.declare_const(id, "Bool").unwrap(),
@@ -132,7 +136,10 @@ impl Solver {
         }
 
         self.s.assert(expr_str.clone()).unwrap();
-        let satisfiable = self.s.check_sat().unwrap();
+        let satisfiable = match self.s.check_sat() {
+            Ok(b) => b,
+            Err(err) => todo!("{}", err),
+        };
         self.s.pop(1).unwrap();
         //either return Sat(formated model) or Unsat
         if satisfiable {

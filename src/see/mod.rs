@@ -176,7 +176,7 @@ fn verify_program(
                         (Type::ArrayType(ty), id) => {
                             let arr = sym_memory.init_array(
                                 *ty.clone(),
-                                SymExpression::FreeVariable(SymType::Int, format!("#{}", id)),
+                                SymExpression::FreeVariable(SymType::Int, format!("|#{}|", id)),
                             );
                             let r = sym_memory.heap_insert(None, arr);
                             sym_memory
