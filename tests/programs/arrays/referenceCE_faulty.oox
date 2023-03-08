@@ -1,0 +1,12 @@
+// a counterexample showing how concrete references generation in a symbolic array
+// could lead to unsound behaviour (this assertion should fail)
+class Main {
+    static void main(Ref[] a){
+        assert
+            forall a, r1, rv1 :
+                forall a, r2, rv2 :
+                    rv1 != rv2;
+    }
+}
+
+class Ref{}
