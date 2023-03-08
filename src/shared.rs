@@ -30,6 +30,8 @@ pub struct Scope {
 #[derive(Copy, Debug, Clone, PartialEq, Eq, PartialOrd, Ord, ArgEnum)]
 pub enum SolverType {
     Z3,
+    Yices2,
+    CVC4
 }
 
 #[derive(Debug, Clone, PartialEq)]

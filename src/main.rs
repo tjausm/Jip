@@ -27,18 +27,18 @@ struct Cli {
     #[clap(subcommand)]
     mode: Mode,
 
-    /// How to load the program
-    #[clap(arg_enum, default_value_t = SolverType::Z3)]
-    solver: SolverType,
+    /// Turns on the front end simplifier
+    #[clap(short, long)]
+    simplifier: bool,
 
     /// number between 0 and 255 denoting how deep we should prune
     /// , 0 = no pruning, 127 = prune to 50% of depth and so on
     #[clap(default_value_t = 0)]
     prune_ratio: i8,
 
-    /// Turns on the front end simplifier
-    #[clap(short, long)]
-    simplifier: bool,
+    /// Defines the smt-solver used by the backend
+    #[clap(arg_enum, default_value_t = SolverType::Z3)]
+    solver: SolverType,
 }
 
 #[derive(Subcommand)]
@@ -66,9 +66,6 @@ enum Mode {
         interval: Depth,
     },
 }
-
-
-
 
 
 fn main() {

@@ -4,7 +4,7 @@ use crate::ast::*;
 use crate::shared::{panic_with_diagnostics, Error, SolverType};
 use crate::symbolic::model::{PathConstraints, SymExpression, SymType};
 use rsmt2::print::{IdentParser, ModelParser};
-use rsmt2::{self, SmtRes};
+use rsmt2::{self, SmtConf, SmtRes};
 use rustc_hash::FxHashSet;
 
 //---------------------//
@@ -46,11 +46,31 @@ pub struct Solver {
 }
 
 impl Solver {
+
+
     pub fn new(solver_type: SolverType) -> Solver {
-        match solver_type {
-            SolverType::Z3 => Solver {
-                s: rsmt2::Solver::default_z3(Parser).unwrap(),
-            },
+        let conf = match solver_type {
+            SolverType::CVC4 => SmtConf::default_z3(),
+            SolverType::Yices2 => {
+                let mut conf = SmtConf::default_yices_2();
+                conf.option("--incremental"); //add support for scope popping and pushing from solver
+                conf.option("--interactive"); //add support for scope popping and pushing from solvercargo
+                conf
+            }
+            SolverType::Z3 => {
+                let mut conf = SmtConf::default_cvc4();
+                conf.option("--incremental"); //add support for scope popping and pushing from solver
+                conf.option("--rewrite-divk"); //add support for `div` and `mod` operators
+                conf
+            }
+        };
+
+        let mut solver = rsmt2::Solver::new(conf, Parser).unwrap();
+        solver.set_option(":print-success", "false").unwrap(); //turn off automatic succes printing in yices
+        solver.produce_models().unwrap();
+        solver.set_logic(rsmt2::Logic::QF_NIA).unwrap();
+        Solver {
+            s: solver,
         }
     }
 
@@ -124,9 +144,6 @@ impl Solver {
 
         let (expr_str, fvs) = expr_to_str(expr);
 
-        let x = format!("{}", expr_str);
-        let y = format!("{:?}", fvs);
-
         for fv in fvs {
             match fv {
                 (SymType::Bool, id) => self.s.declare_const(id, "Bool").unwrap(),
@@ -136,7 +153,18 @@ impl Solver {
         }
 
         self.s.assert(expr_str.clone()).unwrap();
-        let satisfiable = self.s.check_sat().unwrap(); 
+        let satisfiable = match self.s.check_sat() {
+            Ok(b) => b,
+            Err(err) => panic_with_diagnostics(
+                &format!(
+                    "Received backend error: {}\nWhile evaluating formula '{:?}'",
+                    err, expr_str
+                ),
+                &(),
+            ),
+        };
+        
+
         self.s.pop(1).unwrap();
         //either return Sat(formated model) or Unsat
         if satisfiable {
