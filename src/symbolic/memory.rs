@@ -266,7 +266,7 @@ impl<'a> SymMemory {
             match member {
                 Member::Field((ty, field)) => match ty {
                     Type::Int => {
-                        let field_name = format!("{}.{}", &r.to_string()[0..6], field);
+                        let field_name = format!("|{}.{}|", &r.to_string()[0..4], field);
 
                         fields.insert(
                             field.clone(),
@@ -522,7 +522,7 @@ impl fmt::Debug for SymMemory {
         }
         let mut formated_sym_heap = "".to_string();
         for (id, ref_val) in &self.heap {
-            formated_sym_heap.push_str(&format!("   {} := {:?}\n", &id.to_string()[0..6], ref_val))
+            formated_sym_heap.push_str(&format!("   {} := {:?}\n", &id.to_string()[0..4], ref_val))
         }
 
         write!(
