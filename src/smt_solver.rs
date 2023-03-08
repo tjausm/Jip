@@ -37,7 +37,7 @@ impl<'a> ModelParser<String, String, String, &'a str> for Parser {
         _: &[(String, String)],
         _: &String,
     ) -> SmtRes<String> {
-        Ok(format!("  {} -> {}  ", ident, input))
+        Ok(format!("{} -> {}", ident, input))
     }
 }
 
@@ -144,7 +144,6 @@ impl Solver {
         self.s.push(1).unwrap();
 
         let (expr_str, fvs) = expr_to_str(expr);
-
         for fv in fvs {
             match fv {
                 (SymType::Bool, id) => self.s.declare_const(id, "Bool").unwrap(),
@@ -152,7 +151,7 @@ impl Solver {
                 (SymType::Ref(_), id) => self.s.declare_const(id, "Int").unwrap(),
             }
         }
-
+        println!("{:?}", expr);
         self.s.assert(expr_str.clone()).unwrap();
         let satisfiable = match self.s.check_sat() {
             Ok(b) => b,
@@ -164,19 +163,19 @@ impl Solver {
                 &(),
             ),
         };
-        
 
+        let model = self.s.get_model();
         self.s.pop(1).unwrap();
         //either return Sat(formated model) or Unsat
         if satisfiable {
             let mut model_str = "".to_string();
-            match self.s.get_model() {
+            match model {
                 Ok(model) => {
                     for var in model {
                         model_str = format!("{}{}\n", model_str, var.3);
                     }
                 }
-                _ => (),
+                Err(err) => model_str = format!("Error during model parsing: {:?}", err),
             };
 
             SmtResult::Sat(model_str.to_owned())
