@@ -23,7 +23,7 @@ class Main {
         assert 
             forall array, i, vi : 
                 forall array, j, vj : 
-                    i < j ==> vi < vj;
+                    i < j ==> vi <= vj;
 
     }
 }

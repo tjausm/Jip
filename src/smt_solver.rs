@@ -151,7 +151,7 @@ impl Solver {
                 (SymType::Ref(_), id) => self.s.declare_const(id, "Int").unwrap(),
             }
         }
-        println!("{:?}", expr);
+        
         self.s.assert(expr_str.clone()).unwrap();
         let satisfiable = match self.s.check_sat() {
             Ok(b) => b,
