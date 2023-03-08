@@ -30,7 +30,7 @@ pub struct SymMemory {
     heap: SymHeap,
 }
 
-impl<'ctx> SymMemory {
+impl<'a> SymMemory {
     pub fn new() -> Self {
         SymMemory {
             stack: vec![Frame {
@@ -40,9 +40,8 @@ impl<'ctx> SymMemory {
             heap: FxHashMap::default(),
         }
     }
-}
 
-impl<'a> SymMemory {
+
     /// inserts a free variable (meaning we don't substitute's)
     pub fn stack_insert_free_var(&mut self, ty: Type, id: &'a Identifier) -> () {
         if let Some(s) = self.stack.last_mut() {

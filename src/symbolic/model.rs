@@ -234,6 +234,8 @@ fn destruct_forall<'a>(
     inner_expr: &Expression,
     sym_memory: &SymMemory,
 ) -> SymExpression {
+    
+
     let index_id = SymExpression::FreeVariable(SymType::Int, index.clone());
     let sym_ty = match ty {
         Type::Int => SymType::Int,
@@ -246,15 +248,15 @@ fn destruct_forall<'a>(
     let mut c = SymExpression::Literal(Literal::Boolean(true));
     let mut o = SymExpression::Literal(Literal::Boolean(true));
     for (i, v) in arr.into_iter() {
-        // using Expressions `apply_when` functions we substitute the identifiers of index and value
-        // with the expressions of given (i,v) pair in array
-        let mut mapping = FxHashMap::default();
-        mapping.insert(index.clone(), i.clone());
-        mapping.insert(value.clone(), v.clone());
+        // we insert index and value substitutions into stack
+        // and build a new inner_expression with said substitutions
+        let mut extended_memory = sym_memory.clone();
+        extended_memory.stack_insert(&index, i.clone());
+        extended_memory.stack_insert(&value, v.clone());
 
         c = SymExpression::And(
             Box::new(c),
-            Box::new(SymExpression::new( sym_memory, inner_expr.clone())),
+            Box::new(SymExpression::new( &extended_memory, inner_expr.clone())),
         );
 
         let ne = SymExpression::NE(Box::new(index_id.clone()), Box::new(i.clone()));
@@ -269,13 +271,13 @@ fn destruct_forall<'a>(
     let i_lt_len = SymExpression::LT(Box::new(index_id.clone()), Box::new(len.clone()));
 
     // build inner expression with index and value as freevars
-    let mut mapping = FxHashMap::default();
-    mapping.insert(
-        index.clone(),
+    let mut extended_memory = sym_memory.clone();
+    extended_memory.stack_insert(
+        &index,
         SymExpression::FreeVariable(SymType::Int, index.clone()),
     );
-    mapping.insert(value.clone(), SymExpression::FreeVariable(sym_ty, value.clone()));
-    let inner_expr = SymExpression::new( sym_memory, inner_expr.clone());
+    extended_memory.stack_insert(&value, SymExpression::FreeVariable(sym_ty, value.clone()));
+    let inner_expr = SymExpression::new( &extended_memory, inner_expr.clone());
 
     let e = SymExpression::Implies(
         Box::new(SymExpression::And(
