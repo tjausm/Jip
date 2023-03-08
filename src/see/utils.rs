@@ -1,10 +1,10 @@
-use rustc_hash::FxHashMap;
 use crate::ast::*;
 use crate::shared::Error;
 use crate::shared::{panic_with_diagnostics, Diagnostics};
+use crate::smt_solver::{self, Solver};
 use crate::symbolic::memory::SymMemory;
 use crate::symbolic::model::{PathConstraints, SymExpression};
-use crate::smt_solver::{self, Solver};
+use rustc_hash::FxHashMap;
 
 /// returns the symbolic expression rhs refers to
 pub fn parse_rhs<'a, 'b>(
@@ -21,7 +21,7 @@ pub fn parse_rhs<'a, 'b>(
 
         // generate reference, build arrayname from said reference, insert array into heap and return reference
         Rhs::NewArray(ty, len) => {
-            let subt_len = SymExpression::new(&FxHashMap::default(), sym_memory, len.clone());
+            let subt_len = SymExpression::new(sym_memory, len.clone());
             let arr = sym_memory.init_array(ty.clone(), subt_len);
             let r = sym_memory.heap_insert(None, arr);
             Ok(SymExpression::Reference(ty.clone(), r))
@@ -31,12 +31,9 @@ pub fn parse_rhs<'a, 'b>(
             sym_memory.heap_access_array(solver, pc, simplify, arr_name, index.clone(), None)
         }
 
-        Rhs::Expression(expr) => Ok(SymExpression::new(&FxHashMap::default(), &sym_memory, expr.clone())),
+        Rhs::Expression(expr) => Ok(SymExpression::new(&sym_memory, expr.clone())),
         _ => panic_with_diagnostics(
-            &format!(
-                "Rhs of the form {:?} should not be in the cfg",
-                rhs
-            ),
+            &format!("Rhs of the form {:?} should not be in the cfg", rhs),
             &sym_memory,
         ),
     }
@@ -58,7 +55,14 @@ pub fn lhs_from_rhs<'a>(
             sym_memory.heap_access_object(obj_name, field_name, Some(var));
         }
         Lhs::AccessArray(arr_name, index) => {
-            sym_memory.heap_access_array(solver, pc, simplify, arr_name, index.clone(), Some(var))?;
+            sym_memory.heap_access_array(
+                solver,
+                pc,
+                simplify,
+                arr_name,
+                index.clone(),
+                Some(var),
+            )?;
         }
     };
     Ok(())
@@ -86,17 +90,20 @@ pub fn params_to_vars<'ctx>(
 
     loop {
         match (params_iter.next(), args_iter.next()) {
-
             (Some((Type::ArrayType(ty), arg_id)), Some(expr)) => match expr {
                 Expression::Identifier(param_id) => match sym_memory.stack_get(param_id) {
-                    Some(SymExpression::Reference(ty, r)) => variables.push((arg_id, SymExpression::Reference(ty, r))),
+                    Some(SymExpression::Reference(ty, r)) => {
+                        variables.push((arg_id, SymExpression::Reference(ty, r)))
+                    }
                     _ => return err(&format!("{:?}[]", ty), arg_id, expr),
                 },
                 _ => return err(&format!("{:?}[]", ty), arg_id, expr),
             },
             (Some((Type::ClassType(class), arg_id)), Some(expr)) => match expr {
                 Expression::Identifier(param_id) => match sym_memory.stack_get(param_id) {
-                    Some(SymExpression::Reference(ty, r)) => variables.push((arg_id, SymExpression::Reference(ty, r))),
+                    Some(SymExpression::Reference(ty, r)) => {
+                        variables.push((arg_id, SymExpression::Reference(ty, r)))
+                    }
                     _ => return err(class, arg_id, expr),
                 },
                 _ => return err(class, arg_id, expr),
@@ -104,11 +111,7 @@ pub fn params_to_vars<'ctx>(
             (Some((_, arg_id)), Some(expr)) => {
                 variables.push((
                     arg_id,
-                    SymExpression::new(
-                        &FxHashMap::default(),
-                        &sym_memory,
-                        expr.clone(),
-                    ),
+                    SymExpression::new( &sym_memory, expr.clone()),
                 ));
             }
             (Some((_, param)), None) => panic_with_diagnostics(
@@ -140,7 +143,7 @@ pub fn assert(
     pc: &mut PathConstraints,
     diagnostics: &mut Diagnostics,
 ) -> Result<(), Error> {
-    let subt_assertion = SymExpression::new(&FxHashMap::default(), &sym_memory, assertion.clone());
+    let subt_assertion = SymExpression::new(&sym_memory, assertion.clone());
 
     // add (simplified) assertion
     if simplify {
@@ -180,8 +183,8 @@ pub fn assume(
     pc: &mut PathConstraints,
     diagnostics: &mut Diagnostics,
 ) -> bool {
-    let subt_assumption = SymExpression::new(&FxHashMap::default(), &sym_memory, assumption.clone());
-    
+    let subt_assumption = SymExpression::new(&sym_memory, assumption.clone());
+
     if simplify {
         let simple_assumption = sym_memory.simplify(subt_assumption.clone());
 
@@ -194,15 +197,16 @@ pub fn assume(
             SymExpression::Literal(Literal::Boolean(true)) => (),
             _ => pc.push_assumption(simple_assumption),
         };
-    } 
-    else {
+    } else {
         pc.push_assumption(subt_assumption.clone());
     };
 
     // if we have not solved by now, invoke z3
-    if use_z3{
+    if use_z3 {
         diagnostics.z3_invocations = diagnostics.z3_invocations + 1;
-        if solver.expression_unsatisfiable( &pc.conjuct()) {return false};
+        if solver.expression_unsatisfiable(&pc.conjuct()) {
+            return false;
+        };
     }
 
     return true;

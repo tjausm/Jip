@@ -334,7 +334,7 @@ mod tests {
             .parse("!(((1 >= 0) && (2 > 0)) ==> ((((1 + 2) >= 1) && ((1 + 2) >= 1)) && true))")
             .unwrap();
 
-        let se = SymExpression::new(&FxHashMap::default(), &SymMemory::new(), expr);
+        let se = SymExpression::new( &SymMemory::new(), expr);
         // todo!()
         // let sat = verify_expr(&se);
 

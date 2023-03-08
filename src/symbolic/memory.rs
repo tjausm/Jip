@@ -194,7 +194,7 @@ impl<'a> SymMemory {
         var: Option<SymExpression>,
     ) -> Result<SymExpression, Error> {
         // substitute expr and simplify
-        let subt_index = SymExpression::new(&FxHashMap::default(), self, index);
+        let subt_index = SymExpression::new( self, index);
 
         //get immutable length(immutable)
         let mut length = self.heap_get_array(arr_name).2.clone();
