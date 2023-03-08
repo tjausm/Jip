@@ -47,28 +47,29 @@ pub struct Solver {
 
 impl Solver {
 
-
+    /// Creates a new solver using the configured backend.
+    /// For both Yices and Cvc we pas a set of flags to make them work with the rust interface
     pub fn new(solver_type: SolverType) -> Solver {
         let conf = match solver_type {
-            SolverType::CVC4 => SmtConf::default_z3(),
+            SolverType::Z3 => SmtConf::default_z3(),
             SolverType::Yices2 => {
                 let mut conf = SmtConf::default_yices_2();
                 conf.option("--incremental"); //add support for scope popping and pushing from solver
                 conf.option("--interactive"); //add support for scope popping and pushing from solvercargo
                 conf
             }
-            SolverType::Z3 => {
+            SolverType::CVC4 => {
                 let mut conf = SmtConf::default_cvc4();
                 conf.option("--incremental"); //add support for scope popping and pushing from solver
-                conf.option("--rewrite-divk"); //add support for `div` and `mod` operators
+                conf.option("--rewrite-divk"); //add support for `div` and `mod` operators (not working)
                 conf
             }
         };
 
         let mut solver = rsmt2::Solver::new(conf, Parser).unwrap();
-        solver.set_option(":print-success", "false").unwrap(); //turn off automatic succes printing in yices
+        solver.set_option(":print-success", "false").unwrap(); //turn off automatic succes printing in yices2
         solver.produce_models().unwrap();
-        solver.set_logic(rsmt2::Logic::QF_NIA).unwrap();
+        solver.set_logic(rsmt2::Logic::QF_NIA).unwrap(); //set logic to quantifier free non-linear arithmetics
         Solver {
             s: solver,
         }
