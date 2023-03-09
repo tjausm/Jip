@@ -41,24 +41,6 @@ impl<'a> SymMemory {
         }
     }
 
-
-    /// inserts a free variable (meaning we don't substitute's)
-    pub fn stack_insert_free_var(&mut self, ty: Type, id: &'a Identifier) -> () {
-        if let Some(s) = self.stack.last_mut() {
-            match ty {
-                Type::Int => s.env.insert(
-                    id.clone(),
-                    SymExpression::FreeVariable(SymType::Int, id.clone()),
-                ),
-                Type::Bool => s.env.insert(
-                    id.clone(),
-                    SymExpression::FreeVariable(SymType::Bool, id.clone()),
-                ),
-                _ => None,
-            };
-        };
-    }
-
     /// Insert mapping `Identifier |-> SymbolicExpression` in top most frame of stack
     pub fn stack_insert(&mut self, id: &'a Identifier, sym_expr: SymExpression) -> () {
         if let Some(s) = self.stack.last_mut() {
