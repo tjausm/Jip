@@ -21,7 +21,6 @@ use crate::symbolic::model::{PathConstraints, ReferenceValue, SymExpression, Sym
 use colored::Colorize;
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
-use rustc_hash::FxHashMap;
 use uuid::Uuid;
 
 use std::collections::VecDeque;

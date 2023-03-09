@@ -1,10 +1,9 @@
 use crate::ast::*;
 use crate::shared::Error;
 use crate::shared::{panic_with_diagnostics, Diagnostics};
-use crate::smt_solver::{self, Solver};
+use crate::smt_solver::{Solver};
 use crate::symbolic::memory::SymMemory;
 use crate::symbolic::model::{PathConstraints, SymExpression};
-use rustc_hash::FxHashMap;
 
 /// returns the symbolic expression rhs refers to
 pub fn parse_rhs<'a, 'b>(
