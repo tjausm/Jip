@@ -33,7 +33,7 @@ impl Default for PathConstraints {
 
 impl PathConstraints {
     
-    pub fn into_iter(&self) -> IntoIter<PathConstraint>{
+    pub fn into_iter(self) -> IntoIter<PathConstraint>{
         self.constraints.into_iter()
     }
 
@@ -132,7 +132,7 @@ impl SymExpression {
                 Some(sym_expr) => sym_expr,
                 _ => panic_with_diagnostics(&format!("{} was not declared", id), &sym_memory),
             },
-            Expression::SizeOf(arr_name) => sym_memory.heap_get_arr_length(&arr_name),
+            Expression::SizeOf(arr_name) => SymExpression::SizeOf(arr_name.clone(), Box::new(sym_memory.heap_get_arr_length(&arr_name))),
             Expression::Implies(l, r) => SymExpression::Implies(
                 Box::new(SymExpression::new(sym_memory, *l)),
                 Box::new(SymExpression::new(sym_memory, *r)),
@@ -202,7 +202,7 @@ impl SymExpression {
     /// front end simplifier
     pub fn simplify(self) -> Self {
         match &self {
-            SymExpression::And(_, _) => match (self.clone().simplify(), self.simplify()) {
+            SymExpression::And(l, r) => match (l.clone().simplify(), r.clone().simplify()) {
                 (SymExpression::Literal(Literal::Boolean(false)), _) => {
                     SymExpression::Literal(Literal::Boolean(false))
                 }
@@ -215,7 +215,7 @@ impl SymExpression {
                 ) => SymExpression::Literal(Literal::Boolean(true)),
                 (l_simple, r_simple) => SymExpression::And(Box::new(l_simple), Box::new(r_simple)),
             },
-            SymExpression::Or(_, _) => match (self.clone().simplify(), self.simplify()) {
+            SymExpression::Or(l, r) => match (l.clone().simplify(), r.clone().simplify()) {
                 (SymExpression::Literal(Literal::Boolean(true)), _) => {
                     SymExpression::Literal(Literal::Boolean(true))
                 }
@@ -224,7 +224,7 @@ impl SymExpression {
                 }
                 (l_simple, r_simple) => SymExpression::Or(Box::new(l_simple), Box::new(r_simple)),
             },
-            SymExpression::Implies(_, _) => match (self.clone().simplify(), self.simplify()) {
+            SymExpression::Implies(l, r) => match (l.clone().simplify(), r.clone().simplify()) {
                 (SymExpression::Literal(Literal::Boolean(false)), _) => {
                     SymExpression::Literal(Literal::Boolean(true))
                 }
@@ -239,33 +239,33 @@ impl SymExpression {
                     SymExpression::Implies(Box::new(l_simple), Box::new(r_simple))
                 }
             },
-            SymExpression::EQ(_, _) => match (self.clone().simplify(), self.simplify()) {
+            SymExpression::EQ(l, r) => match (l.clone().simplify(), r.clone().simplify()) {
                 (SymExpression::Literal(l_lit), SymExpression::Literal(r_lit)) => {
                     SymExpression::Literal(Literal::Boolean(l_lit == r_lit))
                 }
                 (l_simple, r_simple) => SymExpression::EQ(Box::new(l_simple), Box::new(r_simple)),
             },
-            SymExpression::NE(_, _) => match (self.clone().simplify(), self.simplify()) {
+            SymExpression::NE(l, r) => match (l.clone().simplify(), r.clone().simplify()) {
                 (SymExpression::Literal(l_lit), SymExpression::Literal(r_lit)) => {
                     SymExpression::Literal(Literal::Boolean(l_lit != r_lit))
                 }
                 (l_simple, r_simple) => SymExpression::NE(Box::new(l_simple), Box::new(r_simple)),
             },
-            SymExpression::LT(_, _) => match (self.clone().simplify(), self.simplify()) {
+            SymExpression::LT(l, r) => match (l.clone().simplify(), r.clone().simplify()) {
                 (
                     SymExpression::Literal(Literal::Integer(l_lit)),
                     SymExpression::Literal(Literal::Integer(r_lit)),
                 ) => SymExpression::Literal(Literal::Boolean(l_lit < r_lit)),
                 (l_simple, r_simple) => SymExpression::LT(Box::new(l_simple), Box::new(r_simple)),
             },
-            SymExpression::GT(_, _) => match (self.clone().simplify(), self.simplify()) {
+            SymExpression::GT(l, r) => match (l.clone().simplify(), r.clone().simplify()) {
                 (
                     SymExpression::Literal(Literal::Integer(l_lit)),
                     SymExpression::Literal(Literal::Integer(r_lit)),
                 ) => SymExpression::Literal(Literal::Boolean(l_lit > r_lit)),
                 (l_simple, r_simple) => SymExpression::GT(Box::new(l_simple), Box::new(r_simple)),
             },
-            SymExpression::GEQ(_, _) => match (self.clone().simplify(), self.simplify()) {
+            SymExpression::GEQ(l, r) => match (l.clone().simplify(), r.clone().simplify()) {
                 (
                     SymExpression::Literal(Literal::Integer(l_lit)),
                     SymExpression::Literal(Literal::Integer(r_lit)),
@@ -273,7 +273,7 @@ impl SymExpression {
                 (l_simple, r_simple) => SymExpression::GEQ(Box::new(l_simple), Box::new(r_simple)),
             },
 
-            SymExpression::LEQ(_, _) => match (self.clone().simplify(), self.simplify()) {
+            SymExpression::LEQ(l, r) => match (l.clone().simplify(), r.clone().simplify()) {
                 (
                     SymExpression::Literal(Literal::Integer(l_lit)),
                     SymExpression::Literal(Literal::Integer(r_lit)),
@@ -281,14 +281,14 @@ impl SymExpression {
                 (l_simple, r_simple) => SymExpression::LEQ(Box::new(l_simple), Box::new(r_simple)),
             },
 
-            SymExpression::Plus(_, _) => match (self.clone().simplify(), self.simplify()) {
+            SymExpression::Plus(l, r) => match (l.clone().simplify(), r.clone().simplify()) {
                 (
                     SymExpression::Literal(Literal::Integer(l_lit)),
                     SymExpression::Literal(Literal::Integer(r_lit)),
                 ) => SymExpression::Literal(Literal::Integer(l_lit + r_lit)),
                 (l_simple, r_simple) => SymExpression::Plus(Box::new(l_simple), Box::new(r_simple)),
             },
-            SymExpression::Minus(_, _) => match (self.clone().simplify(), self.simplify()) {
+            SymExpression::Minus(l, r) => match (l.clone().simplify(), r.clone().simplify()) {
                 (
                     SymExpression::Literal(Literal::Integer(l_lit)),
                     SymExpression::Literal(Literal::Integer(r_lit)),
@@ -297,7 +297,7 @@ impl SymExpression {
                     SymExpression::Minus(Box::new(l_simple), Box::new(r_simple))
                 }
             },
-            SymExpression::Multiply(_, _) => match (self.clone().simplify(), self.simplify()) {
+            SymExpression::Multiply(l, r) => match (l.clone().simplify(), r.clone().simplify()) {
                 (
                     SymExpression::Literal(Literal::Integer(l_lit)),
                     SymExpression::Literal(Literal::Integer(r_lit)),
@@ -306,7 +306,7 @@ impl SymExpression {
                     SymExpression::Multiply(Box::new(l_simple), Box::new(r_simple))
                 }
             },
-            SymExpression::Divide(_, _) => match (self.clone().simplify(), self.simplify()) {
+            SymExpression::Divide(l, r) => match (l.clone().simplify(), r.clone().simplify()) {
                 (
                     SymExpression::Literal(Literal::Integer(l_lit)),
                     SymExpression::Literal(Literal::Integer(r_lit)),
@@ -315,19 +315,20 @@ impl SymExpression {
                     SymExpression::Divide(Box::new(l_simple), Box::new(r_simple))
                 }
             },
-            SymExpression::Mod(_, _) => match (self.clone().simplify(), self.simplify()) {
+            SymExpression::Mod(l, r) => match (l.clone().simplify(), r.clone().simplify()) {
                 (
                     SymExpression::Literal(Literal::Integer(l_lit)),
                     SymExpression::Literal(Literal::Integer(r_lit)),
                 ) => SymExpression::Literal(Literal::Integer(l_lit % r_lit)),
                 (l_simple, r_simple) => SymExpression::Mod(Box::new(l_simple), Box::new(r_simple)),
             },
-            SymExpression::Not(expr) => match self.simplify() {
+            SymExpression::Not(expr) => match expr.clone().simplify() {
                 SymExpression::Literal(Literal::Boolean(b)) => {
                     SymExpression::Literal(Literal::Boolean(!b))
                 }
                 simple_expr => SymExpression::Not(Box::new(simple_expr)),
             },
+            SymExpression::SizeOf(_, size) => size.get(),
             SymExpression::Literal(_) => self,
             SymExpression::FreeVariable(_, _) => self,
             SymExpression::Reference(_, _) => self,
@@ -342,7 +343,7 @@ impl SymExpression {
 pub type Object = (Identifier, FxHashMap<Identifier, SymExpression>);
 
 /// Consists of type, a mapping from expression to symbolic expression and Substituted expression representing length
-pub type Array = (Type, FxHashMap<SymExpression, SymExpression>, SymExpression);
+pub type Array = (Type, FxHashMap<SymExpression, SymExpression>, SymSize);
 
 #[derive(Clone)]
 pub enum ReferenceValue {
@@ -360,6 +361,19 @@ pub struct SymSize {
 }
 
 impl SymSize {
+    pub fn new(size_expr: SymExpression) -> Self{
+        SymSize{ min: None, size: size_expr, max: None}
+    }
+
+    pub fn min(&self) -> Option<i64> {
+        self.min
+    }
+    pub fn get(&self) -> SymExpression {
+        self.size.clone()
+    }
+    pub fn max(&self) -> Option<i64> {
+        self.max
+    }
 
     /// given 2 symSizes, take the lowest min and highest max broadening the range
     /// sets length of 2nd argument as new length
@@ -415,7 +429,7 @@ impl SymSize {
         };
 
         let mut sym_size = self.clone();
-        for constraint in pc.into_iter() {
+        for constraint in pc.clone().into_iter() {
             let expr = match constraint {
                 PathConstraint::Assert(e) => e,
                 PathConstraint::Assume(e) => e,
@@ -427,8 +441,8 @@ impl SymSize {
 
         fn infer_from_expr(&self, expr: &SymExpression, a: &Identifier) -> SymSize{
             match expr {
-                SymExpression::And(l, r) => SymSize::narrow(&self.infer(l, a), &self.infer(r, a)),
-                SymExpression::Or(l, r) => SymSize::broaden(&self.infer(l, a), &self.infer(r, a)),
+                SymExpression::And(l, r) => SymSize::narrow(&self.infer_from_expr(l, a), &self.infer_from_expr(r, a)),
+                SymExpression::Or(l, r) => SymSize::broaden(&self.infer_from_expr(l, a), &self.infer_from_expr(r, a)),
                 SymExpression::EQ(l, r) => match (&**l, &**r) {
                     (SymExpression::SizeOf(id, _), SymExpression::Literal(Literal::Integer(n)))
                         if id == a =>
@@ -553,7 +567,7 @@ impl SymSize {
 /// return c && e
 /// ```
 fn destruct_forall<'a>(
-    (ty, arr, len): &Array,
+    (ty, arr, size): &Array,
     index: &Identifier,
     value: &Identifier,
     inner_expr: &Expression,
@@ -591,7 +605,8 @@ fn destruct_forall<'a>(
         Box::new(index_id.clone()),
         Box::new(SymExpression::Literal(Literal::Integer(0))),
     );
-    let i_lt_len = SymExpression::LT(Box::new(index_id.clone()), Box::new(len.clone()));
+
+    let i_lt_size = SymExpression::LT(Box::new(index_id.clone()), Box::new(size.size.clone()));
 
     // build inner expression with index and value as freevars
     let mut extended_memory = sym_memory.clone();
@@ -605,7 +620,7 @@ fn destruct_forall<'a>(
     let e = SymExpression::Implies(
         Box::new(SymExpression::And(
             Box::new(i_geq_0),
-            Box::new(SymExpression::And(Box::new(o), Box::new(i_lt_len))),
+            Box::new(SymExpression::And(Box::new(o), Box::new(i_lt_size))),
         )),
         Box::new(inner_expr),
     );
@@ -740,7 +755,7 @@ impl fmt::Debug for SymExpression {
             SymExpression::Literal(Literal::Boolean(val)) => write!(f, "{:?}", val),
             SymExpression::Literal(Literal::Integer(val)) => write!(f, "{:?}", val),
             SymExpression::FreeVariable(_, fv) => write!(f, "{}", fv),
-            SymExpression::SizeOf(id, _) => write!(f, "#{}", id),
+            SymExpression::SizeOf(id, _) => write!(f, "|sizeOf({})|", id),
             SymExpression::Reference(_, r) => {
                 let mut formated = "".to_string();
                 formated.push_str(&r.clone().to_string()[0..4]);
@@ -750,6 +765,18 @@ impl fmt::Debug for SymExpression {
         }
     }
 }
+
+impl fmt::Debug for SymSize {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            match (self.min, self.max){
+                (None, None) => write!(f, "{:?}", self.size),
+                (None, Some(max)) => write!(f, "{:?} <= {}", self.size, max),
+                (Some(min), None) => write!(f, "{} <= {:?}", min, self.size),
+                (Some(min), Some(max)) => write!(f, "{} <= {:?} <= {}", min, self.size, max),
+            }
+            
+            
+        }}
 
 #[cfg(test)]
 mod tests {

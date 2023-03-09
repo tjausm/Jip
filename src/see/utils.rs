@@ -3,7 +3,7 @@ use crate::shared::Error;
 use crate::shared::{panic_with_diagnostics, Diagnostics};
 use crate::smt_solver::{Solver};
 use crate::symbolic::memory::SymMemory;
-use crate::symbolic::model::{PathConstraints, SymExpression};
+use crate::symbolic::model::{PathConstraints, SymExpression, SymSize};
 
 /// returns the symbolic expression rhs refers to
 pub fn parse_rhs<'a, 'b>(
@@ -20,8 +20,8 @@ pub fn parse_rhs<'a, 'b>(
 
         // generate reference, build arrayname from said reference, insert array into heap and return reference
         Rhs::NewArray(ty, len) => {
-            let subt_len = SymExpression::new(sym_memory, len.clone());
-            let arr = sym_memory.init_array(ty.clone(), subt_len);
+            let size = SymSize::new(SymExpression::new(sym_memory, len.clone()));
+            let arr = sym_memory.init_array(ty.clone(), size);
             let r = sym_memory.heap_insert(None, arr);
             Ok(SymExpression::Reference(ty.clone(), r))
         }

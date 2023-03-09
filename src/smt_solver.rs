@@ -300,10 +300,17 @@ fn expr_to_str<'a>(expr: &'a SymExpression) -> (String, FxHashSet<(SymType, Stri
             let mut fv = FxHashSet::default();
             fv.insert((ty.clone(), id.clone()));
             (format!("{}", id), fv)
-        }
+        },
+        SymExpression::SizeOf(arr_name, _) => {
+            let mut fv = FxHashSet::default();
+            let arr_size_id = format!("|#{}|", arr_name);
+            fv.insert((SymType::Int, arr_name.clone()));
+            (format!("{}", arr_size_id), fv)       
+        },
         SymExpression::Literal(Literal::Integer(n)) => (format!("{}", n), FxHashSet::default()),
         SymExpression::Literal(Literal::Boolean(b)) => (format!("{}", b), FxHashSet::default()),
         SymExpression::Reference(_, r) => (format!("{}", r.as_u64_pair().0), FxHashSet::default()),
+
         otherwise => {
             panic_with_diagnostics(
                 &format!(

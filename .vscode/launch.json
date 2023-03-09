@@ -19,7 +19,7 @@
                     "kind": "bin"
                 }
             },
-            "args": ["tests/programs/benchmark/bubblesort.oox ", "verify"],
+            "args": ["tests/programs/operators/addition.oox", "-s", "verify"],
             "cwd": "${workspaceFolder}"
         },
         {

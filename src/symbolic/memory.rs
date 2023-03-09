@@ -8,7 +8,7 @@ use crate::ast::*;
 use crate::shared::{panic_with_diagnostics, Error, Scope};
 use crate::smt_solver::{self, Solver};
 
-use super::model::{Array, PathConstraints, Reference, ReferenceValue, SymExpression, SymType};
+use super::model::{Array, PathConstraints, Reference, ReferenceValue, SymExpression, SymType, SymSize};
 
 //-----------------//
 // Symbolic memory //
@@ -178,22 +178,22 @@ impl<'a> SymMemory {
         let subt_index = SymExpression::new( self, index);
 
         //get immutable length(immutable)
-        let mut length = self.heap_get_array(arr_name).2.clone();
+        let mut size = self.heap_get_array(arr_name).2.clone().get();
 
         // make length owned and simplify if toggled
         let simple_index = subt_index.clone().simplify();
         if simplify {
-            length = length.simplify();
+            size = size.simplify();
         };
 
         // check if index is always < length
-        match (&simple_index, &length) {
+        match (&simple_index, &size) {
             (
                 SymExpression::Literal(Literal::Integer(lit_index)),
                 SymExpression::Literal(Literal::Integer(lit_lenght)),
             ) if lit_index < lit_lenght => (),
             _ => (),
-            _ => solver.check_length(pc, &length, &simple_index)?,
+            _ => solver.check_length(pc, &size, &simple_index)?,
         };
 
         //get mutable HashMap representing array
@@ -229,7 +229,7 @@ impl<'a> SymMemory {
     }
 
     // return the symbolic length of an array
-    pub fn heap_get_arr_length(&self, arr_name: &Identifier) -> SymExpression {
+    pub fn heap_get_arr_length(&self, arr_name: &Identifier) -> SymSize {
         match self.stack_get(&arr_name){
         Some(SymExpression::Reference(_, r)) => match self.heap.get(&r){
             Some(ReferenceValue::Array((_, _, length))) => length.clone(),
@@ -285,7 +285,7 @@ impl<'a> SymMemory {
     }
 
     //todo: how to initialize correctly
-    pub fn init_array(&mut self, ty: Type, length: SymExpression) -> ReferenceValue {
+    pub fn init_array(&mut self, ty: Type, length: SymSize) -> ReferenceValue {
         ReferenceValue::Array((ty, FxHashMap::default(), length))
     }
 

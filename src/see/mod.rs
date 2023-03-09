@@ -17,7 +17,7 @@ use crate::shared::ExitCode;
 use crate::shared::{panic_with_diagnostics, Diagnostics, Error};
 use crate::smt_solver::Solver;
 use crate::symbolic::memory::SymMemory;
-use crate::symbolic::model::{PathConstraints, ReferenceValue, SymExpression, SymType};
+use crate::symbolic::model::{PathConstraints, ReferenceValue, SymExpression, SymType, SymSize};
 use colored::Colorize;
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
@@ -173,9 +173,10 @@ fn verify_program(
                         (Type::Int, id) => sym_memory.stack_insert(id, SymExpression::FreeVariable(SymType::Int, id.clone())),
                         (Type::Bool, id) =>sym_memory.stack_insert(id, SymExpression::FreeVariable(SymType::Bool, id.clone())),
                         (Type::ArrayType(ty), id) => {
+                            let size = SymSize::new(SymExpression::FreeVariable(SymType::Int, format!("|#{}|", id)));
                             let arr = sym_memory.init_array(
                                 *ty.clone(),
-                                SymExpression::FreeVariable(SymType::Int, format!("|#{}|", id)),
+                                size
                             );
                             let r = sym_memory.heap_insert(None, arr);
                             sym_memory
