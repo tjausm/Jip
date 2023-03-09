@@ -2,6 +2,15 @@
 // could lead to unsound behaviour (this assertion should fail)
 class Main {
     static void main(Ref[] a){
+
+        //force solver to initialize concrete references
+        int i := 0;
+        while (i < #a) {
+            int x := a[i];
+        };
+
+        // now all references must be different thus assertion hold
+        // but we can't be sure a isn't an array holding duplicates 
         assert
             forall a, r1, rv1 :
                 forall a, r2, rv2 :

@@ -104,6 +104,7 @@ pub enum SymExpression {
     Not(Box<SymExpression>),
     Literal(Literal),
     FreeVariable(SymType, Identifier),
+    SizeOf(Identifier, Box<SymLength>),
     Reference(Type, Reference),
     Uninitialized,
 }
@@ -111,11 +112,7 @@ pub enum SymExpression {
 impl SymExpression {
     /// destructs forall and exists quantifiers and then
     /// generates a substituted expression from it
-    pub fn new(
-        sym_memory: &SymMemory,
-        expr: Expression,
-    ) -> Self {
-
+    pub fn new(sym_memory: &SymMemory, expr: Expression) -> Self {
         match expr {
             Expression::Forall(arr_name, index, value, expr) => destruct_forall(
                 sym_memory.heap_get_array(&arr_name),
@@ -125,76 +122,73 @@ impl SymExpression {
                 sym_memory,
             ),
             Expression::Exists(arr_name, index, value, expr) => todo!(),
-            Expression::Identifier(id) => match  sym_memory.stack_get(&id)
-            {
+            Expression::Identifier(id) => match sym_memory.stack_get(&id) {
                 Some(sym_expr) => sym_expr,
                 _ => panic_with_diagnostics(&format!("{} was not declared", id), &sym_memory),
             },
-            Expression::ArrLength(arr_name) => sym_memory.heap_get_arr_length(&arr_name),
+            Expression::SizeOf(arr_name) => sym_memory.heap_get_arr_length(&arr_name),
             Expression::Implies(l, r) => SymExpression::Implies(
-                Box::new(SymExpression::new( sym_memory, *l)),
-                Box::new(SymExpression::new( sym_memory, *r)),
+                Box::new(SymExpression::new(sym_memory, *l)),
+                Box::new(SymExpression::new(sym_memory, *r)),
             ),
             Expression::And(l, r) => SymExpression::And(
-                Box::new(SymExpression::new( sym_memory, *l)),
-                Box::new(SymExpression::new( sym_memory, *r)),
+                Box::new(SymExpression::new(sym_memory, *l)),
+                Box::new(SymExpression::new(sym_memory, *r)),
             ),
             Expression::Or(l, r) => SymExpression::Or(
-                Box::new(SymExpression::new( sym_memory, *l)),
-                Box::new(SymExpression::new( sym_memory, *r)),
+                Box::new(SymExpression::new(sym_memory, *l)),
+                Box::new(SymExpression::new(sym_memory, *r)),
             ),
             Expression::EQ(l, r) => SymExpression::EQ(
-                Box::new(SymExpression::new( sym_memory, *l)),
-                Box::new(SymExpression::new( sym_memory, *r)),
+                Box::new(SymExpression::new(sym_memory, *l)),
+                Box::new(SymExpression::new(sym_memory, *r)),
             ),
             Expression::NE(l, r) => SymExpression::NE(
-                Box::new(SymExpression::new( sym_memory, *l)),
-                Box::new(SymExpression::new( sym_memory, *r)),
+                Box::new(SymExpression::new(sym_memory, *l)),
+                Box::new(SymExpression::new(sym_memory, *r)),
             ),
             Expression::LT(l, r) => SymExpression::LT(
-                Box::new(SymExpression::new( sym_memory, *l)),
-                Box::new(SymExpression::new( sym_memory, *r)),
+                Box::new(SymExpression::new(sym_memory, *l)),
+                Box::new(SymExpression::new(sym_memory, *r)),
             ),
             Expression::GT(l, r) => SymExpression::GT(
-                Box::new(SymExpression::new( sym_memory, *l)),
-                Box::new(SymExpression::new( sym_memory, *r)),
+                Box::new(SymExpression::new(sym_memory, *l)),
+                Box::new(SymExpression::new(sym_memory, *r)),
             ),
             Expression::GEQ(l, r) => SymExpression::GEQ(
-                Box::new(SymExpression::new( sym_memory, *l)),
-                Box::new(SymExpression::new( sym_memory, *r)),
+                Box::new(SymExpression::new(sym_memory, *l)),
+                Box::new(SymExpression::new(sym_memory, *r)),
             ),
             Expression::LEQ(l, r) => SymExpression::LEQ(
-                Box::new(SymExpression::new( sym_memory, *l)),
-                Box::new(SymExpression::new( sym_memory, *r)),
+                Box::new(SymExpression::new(sym_memory, *l)),
+                Box::new(SymExpression::new(sym_memory, *r)),
             ),
             Expression::Plus(l, r) => SymExpression::Plus(
-                Box::new(SymExpression::new( sym_memory, *l)),
-                Box::new(SymExpression::new( sym_memory, *r)),
+                Box::new(SymExpression::new(sym_memory, *l)),
+                Box::new(SymExpression::new(sym_memory, *r)),
             ),
             Expression::Minus(l, r) => SymExpression::Minus(
-                Box::new(SymExpression::new( sym_memory, *l)),
-                Box::new(SymExpression::new( sym_memory, *r)),
+                Box::new(SymExpression::new(sym_memory, *l)),
+                Box::new(SymExpression::new(sym_memory, *r)),
             ),
             Expression::Multiply(l, r) => SymExpression::Multiply(
-                Box::new(SymExpression::new( sym_memory, *l)),
-                Box::new(SymExpression::new( sym_memory, *r)),
+                Box::new(SymExpression::new(sym_memory, *l)),
+                Box::new(SymExpression::new(sym_memory, *r)),
             ),
             Expression::Divide(l, r) => SymExpression::Divide(
-                Box::new(SymExpression::new( sym_memory, *l)),
-                Box::new(SymExpression::new( sym_memory, *r)),
+                Box::new(SymExpression::new(sym_memory, *l)),
+                Box::new(SymExpression::new(sym_memory, *r)),
             ),
             Expression::Mod(l, r) => SymExpression::Mod(
-                Box::new(SymExpression::new( sym_memory, *l)),
-                Box::new(SymExpression::new( sym_memory, *r)),
+                Box::new(SymExpression::new(sym_memory, *l)),
+                Box::new(SymExpression::new(sym_memory, *r)),
             ),
-            Expression::Negative(expr) => SymExpression::Negative(Box::new(SymExpression::new(
-                sym_memory,
-                *expr,
-            ))),
-            Expression::Not(expr) => SymExpression::Not(Box::new(SymExpression::new(
-                sym_memory,
-                *expr,
-            ))),
+            Expression::Negative(expr) => {
+                SymExpression::Negative(Box::new(SymExpression::new(sym_memory, *expr)))
+            }
+            Expression::Not(expr) => {
+                SymExpression::Not(Box::new(SymExpression::new(sym_memory, *expr)))
+            }
             Expression::Literal(lit) => SymExpression::Literal(lit),
         }
     }
@@ -212,6 +206,19 @@ pub enum ReferenceValue {
     Array(Array),
     /// Takes classname as input
     UninitializedObj(Class),
+}
+
+pub struct SymLength {
+    min: i32,
+    length: SymExpression,
+    max: i32,
+}
+
+impl SymLength {
+    /// infers current symbolic length g
+    pub fn infer() -> Self{
+        todo!()
+    }
 }
 
 /// destructs a `Expression::forall(arr, index, value)` statement using the following algorithm:
@@ -234,8 +241,6 @@ fn destruct_forall<'a>(
     inner_expr: &Expression,
     sym_memory: &SymMemory,
 ) -> SymExpression {
-    
-
     let index_id = SymExpression::FreeVariable(SymType::Int, index.clone());
     let sym_ty = match ty {
         Type::Int => SymType::Int,
@@ -256,7 +261,7 @@ fn destruct_forall<'a>(
 
         c = SymExpression::And(
             Box::new(c),
-            Box::new(SymExpression::new( &extended_memory, inner_expr.clone())),
+            Box::new(SymExpression::new(&extended_memory, inner_expr.clone())),
         );
 
         let ne = SymExpression::NE(Box::new(index_id.clone()), Box::new(i.clone()));
@@ -277,7 +282,7 @@ fn destruct_forall<'a>(
         SymExpression::FreeVariable(SymType::Int, index.clone()),
     );
     extended_memory.stack_insert(&value, SymExpression::FreeVariable(sym_ty, value.clone()));
-    let inner_expr = SymExpression::new( &extended_memory, inner_expr.clone());
+    let inner_expr = SymExpression::new(&extended_memory, inner_expr.clone());
 
     let e = SymExpression::Implies(
         Box::new(SymExpression::And(
@@ -417,6 +422,7 @@ impl fmt::Debug for SymExpression {
             SymExpression::Literal(Literal::Boolean(val)) => write!(f, "{:?}", val),
             SymExpression::Literal(Literal::Integer(val)) => write!(f, "{:?}", val),
             SymExpression::FreeVariable(_, fv) => write!(f, "{}", fv),
+            SymExpression::SizeOf(id, _) => write!(f, "#{}", id),
             SymExpression::Reference(_, r) => {
                 let mut formated = "".to_string();
                 formated.push_str(&r.clone().to_string()[0..4]);
@@ -437,7 +443,7 @@ mod tests {
         let expr = parser::VerificationExpressionParser::new()
             .parse(i)
             .unwrap();
-        SymExpression::new( &SymMemory::new(), expr)
+        SymExpression::new(&SymMemory::new(), expr)
     }
 
     #[test]
