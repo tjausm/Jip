@@ -143,24 +143,24 @@ pub fn assert(
     pc: &mut PathConstraints,
     diagnostics: &mut Diagnostics,
 ) -> Result<(), Error> {
-    let subt_assertion = SymExpression::new(&sym_memory, assertion.clone());
+    let sym_assertion = SymExpression::new(&sym_memory, assertion.clone());
 
     // add (simplified) assertion
     if simplify {
-        let simple_assertion = sym_memory.simplify(subt_assertion);
+        let simple_assertion = sym_assertion.simplify();
         //let simple_assertion = assertion;
         match simple_assertion {
             SymExpression::Literal(Literal::Boolean(true)) => (),
             _ => pc.push_assertion(simple_assertion),
         }
     } else {
-        pc.push_assertion(subt_assertion);
+        pc.push_assertion(sym_assertion);
     };
 
     // calculate (simplified) constraints
     let mut constraints = pc.combine_over_true();
     if simplify {
-        constraints = sym_memory.simplify(constraints)
+        constraints = constraints.simplify()
     };
     match constraints {
         SymExpression::Literal(Literal::Boolean(true)) => return Ok(()),
@@ -183,10 +183,10 @@ pub fn assume(
     pc: &mut PathConstraints,
     diagnostics: &mut Diagnostics,
 ) -> bool {
-    let subt_assumption = SymExpression::new(&sym_memory, assumption.clone());
+    let sym_assumption = SymExpression::new(&sym_memory, assumption.clone());
 
     if simplify {
-        let simple_assumption = sym_memory.simplify(subt_assumption.clone());
+        let simple_assumption = sym_assumption.simplify();
 
         //  let z3_subt = smt_solver::expression_unsatisfiable(ctx, &subt_assumption, sym_memory);
         //  let z3_simple = smt_solver::expression_unsatisfiable(ctx, &simple_assumption, sym_memory);
@@ -198,7 +198,7 @@ pub fn assume(
             _ => pc.push_assumption(simple_assumption),
         };
     } else {
-        pc.push_assumption(subt_assumption.clone());
+        pc.push_assumption(sym_assumption.clone());
     };
 
     // if we have not solved by now, invoke z3

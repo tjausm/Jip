@@ -181,9 +181,9 @@ impl<'a> SymMemory {
         let mut length = self.heap_get_array(arr_name).2.clone();
 
         // make length owned and simplify if toggled
-        let simple_index = self.simplify(subt_index.clone());
+        let simple_index = subt_index.clone().simplify();
         if simplify {
-            length = self.simplify(length);
+            length = length.simplify();
         };
 
         // check if index is always < length
@@ -192,6 +192,7 @@ impl<'a> SymMemory {
                 SymExpression::Literal(Literal::Integer(lit_index)),
                 SymExpression::Literal(Literal::Integer(lit_lenght)),
             ) if lit_index < lit_lenght => (),
+            _ => (),
             _ => solver.check_length(pc, &length, &simple_index)?,
         };
 
@@ -288,174 +289,7 @@ impl<'a> SymMemory {
         ReferenceValue::Array((ty, FxHashMap::default(), length))
     }
 
-    /// front end simplifier
-    pub fn simplify(&self, expr: SymExpression) -> SymExpression {
-        match expr {
-            SymExpression::And(l_expr, r_expr) => {
-                match (self.simplify(*l_expr), self.simplify(*r_expr)) {
-                    (SymExpression::Literal(Literal::Boolean(false)), _) => {
-                        SymExpression::Literal(Literal::Boolean(false))
-                    }
-                    (_, SymExpression::Literal(Literal::Boolean(false))) => {
-                        SymExpression::Literal(Literal::Boolean(false))
-                    }
-                    (
-                        SymExpression::Literal(Literal::Boolean(true)),
-                        SymExpression::Literal(Literal::Boolean(true)),
-                    ) => SymExpression::Literal(Literal::Boolean(true)),
-                    (l_simple, r_simple) => SymExpression::And(Box::new(l_simple), Box::new(r_simple)),
-                }
-            }
-            SymExpression::Or(l_expr, r_expr) => {
-                match (self.simplify(*l_expr), self.simplify(*r_expr)) {
-                    (SymExpression::Literal(Literal::Boolean(true)), _) => {
-                        SymExpression::Literal(Literal::Boolean(true))
-                    }
-                    (_, SymExpression::Literal(Literal::Boolean(true))) => {
-                        SymExpression::Literal(Literal::Boolean(true))
-                    }
-                    (l_simple, r_simple) => SymExpression::Or(Box::new(l_simple), Box::new(r_simple)),
-                }
-            }
-            SymExpression::Implies(l_expr, r_expr) => {
-                match (self.simplify(*l_expr), self.simplify(*r_expr)) {
-                    (SymExpression::Literal(Literal::Boolean(false)), _) => {
-                        SymExpression::Literal(Literal::Boolean(true))
-                    }
-                    (_, SymExpression::Literal(Literal::Boolean(true))) => {
-                        SymExpression::Literal(Literal::Boolean(true))
-                    }
-                    (
-                        SymExpression::Literal(Literal::Boolean(_)),
-                        SymExpression::Literal(Literal::Boolean(_)),
-                    ) => SymExpression::Literal(Literal::Boolean(false)),
-                    (l_simple, r_simple) => {
-                        SymExpression::Implies(Box::new(l_simple), Box::new(r_simple))
-                    }
-                }
-            }
-            SymExpression::EQ(l_expr, r_expr) => {
-                match (self.simplify(*l_expr), self.simplify(*r_expr)) {
-                    (SymExpression::Literal(l_lit), SymExpression::Literal(r_lit)) => {
-                        SymExpression::Literal(Literal::Boolean(l_lit == r_lit))
-                    }
-                    (l_simple, r_simple) => SymExpression::EQ(Box::new(l_simple), Box::new(r_simple)),
-                }
-            }
-            SymExpression::NE(l_expr, r_expr) => {
-                match (self.simplify(*l_expr), self.simplify(*r_expr)) {
-                    (SymExpression::Literal(l_lit), SymExpression::Literal(r_lit)) => {
-                        SymExpression::Literal(Literal::Boolean(l_lit != r_lit))
-                    }
-                    (l_simple, r_simple) => SymExpression::NE(Box::new(l_simple), Box::new(r_simple)),
-                }
-            }
-            SymExpression::LT(l_expr, r_expr) => {
-                match (self.simplify(*l_expr), self.simplify(*r_expr)) {
-                    (
-                        SymExpression::Literal(Literal::Integer(l_lit)),
-                        SymExpression::Literal(Literal::Integer(r_lit)),
-                    ) => SymExpression::Literal(Literal::Boolean(l_lit < r_lit)),
-                    (l_simple, r_simple) => SymExpression::LT(Box::new(l_simple), Box::new(r_simple)),
-                }
-            }
-            SymExpression::GT(l_expr, r_expr) => {
-                match (self.simplify(*l_expr), self.simplify(*r_expr)) {
-                    (
-                        SymExpression::Literal(Literal::Integer(l_lit)),
-                        SymExpression::Literal(Literal::Integer(r_lit)),
-                    ) => SymExpression::Literal(Literal::Boolean(l_lit > r_lit)),
-                    (l_simple, r_simple) => SymExpression::GT(Box::new(l_simple), Box::new(r_simple)),
-                }
-            }
-            SymExpression::GEQ(l_expr, r_expr) => {
-                match (self.simplify(*l_expr), self.simplify(*r_expr)) {
-                    (
-                        SymExpression::Literal(Literal::Integer(l_lit)),
-                        SymExpression::Literal(Literal::Integer(r_lit)),
-                    ) => SymExpression::Literal(Literal::Boolean(l_lit >= r_lit)),
-                    (l_simple, r_simple) => SymExpression::GEQ(Box::new(l_simple), Box::new(r_simple)),
-                }
-            }
 
-            SymExpression::LEQ(l_expr, r_expr) => {
-                match (self.simplify(*l_expr), self.simplify(*r_expr)) {
-                    (
-                        SymExpression::Literal(Literal::Integer(l_lit)),
-                        SymExpression::Literal(Literal::Integer(r_lit)),
-                    ) => SymExpression::Literal(Literal::Boolean(l_lit <= r_lit)),
-                    (l_simple, r_simple) => SymExpression::LEQ(Box::new(l_simple), Box::new(r_simple)),
-                }
-            }
-
-            SymExpression::Plus(l_expr, r_expr) => {
-                match (self.simplify(*l_expr), self.simplify(*r_expr)) {
-                    (
-                        SymExpression::Literal(Literal::Integer(l_lit)),
-                        SymExpression::Literal(Literal::Integer(r_lit)),
-                    ) => SymExpression::Literal(Literal::Integer(l_lit + r_lit)),
-                    (l_simple, r_simple) => {
-                        SymExpression::Plus(Box::new(l_simple), Box::new(r_simple))
-                    }
-                }
-            }
-            SymExpression::Minus(l_expr, r_expr) => {
-                match (self.simplify(*l_expr), self.simplify(*r_expr)) {
-                    (
-                        SymExpression::Literal(Literal::Integer(l_lit)),
-                        SymExpression::Literal(Literal::Integer(r_lit)),
-                    ) => SymExpression::Literal(Literal::Integer(l_lit - r_lit)),
-                    (l_simple, r_simple) => {
-                        SymExpression::Minus(Box::new(l_simple), Box::new(r_simple))
-                    }
-                }
-            }
-            SymExpression::Multiply(l_expr, r_expr) => {
-                match (self.simplify(*l_expr), self.simplify(*r_expr)) {
-                    (
-                        SymExpression::Literal(Literal::Integer(l_lit)),
-                        SymExpression::Literal(Literal::Integer(r_lit)),
-                    ) => SymExpression::Literal(Literal::Integer(l_lit * r_lit)),
-                    (l_simple, r_simple) => {
-                        SymExpression::Multiply(Box::new(l_simple), Box::new(r_simple))
-                    }
-                }
-            }
-            SymExpression::Divide(l_expr, r_expr) => {
-                match (self.simplify(*l_expr), self.simplify(*r_expr)) {
-                    (
-                        SymExpression::Literal(Literal::Integer(l_lit)),
-                        SymExpression::Literal(Literal::Integer(r_lit)),
-                    ) => SymExpression::Literal(Literal::Integer(l_lit / r_lit)),
-                    (l_simple, r_simple) => {
-                        SymExpression::Divide(Box::new(l_simple), Box::new(r_simple))
-                    }
-                }
-            }
-            SymExpression::Mod(l_expr, r_expr) => {
-                match (self.simplify(*l_expr), self.simplify(*r_expr)) {
-                    (
-                        SymExpression::Literal(Literal::Integer(l_lit)),
-                        SymExpression::Literal(Literal::Integer(r_lit)),
-                    ) => SymExpression::Literal(Literal::Integer(l_lit % r_lit)),
-                    (l_simple, r_simple) => SymExpression::Mod(Box::new(l_simple), Box::new(r_simple)),
-                }
-            }
-            SymExpression::Not(expr) => match self.simplify(*expr) {
-                SymExpression::Literal(Literal::Boolean(b)) => {
-                    SymExpression::Literal(Literal::Boolean(!b))
-                }
-                simple_expr => SymExpression::Not(Box::new(simple_expr)),
-            },
-            SymExpression::Literal(_) => expr,
-            SymExpression::FreeVariable(_, _) => expr,
-            SymExpression::Reference(_ , _) => expr,
-            otherwise => panic_with_diagnostics(
-                &format!("{:?} is not yet implemented", otherwise),
-                &self,
-            ),
-        }
-    }
 }
 
 impl fmt::Debug for ReferenceValue {

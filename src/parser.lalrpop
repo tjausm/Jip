@@ -199,7 +199,7 @@ Expression8 : Expression = {
 
 Expression9 : Expression = {
     Identifier => Expression::Identifier(<>),
-    "#" <Identifier>     => Expression::ArrLength(<>),
+    "#" <Identifier>     => Expression::SizeOf(<>),
     Literal => Expression::Literal(<>),
     "(" <e:Expression> ")" => e
 }
