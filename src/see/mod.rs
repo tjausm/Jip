@@ -171,8 +171,8 @@ fn verify_program(
             Node::EnteringMain(parameters) => {
                 for parameter in parameters {
                     match parameter {
-                        (Type::Int, id) => sym_memory.stack_insert_free_var(Type::Int, id),
-                        (Type::Bool, id) => sym_memory.stack_insert_free_var(Type::Bool, id),
+                        (Type::Int, id) => sym_memory.stack_insert(id, SymExpression::FreeVariable(SymType::Int, id.clone())),
+                        (Type::Bool, id) =>sym_memory.stack_insert(id, SymExpression::FreeVariable(SymType::Bool, id.clone())),
                         (Type::ArrayType(ty), id) => {
                             let arr = sym_memory.init_array(
                                 *ty.clone(),
