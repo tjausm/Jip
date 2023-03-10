@@ -304,7 +304,7 @@ fn expr_to_str<'a>(expr: &'a SymExpression) -> (String, FxHashSet<(SymType, Stri
         SymExpression::SizeOf(arr_name, _) => {
             let mut fv = FxHashSet::default();
             let arr_size_id = format!("|#{}|", arr_name);
-            fv.insert((SymType::Int, arr_name.clone()));
+            fv.insert((SymType::Int, arr_size_id.clone()));
             (format!("{}", arr_size_id), fv)       
         },
         SymExpression::Literal(Literal::Integer(n)) => (format!("{}", n), FxHashSet::default()),
