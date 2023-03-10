@@ -89,9 +89,10 @@ fn main() {
             let config = Config {
                 simplify: cli.simplifier,
                 prune_ratio: cli.prune_ratio,
-                solver_type: cli.solver
+                solver_type: cli.solver,
+                verbose: verbose
             };
-            exit(see::print_verification(&program, depth,  config, verbose))
+            exit(see::print_verification(&program, depth,  config))
         }
         Mode::Bench {
             start,
@@ -101,7 +102,8 @@ fn main() {
             let config = Config {
                 simplify: cli.simplifier,
                 prune_ratio: cli.prune_ratio,
-                solver_type: cli.solver
+                solver_type: cli.solver,
+                verbose: false
             };
             exit(see::bench(&program,  start, end, interval, config))
         }

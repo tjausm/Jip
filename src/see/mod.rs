@@ -45,7 +45,7 @@ pub fn bench(
 
         // Code block to measure.
         {
-            match verify_program(program, d,  config.clone(), false) {
+            match verify_program(program, d,  config.clone()) {
                 Ok(_) => (),
                 r => return print_result(r),
             }
@@ -104,9 +104,8 @@ pub fn print_verification(
     program: &str,
     d: Depth,
     config: Config,
-    verbose: bool,
 ) -> (ExitCode, String) {
-    let result = verify_program(program, d, config, verbose);
+    let result = verify_program(program, d, config);
     print_result(result.clone())
 }
 
@@ -132,7 +131,6 @@ fn verify_program(
     prog_string: &str,
     d: Depth,
     config: Config,
-    verbose: bool,
 ) -> Result<Diagnostics, Error> {
     let prune_coefficient = f64::from(config.prune_ratio) / f64::from(i8::MAX);
     let prune_depth = (f64::from(d) - f64::from(d) * prune_coefficient) as i32;
@@ -163,7 +161,7 @@ fn verify_program(
             continue;
         }
 
-        if verbose {
+        if config.verbose {
             print_debug(&cfg[curr_node], &sym_memory, &pc);
         };
 

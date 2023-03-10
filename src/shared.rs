@@ -38,7 +38,8 @@ pub enum SolverType {
 pub struct Config {
     pub simplify: bool,
     pub prune_ratio: i8,
-    pub solver_type: SolverType
+    pub solver_type: SolverType,
+    pub verbose: bool
 }
 
 #[derive(Clone)]
