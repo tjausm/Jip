@@ -3,6 +3,7 @@
 use crate::ast::*;
 use crate::shared::{panic_with_diagnostics, Error, SolverType};
 use crate::symbolic::expression::{PathConstraints, SymExpression, SymType};
+use crate::symbolic::ref_values::SymSize;
 use rsmt2::print::{IdentParser, ModelParser};
 use rsmt2::{self, SmtConf, SmtRes};
 use rustc_hash::FxHashSet;
@@ -74,14 +75,14 @@ impl Solver {
     }
 
     /// Combine pathconstraints to assert `pc ==> length > index` == always true
-    pub fn check_length<'a>(
+    pub fn verify_array_access<'a>(
         &mut self,
         pc: &PathConstraints,
-        length: &'a SymExpression,
+        size: &'a SymSize,
         index: &'a SymExpression,
     ) -> Result<(), Error> {
         //append length > index to PathConstraints and try to falsify
-        let length_gt_index = SymExpression::GT(Box::new(length.clone()), Box::new(index.clone()));
+        let length_gt_index = SymExpression::GT(Box::new(size.get().clone()), Box::new(index.clone()));
         let mut pc = pc.clone();
         pc.push_assertion(length_gt_index);
         let constraints = pc.combine_over_true();

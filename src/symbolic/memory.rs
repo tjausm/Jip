@@ -4,12 +4,11 @@ use rustc_hash::FxHashMap;
 use std::fmt;
 use uuid::Uuid;
 
+use super::expression::{PathConstraints, SymExpression, SymType};
+use super::ref_values::{Array, Boundary, Reference, ReferenceValue, SymSize};
 use crate::ast::*;
-use crate::shared::{panic_with_diagnostics, Error, Scope};
-use crate::smt_solver::{Solver};
-use super::expression::{PathConstraints,  SymExpression, SymType};
-use super::ref_values::{Array, SymSize, Reference, ReferenceValue,};
-
+use crate::shared::{panic_with_diagnostics, Config, Diagnostics, Error, Scope};
+use crate::smt_solver::Solver;
 
 #[derive(Debug, Clone)]
 struct Frame {
@@ -121,7 +120,7 @@ impl<'a> SymMemory {
                     };
                     match var {
                         Some(var) => {
-                            fields.insert(field_name.clone(),  var.clone());
+                            fields.insert(field_name.clone(), var.clone());
                             var
                         }
                         None => expr.clone(),
@@ -165,32 +164,41 @@ impl<'a> SymMemory {
     pub fn heap_access_array(
         &mut self,
         solver: &mut Solver,
+        diagnostics: &mut Diagnostics,
+        config: Config,
         pc: &PathConstraints,
-        simplify: bool,
         arr_name: &Identifier,
         index: Expression,
         var: Option<SymExpression>,
     ) -> Result<SymExpression, Error> {
         // substitute expr and simplify
-        let subt_index = SymExpression::new( self, index);
+        let subt_index = SymExpression::new(self, index);
 
-        //get immutable length(immutable)
-        let mut size = self.heap_get_array(arr_name).2.clone().get();
+        //get Previous size and infer new size from it if toggled
+        let mut size = self.heap_get_array(arr_name).2.clone();
+        if config.infer_size {
+            size = size.infer(pc, arr_name);
+        }
 
-        // make length owned and simplify if toggled
+        // always simplify index, otherwise unsimplified SE could return different results than simplified SE
         let simple_index = subt_index.clone().simplify();
-        if simplify {
-            size = size.simplify();
-        };
 
         // check if index is always < length
-        match (&simple_index, &size) {
+        match (&simple_index, &size.get(), &size.min()) {
             (
-                SymExpression::Literal(Literal::Integer(lit_index)),
-                SymExpression::Literal(Literal::Integer(lit_lenght)),
-            ) if lit_index < lit_lenght => (),
-            _ => (),
-            _ => solver.check_length(pc, &size, &simple_index)?,
+                SymExpression::Literal(Literal::Integer(lit_i)),
+                SymExpression::Literal(Literal::Integer(lit_l)),
+                _,
+            ) if lit_i < lit_l => (),
+            (SymExpression::Literal(Literal::Integer(lit_i)), _, Boundary::Known(lit_l))
+                if lit_i < lit_l =>
+            {
+                ()
+            }
+            _ => {
+                diagnostics.z3_invocations += 1;
+                solver.verify_array_access(pc, &size, &simple_index)?
+            }
         };
 
         //get mutable HashMap representing array
@@ -285,8 +293,6 @@ impl<'a> SymMemory {
     pub fn init_array(&mut self, ty: Type, length: SymSize) -> ReferenceValue {
         ReferenceValue::Array((ty, FxHashMap::default(), length))
     }
-
-
 }
 
 impl fmt::Debug for ReferenceValue {

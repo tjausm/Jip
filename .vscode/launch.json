@@ -19,7 +19,7 @@
                     "kind": "bin"
                 }
             },
-            "args": ["tests/programs/operators/addition.oox", "-s", "verify"],
+            "args": ["tests/programs/pvcourse/memberOf.oox", "-s", "verify", "-v"],
             "cwd": "${workspaceFolder}"
         },
         {

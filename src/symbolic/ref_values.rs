@@ -24,14 +24,14 @@ pub enum ReferenceValue {
 /// Consists of type, a mapping from expression to symbolic expression and Substituted expression representing length
 pub type Array = (Type, FxHashMap<SymExpression, SymExpression>, SymSize);
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum Boundary {
     Known(i64),
     Unknown,
     None,
 }
 
-#[derive(Clone)]
+#[derive(Clone , Debug)]
 pub struct SymSize {
     min: Boundary,
     size: SymExpression,
@@ -95,16 +95,22 @@ impl SymSize {
             _ => Boundary::None,
         };
         let max = match (l.max, r.max) {
+            (Boundary::Known(l), Boundary::Known(r)) => Boundary::Known(l.min(r)),
             (Boundary::Known(_), _) => l.max,
             (_, Boundary::Known(_)) => r.max,
             (_, Boundary::Unknown) => Boundary::Unknown,
             (Boundary::Unknown, _) => Boundary::Unknown,
-            (Boundary::Known(l), Boundary::Known(r)) => Boundary::Known(l.min(r)),
             _ => Boundary::None,
         };
+
+        let size_expr = match (min, max){
+            (Boundary::Known(l), Boundary::Known(r)) if l == r => SymExpression::Literal(Literal::Integer(l)),
+            _ => r.size.clone()
+        };
+
         SymSize {
             min: min,
-            size: r.size.clone(),
+            size: size_expr,
             max: max,
         }
     }
@@ -124,6 +130,7 @@ impl SymSize {
             _ => (),
         };
 
+        
         // otherwise iterate over all constraints and narrow down current range
         let mut sym_size = self.clone();
         for constraint in pc.clone().into_iter() {
@@ -132,13 +139,30 @@ impl SymSize {
                 PathConstraint::Assume(e) => e,
             };
 
-            sym_size = SymSize::narrow(self, &SymSize::infer_from_expr(&self.size, &expr, a))
+            sym_size = SymSize::narrow(&sym_size, &SymSize::infer_from_expr(&self.size, &expr, a));
+
         }
         sym_size
     }
 
     fn infer_from_expr(size_expr: &SymExpression, expr: &SymExpression, a: &Identifier) -> SymSize {
         match expr {
+
+            // rewrite negations and recurse
+            SymExpression::Not(expr) => {
+                let new_expr = 
+                    match &**expr {
+                    SymExpression::NE(l, r) => SymExpression::EQ(Box::new(*l.clone()), Box::new(*r.clone())),
+                    SymExpression::LT(l, r) => SymExpression::GEQ(Box::new(*l.clone()), Box::new(*r.clone())),
+                    SymExpression::GT(l, r) => SymExpression::LEQ(Box::new(*l.clone()), Box::new(*r.clone())),
+                    SymExpression::GEQ(l, r) => SymExpression::LT(Box::new(*l.clone()), Box::new(*r.clone())),
+                    SymExpression::LEQ(l, r) => SymExpression::GT(Box::new(*l.clone()), Box::new(*r.clone())),
+                    _ => *expr.clone(),
+                };         
+                    SymSize::infer_from_expr(size_expr, &new_expr, a)      
+            },
+
+            // if not falsifiable we assume it to be true and pick most pessimistic range?
             SymExpression::Implies(l, r) => match (&**l, &**r) {
                 (SymExpression::Literal(Literal::Boolean(false)), _) => {
                     SymSize::new(size_expr.clone())
@@ -151,14 +175,20 @@ impl SymSize {
                     &SymSize::infer_from_expr(size_expr, r, a),
                 ),
             },
+
+            // pick the most optimistics range
             SymExpression::And(l, r) => SymSize::narrow(
                 &SymSize::infer_from_expr(size_expr, l, a),
                 &SymSize::infer_from_expr(size_expr, r, a),
             ),
+
+            // pick the most pesimistic range
             SymExpression::Or(l, r) => SymSize::broaden(
                 &SymSize::infer_from_expr(size_expr, l, a),
                 &SymSize::infer_from_expr(size_expr, r, a),
             ),
+
+
 
             // if sizeof equals some literal we set all boundarys and size to that literal
             // else if sizeof equals some freevar we set all boundaries to unknown and size to that fv
@@ -349,15 +379,15 @@ impl SymSize {
     }
 }
 
-impl fmt::Debug for SymSize {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match (self.min, self.max) {
-            (Boundary::None, Boundary::Known(max)) => write!(f, "{:?} <= {}", self.size, max),
-            (Boundary::Known(min), Boundary::None) => write!(f, "{} <= {:?}", min, self.size),
-            (Boundary::Known(min), Boundary::Known(max)) => {
-                write!(f, "{} <= {:?} <= {}", min, self.size, max)
-            }
-            _ => write!(f, "{:?}", self.size),
-        }
-    }
-}
+// impl fmt::Debug for SymSize {
+//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+//         match (self.min, self.max) {
+//             (Boundary::None, Boundary::Known(max)) => write!(f, "{:?} <= {}", self.size, max),
+//             (Boundary::Known(min), Boundary::None) => write!(f, "{} <= {:?}", min, self.size),
+//             (Boundary::Known(min), Boundary::Known(max)) => {
+//                 write!(f, "{} <= {:?} <= {}", min, self.size, max)
+//             }
+//             _ => write!(f, "{:?}", self.size),
+//         }
+//     }
+// }

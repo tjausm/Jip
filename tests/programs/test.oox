@@ -1,0 +1,9 @@
+class Main {
+    static void main(int[] a, int x){
+        assert x == 5;
+        assert x == 5 ==> #a > 5;
+        assume #a < 5;
+        assert true;
+    }
+}
+((x == 5) ==> (((x == 5) ==> (|sizeOf(a)| > 5)) ==> ((|sizeOf(a)| < 5) ==> true)))

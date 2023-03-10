@@ -34,9 +34,10 @@ pub enum SolverType {
     CVC4
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Config {
     pub simplify: bool,
+    pub infer_size: bool,
     pub prune_ratio: i8,
     pub solver_type: SolverType,
     pub verbose: bool

@@ -322,12 +322,13 @@ impl SymExpression {
                 (l_simple, r_simple) => SymExpression::Mod(Box::new(l_simple), Box::new(r_simple)),
             },
             SymExpression::Not(expr) => match expr.clone().simplify() {
+                SymExpression::Not(inner_expr) => inner_expr.clone().simplify(),
                 SymExpression::Literal(Literal::Boolean(b)) => {
                     SymExpression::Literal(Literal::Boolean(!b))
                 }
                 simple_expr => SymExpression::Not(Box::new(simple_expr)),
             },
-            SymExpression::SizeOf(_, size) => self,
+            SymExpression::SizeOf(_, _) => self,
             SymExpression::Literal(_) => self,
             SymExpression::FreeVariable(_, _) => self,
             SymExpression::Reference(_, _) => self,

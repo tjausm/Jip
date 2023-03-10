@@ -121,7 +121,10 @@ fn print_debug(node: &Node, sym_memory: &SymMemory, pc: &PathConstraints) {
         _ => false,
     };
     if dump_state {
-        println!("{}\n\n{}\n\n{}", print_node, print_pc, print_sym_memory)
+        println!("{}\n\n{}\n\n{}", print_node, print_pc, print_sym_memory);
+
+        let sz = SymSize::new(SymExpression::FreeVariable(SymType::Int, "|#a|".to_string()));
+        println!("{:?}", sz.infer(pc, &"a".to_string()));
     } else {
         println!("{}", print_node);
     }
@@ -233,7 +236,7 @@ fn verify_program(
                         &mut diagnostics,
                     )?,
                     Statement::Assignment((lhs, rhs)) => {
-                        lhs_from_rhs(&mut solver, &pc, config.simplify, &mut sym_memory, lhs, rhs)?;
+                        lhs_from_rhs(&mut solver, &mut diagnostics, &pc, config, &mut sym_memory, lhs, rhs)?;
                     }
                     Statement::Return(expr) => {
                         // stop path if current scope `id == None`, indicating we are in main scope

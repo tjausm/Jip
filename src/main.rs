@@ -30,6 +30,10 @@ struct Cli {
     /// Turns on the front end simplifier
     #[clap(short, long)]
     simplifier: bool,
+    
+    /// Turns on array size inference
+    #[clap(short, long)]
+    infer_size: bool,
 
     /// number between 0 and 255 denoting how deep we should prune
     /// , 0 = no pruning, 127 = prune to 50% of depth and so on
@@ -88,6 +92,7 @@ fn main() {
         Mode::Verify { depth, verbose } => {
             let config = Config {
                 simplify: cli.simplifier,
+                infer_size: cli.infer_size,
                 prune_ratio: cli.prune_ratio,
                 solver_type: cli.solver,
                 verbose: verbose
@@ -101,6 +106,7 @@ fn main() {
         } => {
             let config = Config {
                 simplify: cli.simplifier,
+                infer_size: cli.infer_size,
                 prune_ratio: cli.prune_ratio,
                 solver_type: cli.solver,
                 verbose: false

@@ -1,5 +1,5 @@
 use crate::ast::*;
-use crate::shared::Error;
+use crate::shared::{Error, Config};
 use crate::shared::{panic_with_diagnostics, Diagnostics};
 use crate::smt_solver::{Solver};
 use crate::symbolic::memory::SymMemory;
@@ -9,8 +9,9 @@ use crate::symbolic::ref_values::SymSize;
 /// returns the symbolic expression rhs refers to
 pub fn parse_rhs<'a, 'b>(
     solver: &mut Solver,
+    diagnostics: &mut Diagnostics,
     pc: &PathConstraints,
-    simplify: bool,
+    config: Config,
     sym_memory: &mut SymMemory,
     rhs: &'a Rhs,
 ) -> Result<SymExpression, Error> {
@@ -28,7 +29,7 @@ pub fn parse_rhs<'a, 'b>(
         }
 
         Rhs::AccessArray(arr_name, index) => {
-            sym_memory.heap_access_array(solver, pc, simplify, arr_name, index.clone(), None)
+            sym_memory.heap_access_array(solver, diagnostics, config, pc,  arr_name, index.clone(), None)
         }
 
         Rhs::Expression(expr) => Ok(SymExpression::new(&sym_memory, expr.clone())),
@@ -42,13 +43,14 @@ pub fn parse_rhs<'a, 'b>(
 // gets type of lhs, parses expression on rhs and assign value of rhs to lhs on stack / heap
 pub fn lhs_from_rhs<'a>(
     solver: &mut Solver,
+    diagnostics: &mut Diagnostics,
     pc: &PathConstraints,
-    simplify: bool,
+    config: Config,
     sym_memory: &mut SymMemory,
     lhs: &'a Lhs,
     rhs: &'a Rhs,
 ) -> Result<(), Error> {
-    let var = parse_rhs(solver, pc, simplify, sym_memory, rhs)?;
+    let var = parse_rhs(solver, diagnostics, pc, config, sym_memory, rhs)?;
     match lhs {
         Lhs::Identifier(id) => sym_memory.stack_insert(id, var),
         Lhs::AccessField(obj_name, field_name) => {
@@ -57,8 +59,9 @@ pub fn lhs_from_rhs<'a>(
         Lhs::AccessArray(arr_name, index) => {
             sym_memory.heap_access_array(
                 solver,
+                diagnostics,
+                config,
                 pc,
-                simplify,
                 arr_name,
                 index.clone(),
                 Some(var),
