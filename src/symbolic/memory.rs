@@ -175,10 +175,12 @@ impl<'a> SymMemory {
         let subt_index = SymExpression::new(self, index);
 
         //get Previous size and infer new size from it if toggled
-        let mut size = self.heap_get_array(arr_name).2.clone();
-        if config.infer_size {
-            size = size.infer(pc, arr_name);
-        }
+        let size_expr = self.heap_get_array(arr_name).2.clone();
+        let size = if config.infer_size {
+            SymSize::infer(size_expr.clone(), arr_name, pc)
+        } else {
+            SymSize::new(size_expr.clone())
+        };
 
         // always simplify index, otherwise unsimplified SE could return different results than simplified SE
         let simple_index = subt_index.clone().simplify();
@@ -197,7 +199,7 @@ impl<'a> SymMemory {
             }
             _ => {
                 diagnostics.z3_invocations += 1;
-                solver.verify_array_access(pc, &size, &simple_index)?
+                solver.verify_array_access(pc, &size_expr, &simple_index)?
             }
         };
 
@@ -234,7 +236,7 @@ impl<'a> SymMemory {
     }
 
     // return the symbolic length of an array
-    pub fn heap_get_arr_length(&self, arr_name: &Identifier) -> SymSize {
+    pub fn heap_get_arr_length(&self, arr_name: &Identifier) -> SymExpression {
         match self.stack_get(&arr_name){
         Some(SymExpression::Reference(_, r)) => match self.heap.get(&r){
             Some(ReferenceValue::Array((_, _, length))) => length.clone(),
@@ -290,8 +292,8 @@ impl<'a> SymMemory {
     }
 
     //todo: how to initialize correctly
-    pub fn init_array(&mut self, ty: Type, length: SymSize) -> ReferenceValue {
-        ReferenceValue::Array((ty, FxHashMap::default(), length))
+    pub fn init_array(&mut self, ty: Type, size_expr: SymExpression) -> ReferenceValue {
+        ReferenceValue::Array((ty, FxHashMap::default(), size_expr))
     }
 }
 

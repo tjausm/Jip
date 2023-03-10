@@ -21,8 +21,8 @@ pub enum ReferenceValue {
     UninitializedObj(Class),
 }
 
-/// Consists of type, a mapping from expression to symbolic expression and Substituted expression representing length
-pub type Array = (Type, FxHashMap<SymExpression, SymExpression>, SymSize);
+/// Consists of type, a mapping from expression to symbolic expression and Substituted expression representing size
+pub type Array = (Type, FxHashMap<SymExpression, SymExpression>, SymExpression);
 
 #[derive(Clone, Copy, Debug)]
 pub enum Boundary {
@@ -117,29 +117,16 @@ impl SymSize {
 
     /// infers current symbolic array size of `a` from the pathconstraints
     /// by inspecting all constraints we try to narrow the range of
-    pub fn infer(&self, pc: &PathConstraints, a: &Identifier) -> Self {
-        //make length concrete if possible
-        match self.size {
-            SymExpression::Literal(Literal::Integer(n)) => {
-                return SymSize {
-                    min: Boundary::Known(n),
-                    size: SymExpression::Literal(Literal::Integer(n)),
-                    max: Boundary::Known(n),
-                }
-            }
-            _ => (),
-        };
-
-        
+    pub fn infer(size_expr: SymExpression,  a: &Identifier, pc: &PathConstraints) -> Self {  
         // otherwise iterate over all constraints and narrow down current range
-        let mut sym_size = self.clone();
+        let mut sym_size = SymSize::new(size_expr);
         for constraint in pc.clone().into_iter() {
             let expr = match constraint {
                 PathConstraint::Assert(e) => e,
                 PathConstraint::Assume(e) => e,
             };
 
-            sym_size = SymSize::narrow(&sym_size, &SymSize::infer_from_expr(&self.size, &expr, a));
+            sym_size = SymSize::narrow(&sym_size, &SymSize::infer_from_expr(&sym_size.get(), &expr, a));
 
         }
         sym_size

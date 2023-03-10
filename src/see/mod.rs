@@ -122,9 +122,6 @@ fn print_debug(node: &Node, sym_memory: &SymMemory, pc: &PathConstraints) {
     };
     if dump_state {
         println!("{}\n\n{}\n\n{}", print_node, print_pc, print_sym_memory);
-
-        let sz = SymSize::new(SymExpression::FreeVariable(SymType::Int, "|#a|".to_string()));
-        println!("{:?}", sz.infer(pc, &"a".to_string()));
     } else {
         println!("{}", print_node);
     }
@@ -176,7 +173,7 @@ fn verify_program(
                         (Type::Int, id) => sym_memory.stack_insert(id, SymExpression::FreeVariable(SymType::Int, id.clone())),
                         (Type::Bool, id) =>sym_memory.stack_insert(id, SymExpression::FreeVariable(SymType::Bool, id.clone())),
                         (Type::ArrayType(ty), id) => {
-                            let size = SymSize::new(SymExpression::FreeVariable(SymType::Int, format!("|#{}|", id)));
+                            let size = SymExpression::FreeVariable(SymType::Int, format!("|#{}|", id));
                             let arr = sym_memory.init_array(
                                 *ty.clone(),
                                 size

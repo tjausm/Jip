@@ -78,11 +78,11 @@ impl Solver {
     pub fn verify_array_access<'a>(
         &mut self,
         pc: &PathConstraints,
-        size: &'a SymSize,
+        size_expr: &'a SymExpression,
         index: &'a SymExpression,
     ) -> Result<(), Error> {
         //append length > index to PathConstraints and try to falsify
-        let length_gt_index = SymExpression::GT(Box::new(size.get().clone()), Box::new(index.clone()));
+        let length_gt_index = SymExpression::GT(Box::new(size_expr.clone()), Box::new(index.clone()));
         let mut pc = pc.clone();
         pc.push_assertion(length_gt_index);
         let constraints = pc.combine_over_true();

@@ -106,7 +106,7 @@ pub enum SymExpression {
     Not(Box<SymExpression>),
     Literal(Literal),
     FreeVariable(SymType, Identifier),
-    SizeOf(Identifier, Box<SymSize>),
+    SizeOf(Identifier, Box<SymExpression>),
     Reference(Type, Reference),
     Uninitialized,
 }
@@ -394,7 +394,7 @@ fn destruct_forall<'a>(
         Box::new(SymExpression::Literal(Literal::Integer(0))),
     );
 
-    let i_lt_size = SymExpression::LT(Box::new(index_id.clone()), Box::new(size.get().clone()));
+    let i_lt_size = SymExpression::LT(Box::new(index_id.clone()), Box::new(size.clone()));
 
     // build inner expression with index and value as freevars
     let mut extended_memory = sym_memory.clone();
