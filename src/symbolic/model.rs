@@ -4,7 +4,8 @@
 use core::fmt;
 use std::{
     collections::hash_map::DefaultHasher,
-    hash::{Hash, Hasher}, vec::IntoIter,
+    hash::{Hash, Hasher},
+    vec::IntoIter,
 };
 
 use crate::{ast::*, shared::panic_with_diagnostics, symbolic::memory::SymMemory};
@@ -30,10 +31,8 @@ impl Default for PathConstraints {
     }
 }
 
-
 impl PathConstraints {
-    
-    pub fn into_iter(self) -> IntoIter<PathConstraint>{
+    pub fn into_iter(self) -> IntoIter<PathConstraint> {
         self.constraints.into_iter()
     }
 
@@ -132,7 +131,10 @@ impl SymExpression {
                 Some(sym_expr) => sym_expr,
                 _ => panic_with_diagnostics(&format!("{} was not declared", id), &sym_memory),
             },
-            Expression::SizeOf(arr_name) => SymExpression::SizeOf(arr_name.clone(), Box::new(sym_memory.heap_get_arr_length(&arr_name))),
+            Expression::SizeOf(arr_name) => SymExpression::SizeOf(
+                arr_name.clone(),
+                Box::new(sym_memory.heap_get_arr_length(&arr_name)),
+            ),
             Expression::Implies(l, r) => SymExpression::Implies(
                 Box::new(SymExpression::new(sym_memory, *l)),
                 Box::new(SymExpression::new(sym_memory, *r)),
@@ -328,7 +330,7 @@ impl SymExpression {
                 }
                 simple_expr => SymExpression::Not(Box::new(simple_expr)),
             },
-            SymExpression::SizeOf(_, size) => size.get(),
+            SymExpression::SizeOf(_, size) => self,
             SymExpression::Literal(_) => self,
             SymExpression::FreeVariable(_, _) => self,
             SymExpression::Reference(_, _) => self,
@@ -353,40 +355,55 @@ pub enum ReferenceValue {
     UninitializedObj(Class),
 }
 
+#[derive(Clone, Copy)]
+pub enum Boundary {
+    Known(i64),
+    Unknown,
+    None,
+}
+
 #[derive(Clone)]
 pub struct SymSize {
-    min: Option<i64>,
+    min: Boundary,
     size: SymExpression,
-    max: Option<i64>,
+    max: Boundary,
 }
 
 impl SymSize {
-    pub fn new(size_expr: SymExpression) -> Self{
-        SymSize{ min: None, size: size_expr, max: None}
+    pub fn new(size_expr: SymExpression) -> Self {
+        SymSize {
+            min: Boundary::None,
+            size: size_expr,
+            max: Boundary::None,
+        }
     }
 
-    pub fn min(&self) -> Option<i64> {
+    pub fn min(&self) -> Boundary {
         self.min
     }
     pub fn get(&self) -> SymExpression {
         self.size.clone()
     }
-    pub fn max(&self) -> Option<i64> {
+    pub fn max(&self) -> Boundary {
         self.max
     }
 
-    /// given 2 symSizes, take the lowest min and highest max broadening the range
-    /// sets length of 2nd argument as new length
+    /// given 2 symSizes, returns the most pesimistic boundary
+    /// e.g. if one boundary is unknown set boundary to unknown,
+    /// if both are known set boundary to smallest min and largest max,
+    /// otherwise set boundary to None
     fn broaden(l: &SymSize, r: &SymSize) -> SymSize {
-        let min = match (l.min, r.min) {
-            (Some(l), Some(r)) => Some(l.min(r)),
-            (Some(_), None) => l.min,
-            (None, r) => r,
+        let min = match (l.min, r.min) {    
+            (Boundary::Known(l), Boundary::Known(r)) => Boundary::Known(l.min(r)),
+            (_, Boundary::Unknown) => Boundary::Unknown,
+            (Boundary::Unknown, _) => Boundary::Unknown,
+            _ => Boundary::None,
         };
         let max = match (l.max, r.max) {
-            (Some(l), Some(r)) => Some(l.max(r)),
-            (Some(_), None) => l.min,
-            (None, r) => r,
+            (Boundary::Known(l), Boundary::Known(r)) => Boundary::Known(l.max(r)),
+            (_, Boundary::Unknown) => Boundary::Unknown,
+            (Boundary::Unknown, _) => Boundary::Unknown,
+            _ => Boundary::None,
         };
         SymSize {
             min: min,
@@ -394,18 +411,27 @@ impl SymSize {
             max: max,
         }
     }
-    /// given 2 symSizes, take the highest min and lowest max, narrowing the range
-    /// sets length of 2nd argument as new length
+    /// given 2 symSizes, returns the most optimistic boundary
+    /// e.g. if one boundary is unknown set boundary to unknown,
+    /// if both are known set the largest min and smallest max,
+    /// if one of the two boundaries is known set that boundary
+    /// otherwise set boundary to None
     fn narrow(l: &SymSize, r: &SymSize) -> SymSize {
         let min = match (l.min, r.min) {
-            (Some(l), Some(r)) => Some(l.max(r)),
-            (Some(_), None) => l.min,
-            (None, r) => r,
+            (Boundary::Known(l), Boundary::Known(r)) => Boundary::Known(l.max(r)),
+            (Boundary::Known(_), _) => l.min,
+            (_, Boundary::Known(_)) => r.min,
+            (_, Boundary::Unknown) => Boundary::Unknown,
+            (Boundary::Unknown, _) => Boundary::Unknown,
+            _ => Boundary::None,
         };
         let max = match (l.max, r.max) {
-            (Some(l), Some(r)) => Some(l.min(r)),
-            (Some(_), None) => l.min,
-            (None, r) => r,
+            (Boundary::Known(_), _) => l.max,
+            (_, Boundary::Known(_)) => r.max,
+            (_, Boundary::Unknown) => Boundary::Unknown,
+            (Boundary::Unknown, _) => Boundary::Unknown,
+            (Boundary::Known(l), Boundary::Known(r)) => Boundary::Known(l.min(r)),
+            _ => Boundary::None,
         };
         SymSize {
             min: min,
@@ -415,142 +441,243 @@ impl SymSize {
     }
 
     /// infers current symbolic array size of `a` from the pathconstraints
+    /// by inspecting all constraints we try to narrow the range of
     pub fn infer(&self, pc: &PathConstraints, a: &Identifier) -> Self {
         //make length concrete if possible
         match self.size {
             SymExpression::Literal(Literal::Integer(n)) => {
                 return SymSize {
-                    min: Some(n),
+                    min: Boundary::Known(n),
                     size: SymExpression::Literal(Literal::Integer(n)),
-                    max: Some(n),
+                    max: Boundary::Known(n),
                 }
             }
             _ => (),
         };
 
+        // otherwise iterate over all constraints and narrow down current range
         let mut sym_size = self.clone();
         for constraint in pc.clone().into_iter() {
             let expr = match constraint {
                 PathConstraint::Assert(e) => e,
                 PathConstraint::Assume(e) => e,
             };
-            sym_size = SymSize::narrow(self, &self.infer_from_expr(&expr, a))
+
+            sym_size = SymSize::narrow(self, &SymSize::infer_from_expr(&self.size, &expr, a))
         }
         sym_size
-        }
+    }
 
-        fn infer_from_expr(&self, expr: &SymExpression, a: &Identifier) -> SymSize{
-            match expr {
-                SymExpression::And(l, r) => SymSize::narrow(&self.infer_from_expr(l, a), &self.infer_from_expr(r, a)),
-                SymExpression::Or(l, r) => SymSize::broaden(&self.infer_from_expr(l, a), &self.infer_from_expr(r, a)),
-                SymExpression::EQ(l, r) => match (&**l, &**r) {
-                    (SymExpression::SizeOf(id, _), SymExpression::Literal(Literal::Integer(n)))
-                        if id == a =>
-                    {
-                        SymSize {
-                            min: Some(*n),
-                            size: *r.clone(),
-                            max: Some(*n),
-                        }
+    fn infer_from_expr(size_expr: &SymExpression, expr: &SymExpression, a: &Identifier) -> SymSize {
+        match expr {
+            SymExpression::Implies(l, r) => match (&**l, &**r) {
+                (SymExpression::Literal(Literal::Boolean(false)), _) => {
+                    SymSize::new(size_expr.clone())
+                }
+                (_, SymExpression::Literal(Literal::Boolean(false))) => {
+                    SymSize::new(size_expr.clone())
+                }
+                _ => SymSize::broaden(
+                    &SymSize::infer_from_expr(size_expr, l, a),
+                    &SymSize::infer_from_expr(size_expr, r, a),
+                ),
+            },
+            SymExpression::And(l, r) => SymSize::narrow(
+                &SymSize::infer_from_expr(size_expr, l, a),
+                &SymSize::infer_from_expr(size_expr, r, a),
+            ),
+            SymExpression::Or(l, r) => SymSize::broaden(
+                &SymSize::infer_from_expr(size_expr, l, a),
+                &SymSize::infer_from_expr(size_expr, r, a),
+            ),
+
+            // if sizeof equals some literal we set all boundarys and size to that literal
+            // else if sizeof equals some freevar we set all boundaries to unknown and size to that fv
+            SymExpression::EQ(l, r) => match (&**l, &**r) {
+                (SymExpression::SizeOf(id, _), SymExpression::Literal(Literal::Integer(n)))
+                    if id == a =>
+                {
+                    SymSize {
+                        min: Boundary::Known(*n),
+                        size: *r.clone(),
+                        max: Boundary::Known(*n),
                     }
-                    (SymExpression::Literal(Literal::Integer(n)), SymExpression::SizeOf(id, _))
-                        if id == a =>
-                    {
-                        SymSize {
-                            min: Some(*n),
-                            size: *r.clone(),
-                            max: Some(*n),
-                        }
+                }
+                (SymExpression::Literal(Literal::Integer(n)), SymExpression::SizeOf(id, _))
+                    if id == a =>
+                {
+                    SymSize {
+                        min: Boundary::Known(*n),
+                        size: *r.clone(),
+                        max: Boundary::Known(*n),
                     }
-                    _ => todo!(),
-                },
-                SymExpression::LT(l, r) => match (&**l, &**r) {
-                    (SymExpression::SizeOf(id, _), SymExpression::Literal(Literal::Integer(n)))
-                        if id == a =>
-                    {
-                        SymSize {
-                            min: self.min,
-                            size: self.size.clone(),
-                            max: Some(*n - 1),
-                        }
+                }
+                (SymExpression::SizeOf(id, _), SymExpression::FreeVariable(_, _)) if id == a => {
+                    SymSize {
+                        min: Boundary::Unknown,
+                        size: *r.clone(),
+                        max: Boundary::Unknown,
                     }
-                    (SymExpression::Literal(Literal::Integer(n)), SymExpression::SizeOf(id, _))
-                        if id == a =>
-                    {
-                        SymSize {
-                            min: Some(*n + 1),
-                            size: self.size.clone(),
-                            max: self.max,
-                        }
+                }
+                (SymExpression::FreeVariable(_, _), SymExpression::SizeOf(id, _)) if id == a => {
+                    SymSize {
+                        min: Boundary::Unknown,
+                        size: *l.clone(),
+                        max: Boundary::Unknown,
                     }
-                    _ => todo!(),
-                },
-                SymExpression::GT(l, r) => match (&**l, &**r) {
-                    (SymExpression::SizeOf(id, _), SymExpression::Literal(Literal::Integer(n)))
-                        if id == a =>
-                    {
-                        SymSize {
-                            min: Some(*n + 1),
-                            size: self.size.clone(),
-                            max: self.max,
-                        }
+                }
+
+                _ => SymSize::new(size_expr.clone()),
+            },
+
+            // if sizeof is LT or GT some literal we set min or max to that literal - 1
+            // else if sizOf is LT or GT some freevar we set min or max to unknown
+            SymExpression::LT(l, r) => match (&**l, &**r) {
+                (SymExpression::SizeOf(id, _), SymExpression::Literal(Literal::Integer(n)))
+                    if id == a =>
+                {
+                    SymSize {
+                        min: Boundary::None,
+                        size: size_expr.clone(),
+                        max: Boundary::Known(*n - 1),
                     }
-                    (SymExpression::Literal(Literal::Integer(n)), SymExpression::SizeOf(id, _))
-                        if id == a =>
-                    {
-                        SymSize {
-                            min: self.min,
-                            size: self.size.clone(),
-                            max: Some(*n - 1),
-                        }
+                }
+                (SymExpression::Literal(Literal::Integer(n)), SymExpression::SizeOf(id, _))
+                    if id == a =>
+                {
+                    SymSize {
+                        min: Boundary::Known(*n + 1),
+                        size: size_expr.clone(),
+                        max: Boundary::None,
                     }
-                    _ => todo!(),
-                },
-                SymExpression::GEQ(l, r) => match (&**l, &**r) {
-                    (SymExpression::SizeOf(id, _), SymExpression::Literal(Literal::Integer(n)))
-                        if id == a =>
-                    {
-                        SymSize {
-                            min: Some(*n),
-                            size: self.size.clone(),
-                            max: self.max,
-                        }
+                }
+                (SymExpression::FreeVariable(_, _), SymExpression::SizeOf(id, _)) if id == a => {
+                    SymSize {
+                        min: Boundary::Unknown,
+                        size: size_expr.clone(),
+                        max: Boundary::None,
                     }
-                    (SymExpression::Literal(Literal::Integer(n)), SymExpression::SizeOf(id, _))
-                        if id == a =>
-                    {
-                        SymSize {
-                            min: self.min,
-                            size: self.size.clone(),
-                            max: Some(*n),
-                        }
+                }
+                (SymExpression::SizeOf(id, _), SymExpression::FreeVariable(_, _)) if id == a => {
+                    SymSize {
+                        min: Boundary::None,
+                        size: size_expr.clone(),
+                        max: Boundary::Unknown,
                     }
-                    _ => todo!(),
-                },
-                SymExpression::LEQ(l, r) => match (&**l, &**r) {
-                    (SymExpression::SizeOf(id, _), SymExpression::Literal(Literal::Integer(n)))
-                        if id == a =>
-                    {
-                        SymSize {
-                            min: self.min,
-                            size: self.size.clone(),
-                            max: Some(*n),
-                        }
+                }
+                _ => SymSize::new(size_expr.clone()),
+            },
+            SymExpression::GT(l, r) => match (&**l, &**r) {
+                (SymExpression::SizeOf(id, _), SymExpression::Literal(Literal::Integer(n)))
+                    if id == a =>
+                {
+                    SymSize {
+                        min: Boundary::Known(*n + 1),
+                        size: size_expr.clone(),
+                        max: Boundary::None,
                     }
-                    (SymExpression::Literal(Literal::Integer(n)), SymExpression::SizeOf(id, _))
-                        if id == a =>
-                    {
-                        SymSize {
-                            min: Some(*n),
-                            size: self.size.clone(),
-                            max: self.max,
-                        }
+                }
+                (SymExpression::Literal(Literal::Integer(n)), SymExpression::SizeOf(id, _))
+                    if id == a =>
+                {
+                    SymSize {
+                        min: Boundary::None,
+                        size: size_expr.clone(),
+                        max: Boundary::Known(*n - 1),
                     }
-                    _ => todo!(),
-                },
-                _ => self.clone(),
-            }
+                }
+                (SymExpression::FreeVariable(_, _), SymExpression::SizeOf(id, _)) if id == a => {
+                    SymSize {
+                        min: Boundary::None,
+                        size: size_expr.clone(),
+                        max: Boundary::Unknown,
+                    }
+                }
+                (SymExpression::SizeOf(id, _), SymExpression::FreeVariable(_, _)) if id == a => {
+                    SymSize {
+                        min: Boundary::Unknown,
+                        size: size_expr.clone(),
+                        max: Boundary::None,
+                    }
+                }
+                _ => SymSize::new(size_expr.clone()),
+            },
+
+            // if sizeof is LEQ or GEQ some literal we set min or max to that literal
+            // else if sizOf is LT or GT some freevar we set min or max to unknown
+            SymExpression::GEQ(l, r) => match (&**l, &**r) {
+                (SymExpression::SizeOf(id, _), SymExpression::Literal(Literal::Integer(n)))
+                    if id == a =>
+                {
+                    SymSize {
+                        min: Boundary::Known(*n),
+                        size: size_expr.clone(),
+                        max: Boundary::None,
+                    }
+                }
+                (SymExpression::Literal(Literal::Integer(n)), SymExpression::SizeOf(id, _))
+                    if id == a =>
+                {
+                    SymSize {
+                        min: Boundary::None,
+                        size: size_expr.clone(),
+                        max: Boundary::Known(*n),
+                    }
+                }
+                (SymExpression::FreeVariable(_, _), SymExpression::SizeOf(id, _)) if id == a => {
+                    SymSize {
+                        min: Boundary::None,
+                        size: size_expr.clone(),
+                        max: Boundary::Unknown,
+                    }
+                }
+                (SymExpression::SizeOf(id, _), SymExpression::FreeVariable(_, _)) if id == a => {
+                    SymSize {
+                        min: Boundary::Unknown,
+                        size: size_expr.clone(),
+                        max: Boundary::None,
+                    }
+                }
+                _ => SymSize::new(size_expr.clone()),
+            },
+            SymExpression::LEQ(l, r) => match (&**l, &**r) {
+                (SymExpression::SizeOf(id, _), SymExpression::Literal(Literal::Integer(n)))
+                    if id == a =>
+                {
+                    SymSize {
+                        min: Boundary::None,
+                        size: size_expr.clone(),
+                        max: Boundary::Known(*n),
+                    }
+                }
+                (SymExpression::Literal(Literal::Integer(n)), SymExpression::SizeOf(id, _))
+                    if id == a =>
+                {
+                    SymSize {
+                        min: Boundary::Known(*n),
+                        size: size_expr.clone(),
+                        max: Boundary::None,
+                    }
+                }
+                (SymExpression::FreeVariable(_, _), SymExpression::SizeOf(id, _)) if id == a => {
+                    SymSize {
+                        min: Boundary::Unknown,
+                        size: size_expr.clone(),
+                        max: Boundary::None,
+                    }
+                }
+                (SymExpression::SizeOf(id, _), SymExpression::FreeVariable(_, _)) if id == a => {
+                    SymSize {
+                        min: Boundary::None,
+                        size: size_expr.clone(),
+                        max: Boundary::Unknown,
+                    }
+                }
+                _ => SymSize::new(size_expr.clone()),
+            },
+            _ => SymSize::new(size_expr.clone()),
         }
+    }
 }
 
 /// destructs a `Expression::forall(arr, index, value)` statement using the following algorithm:
@@ -768,15 +895,16 @@ impl fmt::Debug for SymExpression {
 
 impl fmt::Debug for SymSize {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            match (self.min, self.max){
-                (None, None) => write!(f, "{:?}", self.size),
-                (None, Some(max)) => write!(f, "{:?} <= {}", self.size, max),
-                (Some(min), None) => write!(f, "{} <= {:?}", min, self.size),
-                (Some(min), Some(max)) => write!(f, "{} <= {:?} <= {}", min, self.size, max),
+        match (self.min, self.max) {
+            (Boundary::None, Boundary::Known(max)) => write!(f, "{:?} <= {}", self.size, max),
+            (Boundary::Known(min), Boundary::None) => write!(f, "{} <= {:?}", min, self.size),
+            (Boundary::Known(min), Boundary::Known(max)) => {
+                write!(f, "{} <= {:?} <= {}", min, self.size, max)
             }
-            
-            
-        }}
+            _ => write!(f, "{:?}", self.size),
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
