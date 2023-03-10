@@ -17,7 +17,9 @@ use crate::shared::ExitCode;
 use crate::shared::{panic_with_diagnostics, Diagnostics, Error};
 use crate::smt_solver::Solver;
 use crate::symbolic::memory::SymMemory;
-use crate::symbolic::model::{PathConstraints, ReferenceValue, SymExpression, SymType, SymSize};
+use crate::symbolic::model::{PathConstraints, ReferenceValue, SymExpression, SymType};
+use crate::symbolic::array::{SymSize};
+
 use colored::Colorize;
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
