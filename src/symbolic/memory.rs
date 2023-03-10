@@ -6,13 +6,10 @@ use uuid::Uuid;
 
 use crate::ast::*;
 use crate::shared::{panic_with_diagnostics, Error, Scope};
-use crate::smt_solver::{self, Solver};
+use crate::smt_solver::{Solver};
+use super::expression::{PathConstraints,  SymExpression, SymType};
+use super::ref_values::{Array, SymSize, Reference, ReferenceValue,};
 
-use super::model::{PathConstraints, Reference, ReferenceValue, SymExpression, SymType};
-use super::array::{Array, SymSize};
-//-----------------//
-// Symbolic memory //
-//-----------------//
 
 #[derive(Debug, Clone)]
 struct Frame {

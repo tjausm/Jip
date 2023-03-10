@@ -1,8 +1,25 @@
-
+//! Symbolic model representing the values on the heap while symbolically executing a program
+//!
 use core::fmt;
 use rustc_hash::FxHashMap;
-use super::model::{SymExpression, PathConstraints, PathConstraint};
+use uuid::Uuid;
+use super::expression::{SymExpression, PathConstraints, PathConstraint};
 use crate::ast::*;
+
+pub type Reference = Uuid;
+
+/// Consists of `identifier` (= classname) and a hashmap describing it's fields
+pub type Object = (Identifier, FxHashMap<Identifier, SymExpression>);
+
+
+
+#[derive(Clone)]
+pub enum ReferenceValue {
+    Object(Object),
+    Array(Array),
+    /// Takes classname as input
+    UninitializedObj(Class),
+}
 
 /// Consists of type, a mapping from expression to symbolic expression and Substituted expression representing length
 pub type Array = (Type, FxHashMap<SymExpression, SymExpression>, SymSize);

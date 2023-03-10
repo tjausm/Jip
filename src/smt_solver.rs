@@ -1,15 +1,13 @@
-//! Transforms a program path to a logical formula and test satisfiability using theorem prover Z3
+//! Encode expressions into the smt-lib format to test satisfiability using the chosen backend
 
 use crate::ast::*;
 use crate::shared::{panic_with_diagnostics, Error, SolverType};
-use crate::symbolic::model::{PathConstraints, SymExpression, SymType};
+use crate::symbolic::expression::{PathConstraints, SymExpression, SymType};
 use rsmt2::print::{IdentParser, ModelParser};
 use rsmt2::{self, SmtConf, SmtRes};
 use rustc_hash::FxHashSet;
 
-//---------------------//
-// smt-solver bindings //
-//--------------------//
+
 
 #[derive(PartialEq)]
 pub enum SmtResult {
