@@ -12,7 +12,8 @@ fn {name}() {{
     // repeat test with simplifier
     let mut cmd_simple = Command::cargo_bin("jip").unwrap();
     let assert_simple = cmd_simple
-    .arg("-s")
+        .arg("-s")
+        .arg("-i")
         .arg(r#"{path}"#)
         .arg("verify")
         .assert();
