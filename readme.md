@@ -1,8 +1,8 @@
 # Build
 1. [Install rustup](https://www.rust-lang.org/tools/install)
 2. Install [z3](https://github.com/z3prover/z3) and make sure cmd `z3` is in your path (Jip starts the smt-solver in de backend as a seperate process using said cmd)
-3. optional: to use [yices2](https://yices.csl.sri.com/) as backend install and make sure cmd `yices` is in your path and refers to the smt2 version of yices (standard yices uses it's own input language but Jip needs the version of yices using `smt-lib` language)
-4. optional: to use [cvc4](https://cvc4.github.io/downloads.html) as backend install and make sure cmd `cvc4` is in your path 
+3. _optional_: to use [yices2](https://yices.csl.sri.com/) as backend install and make sure cmd `yices` is in your path and refers to the smt2 version of yices (standard yices uses it's own input language but Jip needs the version of yices using `smt-lib` language)
+4. _optional_: to use [cvc4](https://cvc4.github.io/downloads.html) as backend install and make sure cmd `cvc4` is in your path 
 5. run `cargo build`
 
 
