@@ -242,6 +242,9 @@ impl SymExpression {
                 (SymExpression::Literal(l_lit), SymExpression::Literal(r_lit)) => {
                     SymExpression::Literal(Literal::Boolean(l_lit == r_lit))
                 }
+                (SymExpression::FreeVariable(_, l_fv), SymExpression::FreeVariable(__, r_fv)) if l_fv == r_fv => {
+                    SymExpression::Literal(Literal::Boolean(true))
+                }
                 (l_simple, r_simple) => SymExpression::EQ(Box::new(l_simple), Box::new(r_simple)),
             },
             SymExpression::NE(l, r) => match (l.clone().simplify(), r.clone().simplify()) {
@@ -426,6 +429,7 @@ enum HashExpression {
     Mod(u64, u64),
     Negative(u64),
     FreeVariable(SymType, Identifier),
+    SizeOf(String),
     Reference(Type, Reference),
 }
 
@@ -496,6 +500,7 @@ impl Hash for SymExpression {
             SymExpression::Negative(expr) => {
                 HashExpression::Negative(calculate_hash(&*expr)).hash(state)
             }
+            SymExpression::SizeOf(s, _) => HashExpression::SizeOf(s.clone()).hash(state),
             SymExpression::FreeVariable(ty, id) => {
                 HashExpression::FreeVariable(ty.clone(), id.clone()).hash(state)
             }
@@ -543,7 +548,7 @@ impl fmt::Debug for SymExpression {
             SymExpression::Literal(Literal::Boolean(val)) => write!(f, "{:?}", val),
             SymExpression::Literal(Literal::Integer(val)) => write!(f, "{:?}", val),
             SymExpression::FreeVariable(_, fv) => write!(f, "{}", fv),
-            SymExpression::SizeOf(id, _) => write!(f, "|sizeOf({})|", id),
+            SymExpression::SizeOf(id, _) => write!(f, "#{}", id),
             SymExpression::Reference(_, r) => {
                 let mut formated = "".to_string();
                 formated.push_str(&r.clone().to_string()[0..4]);
