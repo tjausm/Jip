@@ -192,7 +192,7 @@ impl<'a> SymMemory {
                 SymExpression::Literal(Literal::Integer(lit_l)),
                 _,
             ) if lit_i < lit_l => (),
-            (SymExpression::Literal(Literal::Integer(lit_i)), _, Boundary::Known(lit_l))
+            (SymExpression::Literal(Literal::Integer(lit_i)), _, Some(lit_l))
                 if lit_i < lit_l =>
             {
                 ()

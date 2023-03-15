@@ -4,7 +4,7 @@ use crate::ast::*;
 use crate::shared::{panic_with_diagnostics, Error, SolverType};
 use crate::symbolic::expression::{PathConstraints, SymExpression, SymType};
 use crate::symbolic::ref_values::Range;
-use rsmt2::print::{IdentParser, ModelParser};
+use rsmt2::print::{ModelParser};
 use rsmt2::{self, SmtConf, SmtRes};
 use rustc_hash::FxHashSet;
 
@@ -88,8 +88,8 @@ impl Solver {
         let constraints = pc.combine_over_true();
 
         match self.verify_expr(&SymExpression::Not(Box::new(constraints))) {
-            (SmtResult::Unsat) => return Ok(()),
-            (SmtResult::Sat(model)) => {
+            SmtResult::Unsat => return Ok(()),
+            SmtResult::Sat(model) => {
                 return Err(Error::Verification(format!(
                     "Following input could (potentially) accesses an array out of bounds:\n{}",
                     model
@@ -113,7 +113,7 @@ impl Solver {
         let constraints = pc.combine_over_true();
 
 
-        println!("#a = {:?}", Range::infer(SymExpression::FreeVariable(SymType::Int, "#a".to_string()), &"a".to_string(), pc));
+        //println!("#a = {:?}", Range::infer(SymExpression::FreeVariable(SymType::Int, "#a".to_string()), &"a".to_string(), pc));
 
         match self.verify_expr(&SymExpression::Not(Box::new(constraints))) {
             (SmtResult::Unsat) => return Ok(()),

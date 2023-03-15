@@ -8,8 +8,8 @@ use std::{
     vec::IntoIter,
 };
 
-use crate::{ast::*, shared::panic_with_diagnostics, symbolic::memory::SymMemory};
 use super::ref_values::{Array, Range, Reference};
+use crate::{ast::*, shared::panic_with_diagnostics, symbolic::memory::SymMemory};
 
 #[derive(Clone)]
 pub struct PathConstraints {
@@ -240,10 +240,34 @@ impl SymExpression {
                 }
             },
             SymExpression::EQ(l, r) => match (l.clone().simplify(), r.clone().simplify()) {
+                // if lit or fv are equal => true
                 (SymExpression::Literal(l_lit), SymExpression::Literal(r_lit)) => {
                     SymExpression::Literal(Literal::Boolean(l_lit == r_lit))
                 }
-                (SymExpression::FreeVariable(_, l_fv), SymExpression::FreeVariable(__, r_fv)) if l_fv == r_fv => {
+                (SymExpression::FreeVariable(_, l_fv), SymExpression::FreeVariable(__, r_fv))
+                    if l_fv == r_fv =>
+                {
+                    SymExpression::Literal(Literal::Boolean(true))
+                }
+                //if sizeOfs or range's inner-expressions hash equals hash of other => true
+                (SymExpression::SizeOf(_, size), r_expr)
+                    if size.clone().simplify() == r_expr.clone().simplify() =>
+                {
+                    SymExpression::Literal(Literal::Boolean(true))
+                }
+                (l_expr, SymExpression::SizeOf(_, size))
+                    if l_expr.clone().simplify() == size.clone().simplify() =>
+                {
+                    SymExpression::Literal(Literal::Boolean(true))
+                }
+                (SymExpression::Range(range), r_expr)
+                    if &range.get().simplify() == &r_expr.clone().simplify() =>
+                {
+                    SymExpression::Literal(Literal::Boolean(true))
+                }
+                (r_expr, SymExpression::Range(range))
+                    if &r_expr.clone().simplify() == &range.get().simplify() =>
+                {
                     SymExpression::Literal(Literal::Boolean(true))
                 }
                 (l_simple, r_simple) => SymExpression::EQ(Box::new(l_simple), Box::new(r_simple)),
@@ -259,6 +283,16 @@ impl SymExpression {
                     SymExpression::Literal(Literal::Integer(l_lit)),
                     SymExpression::Literal(Literal::Integer(r_lit)),
                 ) => SymExpression::Literal(Literal::Boolean(l_lit < r_lit)),
+                (SymExpression::Range(range), SymExpression::Literal(Literal::Integer(n)),)
+                    if range.max().unwrap_or(i64::MAX) < n =>
+                {
+                    SymExpression::Literal(Literal::Boolean(true))
+                }
+                (SymExpression::Literal(Literal::Integer(n)), SymExpression::Range(range))
+                    if n < range.min().unwrap_or(i64::MIN) =>
+                {
+                    SymExpression::Literal(Literal::Boolean(true))
+                }
                 (l_simple, r_simple) => SymExpression::LT(Box::new(l_simple), Box::new(r_simple)),
             },
             SymExpression::GT(l, r) => match (l.clone().simplify(), r.clone().simplify()) {
@@ -266,6 +300,16 @@ impl SymExpression {
                     SymExpression::Literal(Literal::Integer(l_lit)),
                     SymExpression::Literal(Literal::Integer(r_lit)),
                 ) => SymExpression::Literal(Literal::Boolean(l_lit > r_lit)),
+                (SymExpression::Range(range), SymExpression::Literal(Literal::Integer(n)),)
+                if range.max().unwrap_or(i64::MIN) > n =>
+            {
+                SymExpression::Literal(Literal::Boolean(true))
+            }
+            (SymExpression::Literal(Literal::Integer(n)), SymExpression::Range(range))
+                if n > range.min().unwrap_or(i64::MAX) =>
+            {
+                SymExpression::Literal(Literal::Boolean(true))
+            }
                 (l_simple, r_simple) => SymExpression::GT(Box::new(l_simple), Box::new(r_simple)),
             },
             SymExpression::GEQ(l, r) => match (l.clone().simplify(), r.clone().simplify()) {
@@ -273,6 +317,16 @@ impl SymExpression {
                     SymExpression::Literal(Literal::Integer(l_lit)),
                     SymExpression::Literal(Literal::Integer(r_lit)),
                 ) => SymExpression::Literal(Literal::Boolean(l_lit >= r_lit)),
+                                (SymExpression::Range(range), SymExpression::Literal(Literal::Integer(n)),)
+                    if range.max().unwrap_or(i64::MIN) >= n =>
+                {
+                    SymExpression::Literal(Literal::Boolean(true))
+                }
+                (SymExpression::Literal(Literal::Integer(n)), SymExpression::Range(range))
+                    if n >= range.min().unwrap_or(i64::MAX) =>
+                {
+                    SymExpression::Literal(Literal::Boolean(true))
+                }
                 (l_simple, r_simple) => SymExpression::GEQ(Box::new(l_simple), Box::new(r_simple)),
             },
 
@@ -281,6 +335,16 @@ impl SymExpression {
                     SymExpression::Literal(Literal::Integer(l_lit)),
                     SymExpression::Literal(Literal::Integer(r_lit)),
                 ) => SymExpression::Literal(Literal::Boolean(l_lit <= r_lit)),
+                (SymExpression::Range(range), SymExpression::Literal(Literal::Integer(n)),)
+                if range.max().unwrap_or(i64::MAX) <= n =>
+            {
+                SymExpression::Literal(Literal::Boolean(true))
+            }
+            (SymExpression::Literal(Literal::Integer(n)), SymExpression::Range(range))
+                if n <= range.min().unwrap_or(i64::MIN) =>
+            {
+                SymExpression::Literal(Literal::Boolean(true))
+            }
                 (l_simple, r_simple) => SymExpression::LEQ(Box::new(l_simple), Box::new(r_simple)),
             },
 
@@ -342,8 +406,6 @@ impl SymExpression {
         }
     }
 }
-
-
 
 /// destructs a `Expression::forall(arr, index, value)` statement using the following algorithm:
 /// ``` ignore
@@ -560,8 +622,6 @@ impl fmt::Debug for SymExpression {
         }
     }
 }
-
-
 
 #[cfg(test)]
 mod tests {

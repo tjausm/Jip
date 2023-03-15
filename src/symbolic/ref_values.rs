@@ -56,14 +56,22 @@ impl Range {
 
     }
 
-    pub fn min(&self) -> Boundary {
-        self.min
+    pub fn min(&self) -> Option<i64> {
+
+        match self.min{
+            Boundary::Known(n) => Some(n),
+            _ => None
+        }
     }
     pub fn get(&self) -> SymExpression {
         self.size.clone()
     }
-    pub fn max(&self) -> Boundary {
-        self.max
+    
+    pub fn max(&self) -> Option<i64> {
+        match self.max{
+            Boundary::Known(n) => Some(n),
+            _ => None
+        }
     }
 
     /// given 2 symSizes, returns the most pesimistic boundary

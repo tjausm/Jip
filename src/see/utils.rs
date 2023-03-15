@@ -4,7 +4,6 @@ use crate::shared::{panic_with_diagnostics, Diagnostics};
 use crate::smt_solver::{Solver};
 use crate::symbolic::memory::SymMemory;
 use crate::symbolic::expression::{PathConstraints, SymExpression};
-use crate::symbolic::ref_values::Range;
 
 /// returns the symbolic expression rhs refers to
 pub fn parse_rhs<'a, 'b>(
