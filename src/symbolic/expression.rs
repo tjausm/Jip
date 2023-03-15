@@ -9,7 +9,7 @@ use std::{
 };
 
 use crate::{ast::*, shared::panic_with_diagnostics, symbolic::memory::SymMemory};
-use super::ref_values::{Array, SymSize, Reference};
+use super::ref_values::{Array, Range, Reference};
 
 #[derive(Clone)]
 pub struct PathConstraints {
@@ -107,6 +107,7 @@ pub enum SymExpression {
     Literal(Literal),
     FreeVariable(SymType, Identifier),
     SizeOf(Identifier, Box<SymExpression>),
+    Range(Box<Range>),
     Reference(Type, Reference),
     Uninitialized,
 }
@@ -549,6 +550,7 @@ impl fmt::Debug for SymExpression {
             SymExpression::Literal(Literal::Integer(val)) => write!(f, "{:?}", val),
             SymExpression::FreeVariable(_, fv) => write!(f, "{}", fv),
             SymExpression::SizeOf(id, _) => write!(f, "#{}", id),
+            SymExpression::Range(e) => write!(f, "Range({:?})", e),
             SymExpression::Reference(_, r) => {
                 let mut formated = "".to_string();
                 formated.push_str(&r.clone().to_string()[0..4]);

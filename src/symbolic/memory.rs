@@ -5,7 +5,7 @@ use std::fmt;
 use uuid::Uuid;
 
 use super::expression::{PathConstraints, SymExpression, SymType};
-use super::ref_values::{Array, Boundary, Reference, ReferenceValue, SymSize};
+use super::ref_values::{Array, Boundary, Reference, ReferenceValue, Range};
 use crate::ast::*;
 use crate::shared::{panic_with_diagnostics, Config, Diagnostics, Error, Scope};
 use crate::smt_solver::Solver;
@@ -177,9 +177,9 @@ impl<'a> SymMemory {
         //get Previous size and infer new size from it if toggled
         let size_expr = self.heap_get_array(arr_name).2.clone();
         let size = if config.infer_size {
-            SymSize::infer(size_expr.clone(), arr_name, pc)
+            Range::infer(size_expr.clone(), arr_name, pc)
         } else {
-            SymSize::new(size_expr.clone())
+            Range::new(size_expr.clone())
         };
 
         // always simplify index, otherwise unsimplified SE could return different results than simplified SE

@@ -3,7 +3,7 @@
 use crate::ast::*;
 use crate::shared::{panic_with_diagnostics, Error, SolverType};
 use crate::symbolic::expression::{PathConstraints, SymExpression, SymType};
-use crate::symbolic::ref_values::SymSize;
+use crate::symbolic::ref_values::Range;
 use rsmt2::print::{IdentParser, ModelParser};
 use rsmt2::{self, SmtConf, SmtRes};
 use rustc_hash::FxHashSet;
@@ -107,10 +107,13 @@ impl Solver {
     /// `solve_constraints(ctx, vec![assume x, assert y, assume z] = x -> (y && z)`
     pub fn verify_constraints<'a>(
         &mut self,
-        path_constraints: &PathConstraints,
+        pc: &PathConstraints,
     ) -> Result<(), Error> {
         //negate assumption and try to find counter-example
-        let constraints = path_constraints.combine_over_true();
+        let constraints = pc.combine_over_true();
+
+
+        println!("#a = {:?}", Range::infer(SymExpression::FreeVariable(SymType::Int, "#a".to_string()), &"a".to_string(), pc));
 
         match self.verify_expr(&SymExpression::Not(Box::new(constraints))) {
             (SmtResult::Unsat) => return Ok(()),
@@ -150,7 +153,6 @@ impl Solver {
                 (SymType::Ref(_), id) => self.s.declare_const(id, "Int").unwrap(),
             }
         }
-        
         self.s.assert(expr_str.clone()).unwrap();
         let satisfiable = match self.s.check_sat() {
             Ok(b) => b,
