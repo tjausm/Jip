@@ -179,13 +179,13 @@ impl<'a> SymMemory {
 
         //get range of arraysize if it's inferred
         let range = ranges.get(arr_name);
-        let size_expr = range.map(|r| r.get()).unwrap_or(SymExpression::FreeVariable(SymType::Int, format!("#{}", arr_name)));
+        let size_expr = range.map(|r| r.get()).unwrap_or(SymExpression::FreeVariable(SymType::Int, format!("|#{}|", arr_name)));
 
         // always simplify index, otherwise unsimplified SE could return different results than simplified SE
         let simple_index = subt_index.clone().simplify();
 
         // check if index is always < length
-        match (simple_index, size_expr, range.map(|r| r.min())) {
+        match (&simple_index, &size_expr, &range.map(|r| r.min())) {
             (
                 SymExpression::Literal(Literal::Integer(lit_i)),
                 SymExpression::Literal(Literal::Integer(lit_l)),

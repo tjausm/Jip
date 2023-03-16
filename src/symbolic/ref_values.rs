@@ -47,9 +47,7 @@ impl Default for Ranges {
         Ranges {
             mapping: FxHashMap::default(),
         }
-    }
-
-    
+    }   
 }
 
 impl Ranges {
@@ -70,15 +68,14 @@ impl Ranges {
     /// e.g. if one boundary is unknown set boundary to unknown,
     /// if both are known set boundary to smallest min and largest max,
     /// otherwise set boundary to None
-    pub fn broaden<'a>(l_ranges: &'a mut Ranges, r_ranges: &Ranges) -> &'a mut Ranges {
-        for (arr, r_range) in r_ranges.mapping {
-            if let Some(l_range) = l_ranges.mapping.get(&arr) {
-                l_ranges.mapping.insert(arr.clone(), broaden_one(l_range, &r_range));
+    fn broaden(&mut self, new_ranges: &Ranges) {
+        for (arr, r_range) in new_ranges.mapping.iter() {
+            if let Some(l_range) = new_ranges.mapping.get(arr) {
+                self.mapping.insert(arr.clone(), broaden_one(l_range, &r_range));
             } else {
-                l_ranges.mapping.insert(arr.clone(), r_range.clone());
+                self.mapping.insert(arr.clone(), r_range.clone());
             }
         }
-        return l_ranges;
 
         fn broaden_one(l: &Range, r: &Range) -> Range {
             let min = match (l.min, r.min) {
@@ -106,15 +103,14 @@ impl Ranges {
     /// if one of the two boundaries is known set that boundary
     /// if one is unknown set boundary to unknown
     /// otherwise set boundary to None
-    fn narrow<'a>(l_ranges: &'a mut Ranges, r_ranges: &Ranges) -> &'a mut Ranges {
-        for (arr, r_range) in r_ranges.mapping {
-            if let Some(l_range) = l_ranges.mapping.get(&arr) {
-                l_ranges.mapping.insert(arr.clone(), narrow_one(l_range, &r_range));
+    fn narrow(&mut self, r_ranges: &Ranges) {
+        for (arr, r_range) in r_ranges.mapping.iter() {
+            if let Some(l_range) = self.mapping.get(arr) {
+                self.mapping.insert(arr.clone(), narrow_one(l_range, &r_range));
             } else {
-                l_ranges.mapping.insert(arr.clone(), r_range.clone());
+                self.mapping.insert(arr.clone(), r_range.clone());
             }
         }
-        return l_ranges;
 
         fn narrow_one(l: &Range, r: &Range) -> Range {
             let min = match (l.min, r.min) {
@@ -151,7 +147,7 @@ impl Ranges {
 
 
     /// substitute all instances of sizeOf with the ranges we have saved in path constraints
-    fn substitute_sizeof(&self, expr: SymExpression) -> SymExpression {
+    pub fn substitute_sizeof(&self, expr: SymExpression) -> SymExpression {
         match expr {
             SymExpression::Implies(l_expr, r_expr) => SymExpression::Implies(
                 Box::new(self.substitute_sizeof(*l_expr)),
@@ -217,54 +213,17 @@ impl Ranges {
                 SymExpression::Not(Box::new(self.substitute_sizeof(*expr)))
             }
             SymExpression::SizeOf(arr, size) => {
-                if let Some(range) = self.mapping.get(&arr) {
+                if let Some(range) = self.mapping.get(&arr.clone()) {
                     SymExpression::Range(Box::new(range.clone()))
                 } else {
-                    expr
+                    SymExpression::SizeOf(arr.clone(), size)
                 }
             }
             _ => expr,
         }
     }
-
-}
-
-impl Range {
-    pub fn new(size_expr: SymExpression, arr: Identifier) -> Self {
-        match size_expr.simplify() {
-            SymExpression::Literal(Literal::Integer(n)) => Range {
-                min: Boundary::Known(n),
-                size: SymExpression::Literal(Literal::Integer(n)),
-                max: Boundary::Known(n),
-            },
-            expr => Range {
-                min: Boundary::None,
-                size: expr,
-                max: Boundary::None,
-            },
-        }
-    }
-
-    pub fn min(&self) -> Option<i64> {
-        match self.min {
-            Boundary::Known(n) => Some(n),
-            _ => None,
-        }
-    }
-    pub fn get(&self) -> SymExpression {
-        self.size.clone()
-    }
-
-    pub fn max(&self) -> Option<i64> {
-        match self.max {
-            Boundary::Known(n) => Some(n),
-            _ => None,
-        }
-    }
-
-
-    pub fn infer_ranges<'a>(ranges: &'a mut Ranges, expr: &SymExpression) -> &'a mut Ranges {
-        return Ranges::narrow(ranges, &infer_new_ranges(expr));
+    pub fn infer_ranges(&mut self, expr: &SymExpression) {
+        self.narrow(&infer_new_ranges(expr));
 
 
 
@@ -297,18 +256,14 @@ impl Range {
                 SymExpression::Implies(l, r) => match (&**l, &**r) {
                     (SymExpression::Literal(Literal::Boolean(false)), _) => Ranges::default(),
                     (_, SymExpression::Literal(Literal::Boolean(false))) => Ranges::default(),
-                    _ => Ranges::broaden(&mut infer_new_ranges(l), &infer_new_ranges(r)).clone(),
+                    _ => {let mut range = infer_new_ranges(l); range.broaden( &infer_new_ranges(r)); range},
                 },
 
                 // pick the most optimistics range
-                SymExpression::And(l, r) => {
-                    Ranges::narrow(&mut infer_new_ranges(l), &infer_new_ranges(r)).clone()
-                }
+                SymExpression::And(l, r) => {let mut range = infer_new_ranges(l); range.narrow( &infer_new_ranges(r)); range},
 
                 // pick the most pesimistic range
-                SymExpression::Or(l, r) => {
-                    Ranges::broaden(&mut infer_new_ranges(l), &infer_new_ranges(r)).clone()
-                }
+                SymExpression::Or(l, r) => {let mut range = infer_new_ranges(l); range.broaden( &infer_new_ranges(r)); range},
 
                 // if sizeof equals some literal we set all boundarys and size to that literal
                 // else if sizeof equals some freevar we set all boundaries to unknown and size to that fv
@@ -550,7 +505,44 @@ impl Range {
             }
         }
     }
+
 }
+
+impl Range {
+    pub fn new(size_expr: SymExpression, arr: Identifier) -> Self {
+        match size_expr.simplify() {
+            SymExpression::Literal(Literal::Integer(n)) => Range {
+                min: Boundary::Known(n),
+                size: SymExpression::Literal(Literal::Integer(n)),
+                max: Boundary::Known(n),
+            },
+            expr => Range {
+                min: Boundary::None,
+                size: expr,
+                max: Boundary::None,
+            },
+        }
+    }
+
+    pub fn min(&self) -> Option<i64> {
+        match self.min {
+            Boundary::Known(n) => Some(n),
+            _ => None,
+        }
+    }
+    pub fn get(&self) -> SymExpression {
+        self.size.clone()
+    }
+
+    pub fn max(&self) -> Option<i64> {
+        match self.max {
+            Boundary::Known(n) => Some(n),
+            _ => None,
+        }
+    }
+
+
+    }
 
 // impl fmt::Debug for SymSize {
 //     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

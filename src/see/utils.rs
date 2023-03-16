@@ -28,9 +28,15 @@ pub fn parse_rhs<'a, 'b>(
             Ok(SymExpression::Reference(ty.clone(), r))
         }
 
-        Rhs::AccessArray(arr_name, index) => {
-            sym_memory.heap_access_array(&pc, ranges, solver, diagnostics, arr_name, index.clone(), None)
-        }
+        Rhs::AccessArray(arr_name, index) => sym_memory.heap_access_array(
+            &pc,
+            ranges,
+            solver,
+            diagnostics,
+            arr_name,
+            index.clone(),
+            None,
+        ),
 
         Rhs::Expression(expr) => Ok(SymExpression::new(&sym_memory, expr.clone())),
         _ => panic_with_diagnostics(
@@ -51,14 +57,14 @@ pub fn lhs_from_rhs<'a>(
     lhs: &'a Lhs,
     rhs: &'a Rhs,
 ) -> Result<(), Error> {
-    let var = parse_rhs(sym_memory, pc, ranges, solver, diagnostics,   rhs)?;
+    let var = parse_rhs(sym_memory, pc, ranges, solver, diagnostics, rhs)?;
     match lhs {
-        Lhs::Identifier(id) =>sym_memory.stack_insert(id, var),
+        Lhs::Identifier(id) => sym_memory.stack_insert(id, var),
         Lhs::AccessField(obj_name, field_name) => {
-           sym_memory.heap_access_object(obj_name, field_name, Some(var));
+            sym_memory.heap_access_object(obj_name, field_name, Some(var));
         }
         Lhs::AccessArray(arr_name, index) => {
-           sym_memory.heap_access_array(
+            sym_memory.heap_access_array(
                 &pc,
                 &ranges,
                 solver,
@@ -137,20 +143,22 @@ pub fn params_to_vars<'ctx>(
 
 /// handles the assertion in the SEE (used in `assert` and `require` statements)
 pub fn assert(
-    config: Config,
     sym_memory: &mut SymMemory,
+    pc: &mut PathConstraints,
+    ranges: &mut Ranges,
+    config: Config,
     solver: &mut Solver,
     assertion: &Expression,
-    pc: &mut PathConstraints,
     diagnostics: &mut Diagnostics,
 ) -> Result<(), Error> {
     let mut sym_assertion = SymExpression::new(&sym_memory, assertion.clone());
 
+    // update ranges
     if config.infer_size {
-        todo!()
+        ranges.infer_ranges(&sym_assertion);
     }
 
-    // add (simplified) assertion
+    // add (inferred  and / orsimplified) assertion
     if config.simplify {
         let simple_assertion = sym_assertion.simplify();
         //let simple_assertion = assertion;
@@ -165,7 +173,7 @@ pub fn assert(
     // calculate (inferred and / or simplified) constraints
     let mut constraints = pc.combine_over_true();
     if config.infer_size {
-        todo!()
+        constraints = ranges.substitute_sizeof(constraints);
     };
     if config.simplify {
         constraints = constraints.simplify()
@@ -183,18 +191,19 @@ pub fn assert(
 /// handles the assume in the SEE (used in `assume`, `require` and `ensure` statements)
 /// returns false if assumption is infeasible and can be dropped
 pub fn assume(
+    sym_memory: &mut SymMemory,
+    pc: &mut PathConstraints,
+    ranges: &mut Ranges,
     config: Config,
     use_z3: bool,
-    sym_memory: &mut SymMemory,
     solver: &mut Solver,
     assumption: &Expression,
-    pc: &mut PathConstraints,
     diagnostics: &mut Diagnostics,
 ) -> bool {
     let sym_assumption = SymExpression::new(&sym_memory, assumption.clone());
 
     if config.infer_size {
-        todo!()
+        ranges.infer_ranges(&sym_assumption);
     }
 
     if config.simplify {
@@ -213,13 +222,27 @@ pub fn assume(
         pc.push_assumption(sym_assumption.clone());
     };
 
-    // if we have not solved by now, invoke z3
-    if use_z3 {
-        diagnostics.z3_invocations = diagnostics.z3_invocations + 1;
-        if solver.expression_unsatisfiable(&pc.conjuct()) {
-            return false;
-        };
+    let mut constraints = pc.conjunct();
+    if config.infer_size {
+        constraints = ranges.substitute_sizeof(constraints);
+    };
+    if config.simplify {
+        constraints = constraints.simplify()
+    };
+
+    // return false if expression always evaluates to false
+    match (use_z3, constraints) {
+        // if is unsatisfiable return false
+        (_, SymExpression::Literal(Literal::Boolean(false))) => return false,
+        // if z3 confirms it is unsatisfiable, we must return false again
+        (true, _) => {
+            diagnostics.z3_invocations = diagnostics.z3_invocations + 1;
+            !solver.expression_unsatisfiable(&pc.conjunct())
+            
+        }
+        // if either not proved or z3 is turned off we just return true and go on
+        (false, _) => true
     }
 
-    return true;
+
 }

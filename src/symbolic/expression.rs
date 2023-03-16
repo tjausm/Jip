@@ -60,7 +60,7 @@ impl PathConstraints {
         return constraints;
     }
     /// combine constraints as a conjunction as follows: `assume(a), assert(b) -> a && b`
-    pub fn conjuct<'a>(&'a self) -> SymExpression {
+    pub fn conjunct<'a>(&'a self) -> SymExpression {
         let mut constraints = SymExpression::Literal(Literal::Boolean(true));
 
         for constraint in self.constraints.iter().rev() {

@@ -156,7 +156,7 @@ fn verify_program(
     // Assume -> build & verify z3 formula, stop evaluating pad if disproven
     // assignment -> evaluate rhs and update env
     // then we enque all connected nodes, till d=0 or we reach end of cfg
-    while let Some((mut sym_memory, mut pc, ranges, d, curr_node)) = q.pop_front() {
+    while let Some((mut sym_memory, mut pc, mut ranges, d, curr_node)) = q.pop_front() {
         if d == 0 {
             continue;
         }
@@ -213,23 +213,25 @@ fn verify_program(
                     },
                     Statement::Assume(assumption) => {
                         if !assume(
+                            &mut sym_memory,
+                            &mut pc,
+                            &mut ranges,
                             config,
                             d > prune_depth,
-                            &mut sym_memory,
                             &mut solver,
                             assumption,
-                            &mut pc,
                             &mut diagnostics,
                         ) {
                             continue;
                         }
                     }
                     Statement::Assert(assertion) => assert(
-                        config,
                         &mut sym_memory,
+                        &mut pc,
+                        &mut ranges,
+                        config,
                         &mut solver,
                         assertion,
-                        &mut pc,
                         &mut diagnostics,
                     )?,
                     Statement::Assignment((lhs, rhs)) => {
@@ -334,11 +336,12 @@ fn verify_program(
                             match (specification, from_main_scope) {
                                 // if require is called outside main scope we assert
                                 (Specification::Requires(assertion), false) => assert(
-                                    config,
                                     &mut sym_memory,
+                                    &mut pc,
+                                    &mut ranges,
+                                    config,
                                     &mut solver,
                                     assertion,
-                                    &mut pc,
                                     &mut diagnostics,
                                 )?,
                                 // otherwise process we assume
@@ -348,12 +351,13 @@ fn verify_program(
                                         Specification::Ensures(expr) => expr,
                                     };
                                     if !assume(
+                                        &mut sym_memory,
+                                        &mut pc,
+                                        &mut ranges,
                                         config,
                                         prune_depth < d,
-                                        &mut sym_memory,
                                         &mut solver,
                                         assumption,
-                                        &mut pc,
                                         &mut diagnostics,
                                     ) {
                                         continue;
