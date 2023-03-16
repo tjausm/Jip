@@ -110,10 +110,16 @@ pub fn print_verification(
 }
 
 /// prints the verbose debug info
-fn print_debug(node: &Node,  sym_memory: &SymMemory, pc: &PathConstraints) {
+fn print_debug(node: &Node, config: Config,   sym_memory: &SymMemory, pc: &PathConstraints, ranges: &Ranges,) {
     let print_node = format!("{:?}", node);
-    let print_pc = format!("Path constraints -> {:?}", pc.combine_over_true());
     let print_sym_memory = format!("{:?}", sym_memory);
+    let print_ranges = format!("{:?}", ranges);
+
+    let mut pc = pc.combine_over_true();
+    if config.infer_size {pc = ranges.substitute_sizeof(pc)};
+    let print_pc = format!("Path constraints -> {:?}", pc);
+
+
 
     let dump_state = match node {
         Node::Statement(Statement::Assert(_)) => true,
@@ -121,7 +127,7 @@ fn print_debug(node: &Node,  sym_memory: &SymMemory, pc: &PathConstraints) {
         _ => false,
     };
     if dump_state {
-        println!("{}\n\n{}\n\n{}", print_node, print_pc, print_sym_memory);
+        println!("{}\n\n{}\n\n{}\n\n{}", print_node, print_pc, print_ranges, print_sym_memory);
     } else {
         println!("{}", print_node);
     }
@@ -162,7 +168,7 @@ fn verify_program(
         }
 
         if config.verbose {
-            print_debug(&cfg[curr_node],  &sym_memory, &pc);
+            print_debug(&cfg[curr_node], config,  &sym_memory, &pc, &ranges);
         };
 
         match &cfg[curr_node] {
