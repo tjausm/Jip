@@ -5,7 +5,7 @@ use std::fmt;
 use uuid::Uuid;
 
 use super::expression::{PathConstraints, SymExpression, SymType};
-use super::ref_values::{Array, Boundary, Reference, ReferenceValue, Range};
+use super::ref_values::{Array, Boundary, Reference, ReferenceValue, Range, Ranges};
 use crate::ast::*;
 use crate::shared::{panic_with_diagnostics, Config, Diagnostics, Error, Scope};
 use crate::smt_solver::Solver;
@@ -26,8 +26,8 @@ pub struct SymMemory {
     heap: SymHeap,
 }
 
-impl<'a> SymMemory {
-    pub fn new() -> Self {
+impl Default for SymMemory {
+    fn default() -> Self {
         SymMemory {
             stack: vec![Frame {
                 scope: Scope { id: None },
@@ -36,6 +36,9 @@ impl<'a> SymMemory {
             heap: FxHashMap::default(),
         }
     }
+}
+
+impl<'a> SymMemory {
 
     /// Insert mapping `Identifier |-> SymbolicExpression` in top most frame of stack
     pub fn stack_insert(&mut self, id: &'a Identifier, sym_expr: SymExpression) -> () {
@@ -163,10 +166,10 @@ impl<'a> SymMemory {
     /// Possibly update with passed `var` and return current symbolic expression at arrays index
     pub fn heap_access_array(
         &mut self,
+        pc: &PathConstraints,
+        ranges: &Ranges,
         solver: &mut Solver,
         diagnostics: &mut Diagnostics,
-        config: Config,
-        pc: &PathConstraints,
         arr_name: &Identifier,
         index: Expression,
         var: Option<SymExpression>,
@@ -174,21 +177,21 @@ impl<'a> SymMemory {
         // substitute expr and simplify
         let subt_index = SymExpression::new(self, index);
 
-        //get Previous size and infer new size from it if toggled
-        let size_expr = self.heap_get_array(arr_name).2.clone();
-        let size = todo!();
+        //get range of arraysize if it's inferred
+        let range = ranges.get(arr_name);
+        let size_expr = range.map(|r| r.get()).unwrap_or(SymExpression::FreeVariable(SymType::Int, format!("#{}", arr_name)));
 
         // always simplify index, otherwise unsimplified SE could return different results than simplified SE
         let simple_index = subt_index.clone().simplify();
 
         // check if index is always < length
-        match (&simple_index, &size.get(), &size.min()) {
+        match (simple_index, size_expr, range.map(|r| r.min())) {
             (
                 SymExpression::Literal(Literal::Integer(lit_i)),
                 SymExpression::Literal(Literal::Integer(lit_l)),
                 _,
             ) if lit_i < lit_l => (),
-            (SymExpression::Literal(Literal::Integer(lit_i)), _, Some(lit_l))
+            (SymExpression::Literal(Literal::Integer(lit_i)), _, Some(Some(lit_l)))
                 if lit_i < lit_l =>
             {
                 ()
