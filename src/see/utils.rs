@@ -4,6 +4,7 @@ use crate::shared::{panic_with_diagnostics, Diagnostics};
 use crate::smt_solver::{Solver};
 use crate::symbolic::memory::SymMemory;
 use crate::symbolic::expression::{PathConstraints, SymExpression};
+use crate::symbolic::ref_values::{Range};
 
 /// returns the symbolic expression rhs refers to
 pub fn parse_rhs<'a, 'b>(
@@ -138,30 +139,37 @@ pub fn params_to_vars<'ctx>(
 
 /// handles the assertion in the SEE (used in `assert` and `require` statements)
 pub fn assert(
-    simplify: bool,
+    config: Config,
     sym_memory: &mut SymMemory,
     solver: &mut Solver,
     assertion: &Expression,
     pc: &mut PathConstraints,
     diagnostics: &mut Diagnostics,
 ) -> Result<(), Error> {
-    let sym_assertion = SymExpression::new(&sym_memory, assertion.clone());
+    let mut sym_assertion = SymExpression::new(&sym_memory, assertion.clone());
+
+    if config.infer_size {
+        todo!()
+    }
 
     // add (simplified) assertion
-    if simplify {
+    if config.simplify {
         let simple_assertion = sym_assertion.simplify();
         //let simple_assertion = assertion;
         match simple_assertion {
             SymExpression::Literal(Literal::Boolean(true)) => (),
-            _ => pc.push_assertion(simple_assertion),
+            _ => pc.push_assertion(Some(config), simple_assertion),
         }
     } else {
-        pc.push_assertion(sym_assertion);
+        pc.push_assertion(Some(config), sym_assertion);
     };
 
-    // calculate (simplified) constraints
+    // calculate (inferred and / or simplified) constraints
     let mut constraints = pc.combine_over_true();
-    if simplify {
+    if config.infer_size {
+        todo!()
+    };
+    if config.simplify {
         constraints = constraints.simplify()
     };
     match constraints {
@@ -177,7 +185,7 @@ pub fn assert(
 /// handles the assume in the SEE (used in `assume`, `require` and `ensure` statements)
 /// returns false if assumption is infeasible and can be dropped
 pub fn assume(
-    simplify: bool,
+    config: Config,
     use_z3: bool,
     sym_memory: &mut SymMemory,
     solver: &mut Solver,
@@ -185,9 +193,13 @@ pub fn assume(
     pc: &mut PathConstraints,
     diagnostics: &mut Diagnostics,
 ) -> bool {
-    let sym_assumption = SymExpression::new(&sym_memory, assumption.clone());
+    let mut  sym_assumption = SymExpression::new(&sym_memory, assumption.clone());
 
-    if simplify {
+    if config.infer_size {
+        todo!()
+    }
+
+    if config.simplify {
         let simple_assumption = sym_assumption.simplify();
 
         //  let z3_subt = smt_solver::expression_unsatisfiable(ctx, &subt_assumption, sym_memory);
@@ -197,10 +209,10 @@ pub fn assume(
         match simple_assumption {
             SymExpression::Literal(Literal::Boolean(false)) => return false,
             SymExpression::Literal(Literal::Boolean(true)) => (),
-            _ => pc.push_assumption(simple_assumption),
+            _ => pc.push_assumption(config, simple_assumption),
         };
     } else {
-        pc.push_assumption(sym_assumption.clone());
+        pc.push_assumption(config, sym_assumption.clone());
     };
 
     // if we have not solved by now, invoke z3

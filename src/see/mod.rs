@@ -213,7 +213,7 @@ fn verify_program(
                     },
                     Statement::Assume(assumption) => {
                         if !assume(
-                            config.simplify,
+                            config,
                             d > prune_depth,
                             &mut sym_memory,
                             &mut solver,
@@ -225,7 +225,7 @@ fn verify_program(
                         }
                     }
                     Statement::Assert(assertion) => assert(
-                        config.simplify,
+                        config,
                         &mut sym_memory,
                         &mut solver,
                         assertion,
@@ -334,7 +334,7 @@ fn verify_program(
                             match (specification, from_main_scope) {
                                 // if require is called outside main scope we assert
                                 (Specification::Requires(assertion), false) => assert(
-                                    config.simplify,
+                                    config,
                                     &mut sym_memory,
                                     &mut solver,
                                     assertion,
@@ -348,7 +348,7 @@ fn verify_program(
                                         Specification::Ensures(expr) => expr,
                                     };
                                     if !assume(
-                                        config.simplify,
+                                        config,
                                         prune_depth < d,
                                         &mut sym_memory,
                                         &mut solver,

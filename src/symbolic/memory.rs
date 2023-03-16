@@ -176,11 +176,7 @@ impl<'a> SymMemory {
 
         //get Previous size and infer new size from it if toggled
         let size_expr = self.heap_get_array(arr_name).2.clone();
-        let size = if config.infer_size {
-            Range::infer(size_expr.clone(), arr_name, pc)
-        } else {
-            Range::new(size_expr.clone())
-        };
+        let size = todo!();
 
         // always simplify index, otherwise unsimplified SE could return different results than simplified SE
         let simple_index = subt_index.clone().simplify();

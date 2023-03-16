@@ -84,7 +84,7 @@ impl Solver {
         //append length > index to PathConstraints and try to falsify
         let length_gt_index = SymExpression::GT(Box::new(size_expr.clone()), Box::new(index.clone()));
         let mut pc = pc.clone();
-        pc.push_assertion(length_gt_index);
+        pc.push_assertion(None, length_gt_index);
         let constraints = pc.combine_over_true();
 
         match self.verify_expr(&SymExpression::Not(Box::new(constraints))) {
@@ -308,6 +308,7 @@ fn expr_to_str<'a>(expr: &'a SymExpression) -> (String, FxHashSet<(SymType, Stri
             fv.insert((SymType::Int, arr_size_id.clone()));
             (format!("{}", arr_size_id), fv)       
         },
+        SymExpression::Range(r) => expr_to_str(&r.get()),
         SymExpression::Literal(Literal::Integer(n)) => (format!("{}", n), FxHashSet::default()),
         SymExpression::Literal(Literal::Boolean(b)) => (format!("{}", b), FxHashSet::default()),
         SymExpression::Reference(_, r) => (format!("{}", r.as_u64_pair().0), FxHashSet::default()),

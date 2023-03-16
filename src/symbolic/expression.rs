@@ -8,11 +8,18 @@ use std::{
     vec::IntoIter,
 };
 
+use rustc_hash::FxHashMap;
+
 use super::ref_values::{Array, Range, Reference};
-use crate::{ast::*, shared::panic_with_diagnostics, symbolic::memory::SymMemory};
+use crate::{
+    ast::*,
+    shared::{panic_with_diagnostics, Config},
+    symbolic::memory::SymMemory,
+};
 
 #[derive(Clone)]
 pub struct PathConstraints {
+    ranges: FxHashMap<Identifier, Range>,
     constraints: Vec<PathConstraint>,
 }
 
@@ -25,6 +32,7 @@ pub enum PathConstraint {
 impl Default for PathConstraints {
     fn default() -> Self {
         PathConstraints {
+            ranges: FxHashMap::default(),
             constraints: vec![],
         }
     }
@@ -36,7 +44,7 @@ impl PathConstraints {
     }
 
     /// combine constraints over true as follows: `assume(a), assert(b) -> a ==> b && true`
-    pub fn combine_over_true<'a>(&'a self) -> SymExpression {
+    pub fn combine_over_true<'a>(&'a self, infer_size:bool) -> SymExpression {
         let mut constraints = SymExpression::Literal(Literal::Boolean(true));
 
         for constraint in self.constraints.iter().rev() {
@@ -50,10 +58,15 @@ impl PathConstraints {
                 }
             }
         }
+
+        if infer_size{
+            // TODO: implementeer
+        }
+
         return constraints;
     }
     /// combine constraints as a conjunction as follows: `assume(a), assert(b) -> a && b`
-    pub fn conjuct<'a>(&'a self) -> SymExpression {
+    pub fn conjuct<'a>(&'a self, infer_size: bool) -> SymExpression {
         let mut constraints = SymExpression::Literal(Literal::Boolean(true));
 
         for constraint in self.constraints.iter().rev() {
@@ -66,16 +79,131 @@ impl PathConstraints {
                 }
             }
         }
+
+
         return constraints;
     }
 
     /// adds a new constraint
-    pub fn push_assertion(&mut self, s: SymExpression) {
-        self.constraints.push(PathConstraint::Assert(s));
+    pub fn push_assertion(&mut self, infer_size: bool, assertion: SymExpression) {
+        if infer_size {
+                self.ranges = Range::infer_ranges(&mut self.ranges, &assertion).clone();
+            
+        };
+
+        self.constraints.push(PathConstraint::Assert(assertion));
     }
     /// adds a new constraint
-    pub fn push_assumption(&mut self, s: SymExpression) {
-        self.constraints.push(PathConstraint::Assume(s));
+    pub fn push_assumption(&mut self, infer_size: bool, assumption: SymExpression) {
+        if infer_size {
+            self.ranges = Range::infer_ranges(&mut self.ranges, &assumption).clone();
+        };
+
+        self.constraints.push(PathConstraint::Assume(assumption));
+    }
+
+    pub fn get_range<'a>(&'a self, arr: &Identifier) -> Option<&'a Range> {
+        self.ranges.get(arr)
+    }
+
+    /// substitute all instances of sizeOf with the ranges we have in saved in path constraints
+    fn substitute_sizeof(&self, expr: SymExpression) -> SymExpression {
+        let mut ranges = FxHashMap::default();
+        return substitute_and_collect(expr, self, &mut ranges);
+
+        fn substitute_and_collect(
+            expr: SymExpression,
+            pc: &PathConstraints,
+            ranges: &mut FxHashMap<Identifier, Range>,
+        ) -> SymExpression {
+            match expr {
+                SymExpression::Implies(l_expr, r_expr) => {
+                    let l_expr = substitute_and_collect(*l_expr, pc, ranges);
+                    let r_expr = substitute_and_collect(*r_expr, pc, ranges);
+                    SymExpression::Implies(Box::new(l_expr), Box::new(r_expr))
+                }
+                SymExpression::And(l_expr, r_expr) => {
+                    let l_expr = substitute_and_collect(*l_expr, pc, ranges);
+                    let r_expr = substitute_and_collect(*r_expr, pc, ranges);
+                    SymExpression::And(Box::new(l_expr), Box::new(r_expr))
+                }
+                SymExpression::Or(l_expr, r_expr) => {
+                    let l_expr = substitute_and_collect(*l_expr, pc, ranges);
+                    let r_expr = substitute_and_collect(*r_expr, pc, ranges);
+                    SymExpression::Or(Box::new(l_expr), Box::new(r_expr))
+                }
+                SymExpression::EQ(l_expr, r_expr) => {
+                    let l_expr = substitute_and_collect(*l_expr, pc, ranges);
+                    let r_expr = substitute_and_collect(*r_expr, pc, ranges);
+                    SymExpression::EQ(Box::new(l_expr), Box::new(r_expr))
+                }
+                SymExpression::NE(l_expr, r_expr) => {
+                    let l_expr = substitute_and_collect(*l_expr, pc, ranges);
+                    let r_expr = substitute_and_collect(*r_expr, pc, ranges);
+                    SymExpression::NE(Box::new(l_expr), Box::new(r_expr))
+                }
+                SymExpression::LT(l_expr, r_expr) => {
+                    let l_expr = substitute_and_collect(*l_expr, pc, ranges);
+                    let r_expr = substitute_and_collect(*r_expr, pc, ranges);
+                    SymExpression::LT(Box::new(l_expr), Box::new(r_expr))
+                }
+                SymExpression::GT(l_expr, r_expr) => {
+                    let l_expr = substitute_and_collect(*l_expr, pc, ranges);
+                    let r_expr = substitute_and_collect(*r_expr, pc, ranges);
+                    SymExpression::GT(Box::new(l_expr), Box::new(r_expr))
+                }
+                SymExpression::GEQ(l_expr, r_expr) => {
+                    let l_expr = substitute_and_collect(*l_expr, pc, ranges);
+                    let r_expr = substitute_and_collect(*r_expr, pc, ranges);
+                    SymExpression::GEQ(Box::new(l_expr), Box::new(r_expr))
+                }
+                SymExpression::LEQ(l_expr, r_expr) => {
+                    let l_expr = substitute_and_collect(*l_expr, pc, ranges);
+                    let r_expr = substitute_and_collect(*r_expr, pc, ranges);
+                    SymExpression::LEQ(Box::new(l_expr), Box::new(r_expr))
+                }
+                SymExpression::Plus(l_expr, r_expr) => {
+                    let l_expr = substitute_and_collect(*l_expr, pc, ranges);
+                    let r_expr = substitute_and_collect(*r_expr, pc, ranges);
+                    SymExpression::Plus(Box::new(l_expr), Box::new(r_expr))
+                }
+                SymExpression::Minus(l_expr, r_expr) => {
+                    let l_expr = substitute_and_collect(*l_expr, pc, ranges);
+                    let r_expr = substitute_and_collect(*r_expr, pc, ranges);
+                    SymExpression::Minus(Box::new(l_expr), Box::new(r_expr))
+                }
+                SymExpression::Multiply(l_expr, r_expr) => {
+                    let l_expr = substitute_and_collect(*l_expr, pc, ranges);
+                    let r_expr = substitute_and_collect(*r_expr, pc, ranges);
+                    SymExpression::Multiply(Box::new(l_expr), Box::new(r_expr))
+                }
+                SymExpression::Divide(l_expr, r_expr) => {
+                    let l_expr = substitute_and_collect(*l_expr, pc, ranges);
+                    let r_expr = substitute_and_collect(*r_expr, pc, ranges);
+                    SymExpression::Divide(Box::new(l_expr), Box::new(r_expr))
+                }
+                SymExpression::Mod(l_expr, r_expr) => {
+                    let l_expr = substitute_and_collect(*l_expr, pc, ranges);
+                    let r_expr = substitute_and_collect(*r_expr, pc, ranges);
+                    SymExpression::Mod(Box::new(l_expr), Box::new(r_expr))
+                }
+                SymExpression::Negative(expr) => {
+                    SymExpression::Negative(Box::new(substitute_and_collect(*expr, pc, ranges)))
+                }
+
+                SymExpression::Not(expr) => {
+                    SymExpression::Not(Box::new(substitute_and_collect(*expr, pc, ranges)))
+                }
+                SymExpression::SizeOf(arr, size) => {
+                    if let Some(range) = pc.get_range(&arr) {
+                        SymExpression::Range(Box::new(range.clone()))
+                    } else {
+                        expr
+                    }
+                }
+                _ => expr,
+            }
+        }
     }
 }
 
@@ -283,7 +411,7 @@ impl SymExpression {
                     SymExpression::Literal(Literal::Integer(l_lit)),
                     SymExpression::Literal(Literal::Integer(r_lit)),
                 ) => SymExpression::Literal(Literal::Boolean(l_lit < r_lit)),
-                (SymExpression::Range(range), SymExpression::Literal(Literal::Integer(n)),)
+                (SymExpression::Range(range), SymExpression::Literal(Literal::Integer(n)))
                     if range.max().unwrap_or(i64::MAX) < n =>
                 {
                     SymExpression::Literal(Literal::Boolean(true))
@@ -300,16 +428,16 @@ impl SymExpression {
                     SymExpression::Literal(Literal::Integer(l_lit)),
                     SymExpression::Literal(Literal::Integer(r_lit)),
                 ) => SymExpression::Literal(Literal::Boolean(l_lit > r_lit)),
-                (SymExpression::Range(range), SymExpression::Literal(Literal::Integer(n)),)
-                if range.max().unwrap_or(i64::MIN) > n =>
-            {
-                SymExpression::Literal(Literal::Boolean(true))
-            }
-            (SymExpression::Literal(Literal::Integer(n)), SymExpression::Range(range))
-                if n > range.min().unwrap_or(i64::MAX) =>
-            {
-                SymExpression::Literal(Literal::Boolean(true))
-            }
+                (SymExpression::Range(range), SymExpression::Literal(Literal::Integer(n)))
+                    if range.max().unwrap_or(i64::MIN) > n =>
+                {
+                    SymExpression::Literal(Literal::Boolean(true))
+                }
+                (SymExpression::Literal(Literal::Integer(n)), SymExpression::Range(range))
+                    if n > range.min().unwrap_or(i64::MAX) =>
+                {
+                    SymExpression::Literal(Literal::Boolean(true))
+                }
                 (l_simple, r_simple) => SymExpression::GT(Box::new(l_simple), Box::new(r_simple)),
             },
             SymExpression::GEQ(l, r) => match (l.clone().simplify(), r.clone().simplify()) {
@@ -317,7 +445,7 @@ impl SymExpression {
                     SymExpression::Literal(Literal::Integer(l_lit)),
                     SymExpression::Literal(Literal::Integer(r_lit)),
                 ) => SymExpression::Literal(Literal::Boolean(l_lit >= r_lit)),
-                                (SymExpression::Range(range), SymExpression::Literal(Literal::Integer(n)),)
+                (SymExpression::Range(range), SymExpression::Literal(Literal::Integer(n)))
                     if range.max().unwrap_or(i64::MIN) >= n =>
                 {
                     SymExpression::Literal(Literal::Boolean(true))
@@ -335,16 +463,16 @@ impl SymExpression {
                     SymExpression::Literal(Literal::Integer(l_lit)),
                     SymExpression::Literal(Literal::Integer(r_lit)),
                 ) => SymExpression::Literal(Literal::Boolean(l_lit <= r_lit)),
-                (SymExpression::Range(range), SymExpression::Literal(Literal::Integer(n)),)
-                if range.max().unwrap_or(i64::MAX) <= n =>
-            {
-                SymExpression::Literal(Literal::Boolean(true))
-            }
-            (SymExpression::Literal(Literal::Integer(n)), SymExpression::Range(range))
-                if n <= range.min().unwrap_or(i64::MIN) =>
-            {
-                SymExpression::Literal(Literal::Boolean(true))
-            }
+                (SymExpression::Range(range), SymExpression::Literal(Literal::Integer(n)))
+                    if range.max().unwrap_or(i64::MAX) <= n =>
+                {
+                    SymExpression::Literal(Literal::Boolean(true))
+                }
+                (SymExpression::Literal(Literal::Integer(n)), SymExpression::Range(range))
+                    if n <= range.min().unwrap_or(i64::MIN) =>
+                {
+                    SymExpression::Literal(Literal::Boolean(true))
+                }
                 (l_simple, r_simple) => SymExpression::LEQ(Box::new(l_simple), Box::new(r_simple)),
             },
 
@@ -396,6 +524,7 @@ impl SymExpression {
                 }
                 simple_expr => SymExpression::Not(Box::new(simple_expr)),
             },
+            SymExpression::Range(_) => self,
             SymExpression::SizeOf(_, _) => self,
             SymExpression::Literal(_) => self,
             SymExpression::FreeVariable(_, _) => self,
