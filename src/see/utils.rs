@@ -155,7 +155,7 @@ pub fn assert(
 
     // update ranges
     if config.infer_size {
-        ranges.infer_ranges(&sym_assertion);
+        ranges.infer_ranges(sym_assertion.clone());
     }
 
     // add (inferred  and / orsimplified) assertion
@@ -203,7 +203,7 @@ pub fn assume(
     let sym_assumption = SymExpression::new(&sym_memory, assumption.clone());
 
     if config.infer_size {
-        ranges.infer_ranges(&sym_assumption);
+        ranges.infer_ranges(sym_assumption.clone());
     }
 
     if config.simplify {

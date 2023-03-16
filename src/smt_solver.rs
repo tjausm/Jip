@@ -1,5 +1,7 @@
 //! Encode expressions into the smt-lib format to test satisfiability using the chosen backend
 
+use core::panic;
+
 use crate::ast::*;
 use crate::shared::{panic_with_diagnostics, Error, SolverType};
 use crate::symbolic::expression::{PathConstraints, SymExpression, SymType};
@@ -153,6 +155,7 @@ impl Solver {
                 (SymType::Ref(_), id) => self.s.declare_const(id, "Int").unwrap(),
             }
         }
+
         self.s.assert(expr_str.clone()).unwrap();
         let satisfiable = match self.s.check_sat() {
             Ok(b) => b,
