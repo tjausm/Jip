@@ -36,40 +36,33 @@ pub struct Range {
     max: Boundary,
 }
 
-/// mapes array names to ranges
-pub type Ranges = FxHashMap<Identifier, Range>;
+#[derive(Clone)]
+pub struct Ranges {
+    mapping: FxHashMap<Identifier, Range>
+}
 
-impl Range {
-    pub fn new(size_expr: SymExpression, arr: Identifier) -> Self {
-        match size_expr.simplify() {
-            SymExpression::Literal(Literal::Integer(n)) => Range {
-                min: Boundary::Known(n),
-                size: SymExpression::Literal(Literal::Integer(n)),
-                max: Boundary::Known(n),
-            },
-            expr => Range {
-                min: Boundary::None,
-                size: expr,
-                max: Boundary::None,
-            },
+
+impl Default for Ranges {
+    fn default() -> Self {
+        Ranges {
+            mapping: FxHashMap::default(),
         }
     }
 
-    pub fn min(&self) -> Option<i64> {
-        match self.min {
-            Boundary::Known(n) => Some(n),
-            _ => None,
-        }
-    }
-    pub fn get(&self) -> SymExpression {
-        self.size.clone()
+    
+}
+
+impl Ranges {
+    
+    /// make a set of ranges with 1 mapping inserted
+    pub fn new(arr: Identifier, r: Range) -> Ranges {
+        let mut ranges = Ranges::default();
+        ranges.mapping.insert(arr, r);
+        ranges
     }
 
-    pub fn max(&self) -> Option<i64> {
-        match self.max {
-            Boundary::Known(n) => Some(n),
-            _ => None,
-        }
+    pub fn get<'a>(&'a self, arr: &Identifier) -> Option<&'a Range> {
+        self.mapping.get(arr)
     }
 
     /// given 2 sets of symSizes, take the intersection of their boundaries
@@ -77,12 +70,12 @@ impl Range {
     /// e.g. if one boundary is unknown set boundary to unknown,
     /// if both are known set boundary to smallest min and largest max,
     /// otherwise set boundary to None
-    fn broaden<'a>(l_ranges: &'a mut Ranges, r_ranges: &Ranges) -> &'a mut Ranges {
-        for (arr, r_range) in r_ranges {
-            if let Some(l_range) = l_ranges.get(arr) {
-                l_ranges.insert(arr.clone(), broaden_one(l_range, r_range));
+    pub fn broaden<'a>(l_ranges: &'a mut Ranges, r_ranges: &Ranges) -> &'a mut Ranges {
+        for (arr, r_range) in r_ranges.mapping {
+            if let Some(l_range) = l_ranges.mapping.get(&arr) {
+                l_ranges.mapping.insert(arr.clone(), broaden_one(l_range, &r_range));
             } else {
-                l_ranges.insert(arr.clone(), r_range.clone());
+                l_ranges.mapping.insert(arr.clone(), r_range.clone());
             }
         }
         return l_ranges;
@@ -114,11 +107,11 @@ impl Range {
     /// if one is unknown set boundary to unknown
     /// otherwise set boundary to None
     fn narrow<'a>(l_ranges: &'a mut Ranges, r_ranges: &Ranges) -> &'a mut Ranges {
-        for (arr, r_range) in r_ranges {
-            if let Some(l_range) = l_ranges.get(arr) {
-                l_ranges.insert(arr.clone(), narrow_one(l_range, r_range));
+        for (arr, r_range) in r_ranges.mapping {
+            if let Some(l_range) = l_ranges.mapping.get(&arr) {
+                l_ranges.mapping.insert(arr.clone(), narrow_one(l_range, &r_range));
             } else {
-                l_ranges.insert(arr.clone(), r_range.clone());
+                l_ranges.mapping.insert(arr.clone(), r_range.clone());
             }
         }
         return l_ranges;
@@ -156,14 +149,124 @@ impl Range {
         }
     }
 
-    pub fn infer_ranges<'a>(ranges: &'a mut Ranges, expr: &SymExpression) -> &'a mut Ranges {
-        return Range::narrow(ranges, &infer_new_ranges(expr));
 
-        fn mk_ranges(arr: Identifier, r: Range) -> Ranges {
-            let ranges = FxHashMap::default();
-            ranges.insert(arr, r);
-            ranges
+    /// substitute all instances of sizeOf with the ranges we have saved in path constraints
+    fn substitute_sizeof(&self, expr: SymExpression) -> SymExpression {
+        match expr {
+            SymExpression::Implies(l_expr, r_expr) => SymExpression::Implies(
+                Box::new(self.substitute_sizeof(*l_expr)),
+                Box::new(self.substitute_sizeof(*r_expr)),
+            ),
+            SymExpression::And(l_expr, r_expr) => SymExpression::And(
+                Box::new(self.substitute_sizeof(*l_expr)),
+                Box::new(self.substitute_sizeof(*r_expr)),
+            ),
+            SymExpression::Or(l_expr, r_expr) => SymExpression::Or(
+                Box::new(self.substitute_sizeof(*l_expr)),
+                Box::new(self.substitute_sizeof(*r_expr)),
+            ),
+            SymExpression::EQ(l_expr, r_expr) => SymExpression::EQ(
+                Box::new(self.substitute_sizeof(*l_expr)),
+                Box::new(self.substitute_sizeof(*r_expr)),
+            ),
+            SymExpression::NE(l_expr, r_expr) => SymExpression::NE(
+                Box::new(self.substitute_sizeof(*l_expr)),
+                Box::new(self.substitute_sizeof(*r_expr)),
+            ),
+            SymExpression::LT(l_expr, r_expr) => SymExpression::LT(
+                Box::new(self.substitute_sizeof(*l_expr)),
+                Box::new(self.substitute_sizeof(*r_expr)),
+            ),
+            SymExpression::GT(l_expr, r_expr) => SymExpression::GT(
+                Box::new(self.substitute_sizeof(*l_expr)),
+                Box::new(self.substitute_sizeof(*r_expr)),
+            ),
+            SymExpression::GEQ(l_expr, r_expr) => SymExpression::GEQ(
+                Box::new(self.substitute_sizeof(*l_expr)),
+                Box::new(self.substitute_sizeof(*r_expr)),
+            ),
+            SymExpression::LEQ(l_expr, r_expr) => SymExpression::LEQ(
+                Box::new(self.substitute_sizeof(*l_expr)),
+                Box::new(self.substitute_sizeof(*r_expr)),
+            ),
+            SymExpression::Plus(l_expr, r_expr) => SymExpression::Plus(
+                Box::new(self.substitute_sizeof(*l_expr)),
+                Box::new(self.substitute_sizeof(*r_expr)),
+            ),
+            SymExpression::Minus(l_expr, r_expr) => SymExpression::Minus(
+                Box::new(self.substitute_sizeof(*l_expr)),
+                Box::new(self.substitute_sizeof(*r_expr)),
+            ),
+            SymExpression::Multiply(l_expr, r_expr) => SymExpression::Multiply(
+                Box::new(self.substitute_sizeof(*l_expr)),
+                Box::new(self.substitute_sizeof(*r_expr)),
+            ),
+            SymExpression::Divide(l_expr, r_expr) => SymExpression::Divide(
+                Box::new(self.substitute_sizeof(*l_expr)),
+                Box::new(self.substitute_sizeof(*r_expr)),
+            ),
+            SymExpression::Mod(l_expr, r_expr) => SymExpression::Mod(
+                Box::new(self.substitute_sizeof(*l_expr)),
+                Box::new(self.substitute_sizeof(*r_expr)),
+            ),
+            SymExpression::Negative(expr) => {
+                SymExpression::Negative(Box::new(self.substitute_sizeof(*expr)))
+            }
+
+            SymExpression::Not(expr) => {
+                SymExpression::Not(Box::new(self.substitute_sizeof(*expr)))
+            }
+            SymExpression::SizeOf(arr, size) => {
+                if let Some(range) = self.mapping.get(&arr) {
+                    SymExpression::Range(Box::new(range.clone()))
+                } else {
+                    expr
+                }
+            }
+            _ => expr,
         }
+    }
+
+}
+
+impl Range {
+    pub fn new(size_expr: SymExpression, arr: Identifier) -> Self {
+        match size_expr.simplify() {
+            SymExpression::Literal(Literal::Integer(n)) => Range {
+                min: Boundary::Known(n),
+                size: SymExpression::Literal(Literal::Integer(n)),
+                max: Boundary::Known(n),
+            },
+            expr => Range {
+                min: Boundary::None,
+                size: expr,
+                max: Boundary::None,
+            },
+        }
+    }
+
+    pub fn min(&self) -> Option<i64> {
+        match self.min {
+            Boundary::Known(n) => Some(n),
+            _ => None,
+        }
+    }
+    pub fn get(&self) -> SymExpression {
+        self.size.clone()
+    }
+
+    pub fn max(&self) -> Option<i64> {
+        match self.max {
+            Boundary::Known(n) => Some(n),
+            _ => None,
+        }
+    }
+
+
+    pub fn infer_ranges<'a>(ranges: &'a mut Ranges, expr: &SymExpression) -> &'a mut Ranges {
+        return Ranges::narrow(ranges, &infer_new_ranges(expr));
+
+
 
         fn infer_new_ranges(expr: &SymExpression) -> Ranges {
             match expr {
@@ -192,19 +295,19 @@ impl Range {
 
                 // if not falsifiable we assume it to be true and pick most pessimistic range?
                 SymExpression::Implies(l, r) => match (&**l, &**r) {
-                    (SymExpression::Literal(Literal::Boolean(false)), _) => FxHashMap::default(),
-                    (_, SymExpression::Literal(Literal::Boolean(false))) => FxHashMap::default(),
-                    _ => Range::broaden(&mut infer_new_ranges(l), &infer_new_ranges(r)).clone(),
+                    (SymExpression::Literal(Literal::Boolean(false)), _) => Ranges::default(),
+                    (_, SymExpression::Literal(Literal::Boolean(false))) => Ranges::default(),
+                    _ => Ranges::broaden(&mut infer_new_ranges(l), &infer_new_ranges(r)).clone(),
                 },
 
                 // pick the most optimistics range
                 SymExpression::And(l, r) => {
-                    Range::narrow(&mut infer_new_ranges(l), &infer_new_ranges(r)).clone()
+                    Ranges::narrow(&mut infer_new_ranges(l), &infer_new_ranges(r)).clone()
                 }
 
                 // pick the most pesimistic range
                 SymExpression::Or(l, r) => {
-                    Range::broaden(&mut infer_new_ranges(l), &infer_new_ranges(r)).clone()
+                    Ranges::broaden(&mut infer_new_ranges(l), &infer_new_ranges(r)).clone()
                 }
 
                 // if sizeof equals some literal we set all boundarys and size to that literal
@@ -213,7 +316,7 @@ impl Range {
                     (
                         SymExpression::SizeOf(id, size_expr),
                         SymExpression::Literal(Literal::Integer(n)),
-                    ) => mk_ranges(
+                    ) => Ranges::new(
                         id.clone(),
                         Range {
                             min: Boundary::Known(*n),
@@ -224,7 +327,7 @@ impl Range {
                     (
                         SymExpression::Literal(Literal::Integer(n)),
                         SymExpression::SizeOf(id, size_expr),
-                    ) => mk_ranges(
+                    ) => Ranges::new(
                         id.clone(),
                         Range {
                             min: Boundary::Known(*n),
@@ -233,7 +336,7 @@ impl Range {
                         },
                     ),
                     (SymExpression::SizeOf(id, size_expr), SymExpression::FreeVariable(_, _)) => {
-                        mk_ranges(
+                        Ranges::new(
                             id.clone(),
                             Range {
                                 min: Boundary::Unknown,
@@ -244,7 +347,7 @@ impl Range {
                     }
 
                     (SymExpression::FreeVariable(_, _), SymExpression::SizeOf(id, size_expr)) => {
-                        mk_ranges(
+                        Ranges::new(
                             id.clone(),
                             Range {
                                 min: Boundary::Unknown,
@@ -254,7 +357,7 @@ impl Range {
                         )
                     }
 
-                    _ => FxHashMap::default(),
+                    _ => Ranges::default(),
                 },
 
                 // if sizeof is LT or GT some literal we set min or max to that literal - 1
@@ -263,7 +366,7 @@ impl Range {
                     (
                         SymExpression::SizeOf(id, size_expr),
                         SymExpression::Literal(Literal::Integer(n)),
-                    ) => mk_ranges(
+                    ) => Ranges::new(
                         id.clone(),
                         Range {
                             min: Boundary::None,
@@ -274,7 +377,7 @@ impl Range {
                     (
                         SymExpression::Literal(Literal::Integer(n)),
                         SymExpression::SizeOf(id, size_expr),
-                    ) => mk_ranges(
+                    ) => Ranges::new(
                         id.clone(),
                         Range {
                             min: Boundary::Known(*n + 1),
@@ -283,7 +386,7 @@ impl Range {
                         },
                     ),
                     (SymExpression::FreeVariable(_, _), SymExpression::SizeOf(id, size_expr)) => {
-                        mk_ranges(
+                        Ranges::new(
                             id.clone(),
                             Range {
                                 min: Boundary::Unknown,
@@ -294,7 +397,7 @@ impl Range {
                     }
 
                     (SymExpression::SizeOf(id, size_expr), SymExpression::FreeVariable(_, _)) => {
-                        mk_ranges(
+                        Ranges::new(
                             id.clone(),
                             Range {
                                 min: Boundary::None,
@@ -304,13 +407,13 @@ impl Range {
                         )
                     }
 
-                    _ => FxHashMap::default(),
+                    _ => Ranges::default(),
                 },
                 SymExpression::GT(l, r) => match (&**l, &**r) {
                     (
                         SymExpression::SizeOf(id, size_expr),
                         SymExpression::Literal(Literal::Integer(n)),
-                    ) => mk_ranges(
+                    ) => Ranges::new(
                         id.clone(),
                         Range {
                             min: Boundary::Known(*n + 1),
@@ -321,7 +424,7 @@ impl Range {
                     (
                         SymExpression::Literal(Literal::Integer(n)),
                         SymExpression::SizeOf(id, size_expr),
-                    ) => mk_ranges(
+                    ) => Ranges::new(
                         id.clone(),
                         Range {
                             min: Boundary::None,
@@ -330,7 +433,7 @@ impl Range {
                         },
                     ),
                     (SymExpression::FreeVariable(_, _), SymExpression::SizeOf(id, size_expr)) => {
-                        mk_ranges(id.clone(), {
+                        Ranges::new(id.clone(), {
                             Range {
                                 min: Boundary::None,
                                 size: *size_expr.clone(),
@@ -339,7 +442,7 @@ impl Range {
                         })
                     }
                     (SymExpression::SizeOf(id, size_expr), SymExpression::FreeVariable(_, _)) => {
-                        mk_ranges(
+                        Ranges::new(
                             id.clone(),
                             Range {
                                 min: Boundary::Unknown,
@@ -348,7 +451,7 @@ impl Range {
                             },
                         )
                     }
-                    _ => FxHashMap::default()
+                    _ => Ranges::default()
                 },
 
                 // if sizeof is LEQ or GEQ some literal we set min or max to that literal
@@ -357,7 +460,7 @@ impl Range {
                     (
                         SymExpression::SizeOf(id, size_expr),
                         SymExpression::Literal(Literal::Integer(n)),
-                    ) => mk_ranges(
+                    ) => Ranges::new(
                         id.clone(),
                         Range {
                             min: Boundary::Known(*n),
@@ -368,7 +471,7 @@ impl Range {
                     (
                         SymExpression::Literal(Literal::Integer(n)),
                         SymExpression::SizeOf(id, size_expr),
-                    ) => mk_ranges(
+                    ) => Ranges::new(
                         id.clone(),
                         Range {
                             min: Boundary::None,
@@ -377,7 +480,7 @@ impl Range {
                         },
                     ),
                     (SymExpression::FreeVariable(_, _), SymExpression::SizeOf(id, size_expr)) => {
-                        mk_ranges(id.clone(), {
+                        Ranges::new(id.clone(), {
                             Range {
                                 min: Boundary::None,
                                 size: *size_expr.clone(),
@@ -386,7 +489,7 @@ impl Range {
                         })
                     }
                     (SymExpression::SizeOf(id, size_expr), SymExpression::FreeVariable(_, _)) => {
-                        mk_ranges(id.clone(), {
+                        Ranges::new(id.clone(), {
                             Range {
                                 min: Boundary::Unknown,
                                 size: *size_expr.clone(),
@@ -394,13 +497,13 @@ impl Range {
                             }
                         })
                     }
-                    _ => FxHashMap::default(),
+                    _ => Ranges::default(),
                 },
                 SymExpression::LEQ(l, r) => match (&**l, &**r) {
                     (
                         SymExpression::SizeOf(id, size_expr),
                         SymExpression::Literal(Literal::Integer(n)),
-                    ) => mk_ranges(
+                    ) => Ranges::new(
                         id.clone(),
                         Range {
                             min: Boundary::None,
@@ -411,7 +514,7 @@ impl Range {
                     (
                         SymExpression::Literal(Literal::Integer(n)),
                         SymExpression::SizeOf(id, size_expr),
-                    ) => mk_ranges(
+                    ) => Ranges::new(
                         id.clone(),
                         Range {
                             min: Boundary::Known(*n),
@@ -420,7 +523,7 @@ impl Range {
                         },
                     ),
                     (SymExpression::FreeVariable(_, _), SymExpression::SizeOf(id, size_expr)) => {
-                        mk_ranges(
+                        Ranges::new(
                             id.clone(),
                             Range {
                                 min: Boundary::Unknown,
@@ -431,7 +534,7 @@ impl Range {
                     }
 
                     (SymExpression::SizeOf(id, size_expr), SymExpression::FreeVariable(_, _)) => {
-                        mk_ranges(
+                        Ranges::new(
                             id.clone(),
                             Range {
                                 min: Boundary::None,
@@ -441,9 +544,9 @@ impl Range {
                         )
                     }
 
-                    _ => FxHashMap::default()
+                    _ => Ranges::default()
                 },
-                _ => FxHashMap::default()
+                _ => Ranges::default()
             }
         }
     }

@@ -158,10 +158,10 @@ pub fn assert(
         //let simple_assertion = assertion;
         match simple_assertion {
             SymExpression::Literal(Literal::Boolean(true)) => (),
-            _ => pc.push_assertion(Some(config), simple_assertion),
+            _ => pc.push_assertion(simple_assertion),
         }
     } else {
-        pc.push_assertion(Some(config), sym_assertion);
+        pc.push_assertion(sym_assertion);
     };
 
     // calculate (inferred and / or simplified) constraints
@@ -209,10 +209,10 @@ pub fn assume(
         match simple_assumption {
             SymExpression::Literal(Literal::Boolean(false)) => return false,
             SymExpression::Literal(Literal::Boolean(true)) => (),
-            _ => pc.push_assumption(config, simple_assumption),
+            _ => pc.push_assumption(simple_assumption),
         };
     } else {
-        pc.push_assumption(config, sym_assumption.clone());
+        pc.push_assumption(sym_assumption.clone());
     };
 
     // if we have not solved by now, invoke z3
