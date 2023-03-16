@@ -23,7 +23,6 @@ use crate::symbolic::ref_values::{ ReferenceValue, Ranges,};
 use colored::Colorize;
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
-use rustc_hash::FxHashMap;
 use uuid::Uuid;
 
 use std::collections::VecDeque;
@@ -111,7 +110,7 @@ pub fn print_verification(
 }
 
 /// prints the verbose debug info
-fn print_debug(node: &Node, config: Config, sym_memory: &SymMemory, pc: &PathConstraints) {
+fn print_debug(node: &Node,  sym_memory: &SymMemory, pc: &PathConstraints) {
     let print_node = format!("{:?}", node);
     let print_pc = format!("Path constraints -> {:?}", pc.combine_over_true());
     let print_sym_memory = format!("{:?}", sym_memory);
@@ -151,19 +150,19 @@ fn verify_program(
 
     //init our bfs through the cfg
     let mut q: VecDeque<(SymMemory, PathConstraints, Ranges, Depth, NodeIndex)> = VecDeque::new();
-    q.push_back((SymMemory::new(), PathConstraints::default(), Ranges::default(), d, start_node));
+    q.push_back((SymMemory::default(), PathConstraints::default(), Ranges::default(), d, start_node));
 
     // Assert -> build & verify z3 formula, return error if disproven
     // Assume -> build & verify z3 formula, stop evaluating pad if disproven
     // assignment -> evaluate rhs and update env
     // then we enque all connected nodes, till d=0 or we reach end of cfg
-    while let Some((mut sym_memory, mut pc, mut ranges, d, curr_node)) = q.pop_front() {
+    while let Some((mut sym_memory, mut pc, ranges, d, curr_node)) = q.pop_front() {
         if d == 0 {
             continue;
         }
 
         if config.verbose {
-            print_debug(&cfg[curr_node], config, &sym_memory, &pc);
+            print_debug(&cfg[curr_node],  &sym_memory, &pc);
         };
 
         match &cfg[curr_node] {
@@ -234,7 +233,7 @@ fn verify_program(
                         &mut diagnostics,
                     )?,
                     Statement::Assignment((lhs, rhs)) => {
-                        lhs_from_rhs(&mut solver, &mut diagnostics, &pc, config, &mut sym_memory, lhs, rhs)?;
+                        lhs_from_rhs(&mut sym_memory, &pc, &ranges , &mut solver, &mut diagnostics, config,  lhs, rhs)?;
                     }
                     Statement::Return(expr) => {
                         // stop path if current scope `id == None`, indicating we are in main scope

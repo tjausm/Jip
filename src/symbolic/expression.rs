@@ -644,7 +644,7 @@ mod tests {
         let expr = parser::VerificationExpressionParser::new()
             .parse(i)
             .unwrap();
-        SymExpression::new(&SymMemory::new(), expr)
+        SymExpression::new(&SymMemory::default(), expr)
     }
 
     #[test]

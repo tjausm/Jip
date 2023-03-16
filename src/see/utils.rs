@@ -1,18 +1,18 @@
 use crate::ast::*;
-use crate::shared::{Error, Config};
 use crate::shared::{panic_with_diagnostics, Diagnostics};
-use crate::smt_solver::{Solver};
-use crate::symbolic::memory::SymMemory;
+use crate::shared::{Config, Error};
+use crate::smt_solver::Solver;
 use crate::symbolic::expression::{PathConstraints, SymExpression};
-use crate::symbolic::ref_values::{Range};
+use crate::symbolic::memory::SymMemory;
+use crate::symbolic::ref_values::Ranges;
 
 /// returns the symbolic expression rhs refers to
 pub fn parse_rhs<'a, 'b>(
+    sym_memory: &mut SymMemory,
+    pc: &PathConstraints,
+    ranges: &Ranges,
     solver: &mut Solver,
     diagnostics: &mut Diagnostics,
-    pc: &PathConstraints,
-    config: Config,
-    sym_memory: &mut SymMemory,
     rhs: &'a Rhs,
 ) -> Result<SymExpression, Error> {
     match rhs {
@@ -22,14 +22,14 @@ pub fn parse_rhs<'a, 'b>(
 
         // generate reference, build arrayname from said reference, insert array into heap and return reference
         Rhs::NewArray(ty, len) => {
-            let size_expr = SymExpression::new(sym_memory, len.clone());
+            let size_expr = SymExpression::new(&sym_memory, len.clone());
             let arr = sym_memory.init_array(ty.clone(), size_expr);
             let r = sym_memory.heap_insert(None, arr);
             Ok(SymExpression::Reference(ty.clone(), r))
         }
 
         Rhs::AccessArray(arr_name, index) => {
-            sym_memory.heap_access_array(solver, diagnostics, config, pc,  arr_name, index.clone(), None)
+            sym_memory.heap_access_array(&pc, ranges, solver, diagnostics, arr_name, index.clone(), None)
         }
 
         Rhs::Expression(expr) => Ok(SymExpression::new(&sym_memory, expr.clone())),
@@ -42,26 +42,27 @@ pub fn parse_rhs<'a, 'b>(
 
 // gets type of lhs, parses expression on rhs and assign value of rhs to lhs on stack / heap
 pub fn lhs_from_rhs<'a>(
+    sym_memory: &mut SymMemory,
+    pc: &PathConstraints,
+    ranges: &Ranges,
     solver: &mut Solver,
     diagnostics: &mut Diagnostics,
-    pc: &PathConstraints,
     config: Config,
-    sym_memory: &mut SymMemory,
     lhs: &'a Lhs,
     rhs: &'a Rhs,
 ) -> Result<(), Error> {
-    let var = parse_rhs(solver, diagnostics, pc, config, sym_memory, rhs)?;
+    let var = parse_rhs(sym_memory, pc, ranges, solver, diagnostics,   rhs)?;
     match lhs {
-        Lhs::Identifier(id) => sym_memory.stack_insert(id, var),
+        Lhs::Identifier(id) =>sym_memory.stack_insert(id, var),
         Lhs::AccessField(obj_name, field_name) => {
-            sym_memory.heap_access_object(obj_name, field_name, Some(var));
+           sym_memory.heap_access_object(obj_name, field_name, Some(var));
         }
         Lhs::AccessArray(arr_name, index) => {
-            sym_memory.heap_access_array(
+           sym_memory.heap_access_array(
+                &pc,
+                &ranges,
                 solver,
                 diagnostics,
-                config,
-                pc,
                 arr_name,
                 index.clone(),
                 Some(var),
@@ -112,10 +113,7 @@ pub fn params_to_vars<'ctx>(
                 _ => return err(class, arg_id, expr),
             },
             (Some((_, arg_id)), Some(expr)) => {
-                variables.push((
-                    arg_id,
-                    SymExpression::new( &sym_memory, expr.clone()),
-                ));
+                variables.push((arg_id, SymExpression::new(&sym_memory, expr.clone())));
             }
             (Some((_, param)), None) => panic_with_diagnostics(
                 &format!(
@@ -193,7 +191,7 @@ pub fn assume(
     pc: &mut PathConstraints,
     diagnostics: &mut Diagnostics,
 ) -> bool {
-    let mut  sym_assumption = SymExpression::new(&sym_memory, assumption.clone());
+    let sym_assumption = SymExpression::new(&sym_memory, assumption.clone());
 
     if config.infer_size {
         todo!()
