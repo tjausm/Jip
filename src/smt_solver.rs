@@ -302,12 +302,7 @@ fn expr_to_str<'a>(expr: &'a SymExpression) -> (String, FxHashSet<(SymType, Stri
             fv.insert((ty.clone(), id.clone()));
             (format!("{}", id), fv)
         },
-        SymExpression::SizeOf(arr_name, _) => {
-            let mut fv = FxHashSet::default();
-            let arr_size_id = format!("|#{}|", arr_name);
-            fv.insert((SymType::Int, arr_size_id.clone()));
-            (format!("{}", arr_size_id), fv)       
-        },
+        SymExpression::SizeOf(_, size_expr) => expr_to_str(size_expr),
         SymExpression::Range(r) => expr_to_str(&r.get()),
         SymExpression::Literal(Literal::Integer(n)) => (format!("{}", n), FxHashSet::default()),
         SymExpression::Literal(Literal::Boolean(b)) => (format!("{}", b), FxHashSet::default()),
@@ -342,7 +337,7 @@ mod tests {
             .parse("!(((1 >= 0) && (2 > 0)) ==> ((((1 + 2) >= 1) && ((1 + 2) >= 1)) && true))")
             .unwrap();
 
-        let se = SymExpression::new( &SymMemory::new(), expr);
+        let se = SymExpression::new( &SymMemory::default(), expr);
         // todo!()
         // let sat = verify_expr(&se);
 
