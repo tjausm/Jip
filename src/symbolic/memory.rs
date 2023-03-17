@@ -167,32 +167,55 @@ impl<'a> SymMemory {
     pub fn heap_access_array(
         &mut self,
         pc: &PathConstraints,
-        ranges: &ArrSizes,
+        arr_sizes: &ArrSizes,
         solver: &mut Solver,
         diagnostics: &mut Diagnostics,
         arr_name: &Identifier,
         index: Expression,
         var: Option<SymExpression>,
     ) -> Result<SymExpression, Error> {
-        // substitute expr and simplify
-        let subt_index = SymExpression::new(self, index);
 
-        //get range of arraysize if it's inferred
-        let range = ranges.get(arr_name);
-        let size_expr = range.map(|r| r.get()).unwrap_or(SymExpression::FreeVariable(SymType::Int, format!("|#{}|", arr_name)));
+        //get mutable HashMap representing array
+        let (_, _, size_expr) = match self.stack_get(&arr_name){
+            Some(SymExpression::Reference(_, r)) => match self.heap.get(&r){
+                Some(ReferenceValue::Array((ty, arr, length))) => (ty, arr, length),
+                otherwise => panic_with_diagnostics(&format!("{:?} is not an array and can't be assigned to in assignment '{}[{:?}] := {:?}'", otherwise, arr_name, index, var), &self),
+            },
+            _ => panic_with_diagnostics(&format!("{} is not a reference", arr_name), &self),
+        };
+
+
+        // substitute expr and simplify
+        let sym_index = SymExpression::new(self, index);
+
+        //get ArrSize if it's inferred
+        let size = match self.stack_get(arr_name) {
+            Some(SymExpression::Reference(Type::ArrayType(_), r)) => arr_sizes.get(&r),
+            _ => panic_with_diagnostics(&format!("Cannot access array {}", arr_name), &self)
+
+        };
 
         // always simplify index, otherwise unsimplified SE could return different results than simplified SE
-        let simple_index = subt_index.clone().simplify();
+        let simple_index = sym_index.clone().simplify(Some(arr_sizes));
 
         // check if index is always < length
-        match (&simple_index, &size_expr, &range.map(|r| r.min())) {
+        match (&simple_index, &size_expr, &size) {
             (
                 SymExpression::Literal(Literal::Integer(lit_i)),
                 SymExpression::Literal(Literal::Integer(lit_l)),
                 _,
             ) if lit_i < lit_l => (),
-            (SymExpression::Literal(Literal::Integer(lit_i)), _, Some(Some(lit_l)))
-                if lit_i < lit_l =>
+            (SymExpression::Literal(Literal::Integer(lit_i)), _, Some(ArrSize::Point(p)))
+                if lit_i < p =>
+            {
+                ()
+            }
+            (SymExpression::Literal(Literal::Integer(lit_i)), _, Some(ArrSize::Range(Boundary::Known(min), _)))
+                if lit_i < min =>
+            {
+                ()
+            }
+            (_, _, Some(ArrSize::Range(Boundary::None, Boundary::None))) =>
             {
                 ()
             }
@@ -206,7 +229,7 @@ impl<'a> SymMemory {
         let (ty, arr, _) = match self.stack_get(&arr_name){
             Some(SymExpression::Reference(_, r)) => match self.heap.get_mut(&r){
                 Some(ReferenceValue::Array((ty, arr, length))) => (ty, arr, length),
-                otherwise => panic_with_diagnostics(&format!("{:?} is not an array and can't be assigned to in assignment '{}[{:?}] := {:?}'", otherwise, arr_name, subt_index, var), &self),
+                otherwise => panic_with_diagnostics(&format!("{:?} is not an array and can't be assigned to in assignment '{}[{:?}] := {:?}'", otherwise, arr_name, sym_index, var), &self),
             },
             _ => panic_with_diagnostics(&format!("{} is not a reference", arr_name), &self),
         };

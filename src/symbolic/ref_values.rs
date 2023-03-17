@@ -29,7 +29,7 @@ pub enum Boundary {
     None,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub enum ArrSize{
     Range(Boundary, Boundary),
     Point(i64),
@@ -52,8 +52,8 @@ impl ArrSizes {
         ranges
     }
 
-    pub fn get<'a>(&'a self, arr: &Reference) -> Option<&'a ArrSize> {
-        self.0.get(arr)
+    pub fn get(&self, arr: &Reference) -> Option<ArrSize> {
+        self.0.get(arr).map(|v| v.clone())
     }
 
     /// given 2 sets of symSizes, take the intersection of their boundaries
@@ -145,8 +145,8 @@ impl ArrSizes {
     }
 
     
-    pub fn infer_arrsizes(&mut self, expr: SymExpression) {
-        self.narrow(&infer_new_ranges(&expr.simplify()));
+    pub fn update_inference(&mut self, expr: SymExpression) {
+        self.narrow(&infer_new_ranges(&expr.simplify(None)));
 
         fn infer_new_ranges(expr: &SymExpression) -> ArrSizes {
             match expr {
@@ -199,7 +199,7 @@ impl ArrSizes {
                 }
 
                 // if sizeof equals some literal we set all boundarys and size to that literal
-                // else if sizeof equals some freevar we set all boundaries to unknown and size to that fv
+                // else if sizeof equals some other expression we set all boundaries to unknown
                 SymExpression::EQ(l, r) => match (&**l, &**r) {
                     (
                         SymExpression::SizeOf(_, r, size_expr, _),
@@ -215,19 +215,20 @@ impl ArrSizes {
                         r.clone(),
                         ArrSize::Point(*n),
                     ),
-                    (SymExpression::SizeOf(_, r, size_expr, _), SymExpression::FreeVariable(_, _)) => {
+                    (SymExpression::SizeOf(_, r, size_expr, _), _) => {
                         ArrSizes::new(
                             r.clone(),
                             ArrSize::Range(Boundary::Unknown, Boundary::Unknown),
                         )
                     }
 
-                    (SymExpression::FreeVariable(_, _), SymExpression::SizeOf(_, r, size_expr, _)) => {
+                    (_, SymExpression::SizeOf(_, r, size_expr, _)) => {
                         ArrSizes::new(
                             r.clone(),
                             ArrSize::Range(Boundary::Unknown, Boundary::Unknown),
                         )
                     }
+                    
 
                     _ => ArrSizes::default(),
                 },
@@ -249,7 +250,7 @@ impl ArrSizes {
                         r.clone(),
                         ArrSize::Range( Boundary::Known(*n + 1), Boundary::None),
                     ),
-                    (SymExpression::FreeVariable(_, _), SymExpression::SizeOf(_, r, size_expr, _),) => {
+                    (_, SymExpression::SizeOf(_, r, size_expr, _),) => {
                         ArrSizes::new(
                             r.clone(),
                             ArrSize::Range(
@@ -260,7 +261,7 @@ impl ArrSizes {
                         )
                     }
 
-                    (SymExpression::SizeOf(_, r, size_expr, _), SymExpression::FreeVariable(_, _)) => {
+                    (SymExpression::SizeOf(_, r, size_expr, _), _) => {
                         ArrSizes::new(
                             r.clone(),
                             ArrSize::Range(
@@ -296,7 +297,7 @@ impl ArrSizes {
                             Boundary::Known(*n - 1),
                         ),
                     ),
-                    (SymExpression::FreeVariable(_, _), SymExpression::SizeOf(_, r, size_expr, _),) => {
+                    (_, SymExpression::SizeOf(_, r, size_expr, _),) => {
                         ArrSizes::new(r.clone(), 
                             ArrSize::Range(
                                 Boundary::None,
@@ -305,7 +306,7 @@ impl ArrSizes {
                             
                         ))
                     }
-                    (SymExpression::SizeOf(_, r, size_expr, _), SymExpression::FreeVariable(_, _)) => {
+                    (SymExpression::SizeOf(_, r, size_expr, _), _) => {
                         ArrSizes::new(
                             r.clone(),
                             ArrSize::Range(
@@ -343,7 +344,7 @@ impl ArrSizes {
                             Boundary::Known(*n),
                         ),
                     ),
-                    (SymExpression::FreeVariable(_, _), SymExpression::SizeOf(_, r, size_expr, _),) => {
+                    (_, SymExpression::SizeOf(_, r, size_expr, _),) => {
                         ArrSizes::new(r.clone(), 
                             ArrSize::Range(
                                 Boundary::None,
@@ -352,7 +353,7 @@ impl ArrSizes {
                             )
                         )
                     }
-                    (SymExpression::SizeOf(_, r, size_expr, _), SymExpression::FreeVariable(_, _)) => {
+                    (SymExpression::SizeOf(_, r, size_expr, _), _) => {
                         ArrSizes::new(r.clone(), 
                             ArrSize::Range(
                                 Boundary::Unknown,
@@ -386,7 +387,7 @@ impl ArrSizes {
                             Boundary::None,
                         ),
                     ),
-                    (SymExpression::FreeVariable(_, _), SymExpression::SizeOf(_, r, size_expr, _),) => {
+                    (_, SymExpression::SizeOf(_, r, size_expr, _),) => {
                         ArrSizes::new(
                             r.clone(),
                             ArrSize::Range(
@@ -397,7 +398,7 @@ impl ArrSizes {
                         )
                     }
 
-                    (SymExpression::SizeOf(_, r, size_expr, _), SymExpression::FreeVariable(_, _)) => {
+                    (SymExpression::SizeOf(_, r, size_expr, _), _) => {
                         ArrSizes::new(
                             r.clone(),
                             ArrSize::Range(
@@ -418,7 +419,7 @@ impl ArrSizes {
 
 impl ArrSize {
     pub fn new(size_expr: SymExpression, arr: Identifier) -> Self {
-        match size_expr.simplify() {
+        match size_expr.simplify(None) {
             SymExpression::Literal(Literal::Integer(n)) => ArrSize::Range(
                 Boundary::Known(n),
                 Boundary::Known(n),

@@ -116,7 +116,7 @@ fn print_debug(node: &Node, config: Config,   sym_memory: &SymMemory, pc: &PathC
     let print_ranges = format!("{:?}", ranges);
 
     let mut pc = pc.combine_over_true();
-    if config.infer_size {pc = ranges.substitute_sizeof(pc)};
+    if config.infer_size {todo!()};
     let print_pc = format!("Path constraints -> {:?}", pc);
 
 
@@ -162,13 +162,13 @@ fn verify_program(
     // Assume -> build & verify z3 formula, stop evaluating pad if disproven
     // assignment -> evaluate rhs and update env
     // then we enque all connected nodes, till d=0 or we reach end of cfg
-    while let Some((mut sym_memory, mut pc, mut ranges, d, curr_node)) = q.pop_front() {
+    while let Some((mut sym_memory, mut pc, mut arr_sizes, d, curr_node)) = q.pop_front() {
         if d == 0 {
             continue;
         }
 
         if config.verbose {
-            print_debug(&cfg[curr_node], config,  &sym_memory, &pc, &ranges);
+            print_debug(&cfg[curr_node], config,  &sym_memory, &pc, &arr_sizes);
         };
 
         match &cfg[curr_node] {
@@ -221,7 +221,7 @@ fn verify_program(
                         if !assume(
                             &mut sym_memory,
                             &mut pc,
-                            &mut ranges,
+                            &mut arr_sizes,
                             config,
                             d > prune_depth,
                             &mut solver,
@@ -234,14 +234,14 @@ fn verify_program(
                     Statement::Assert(assertion) => assert(
                         &mut sym_memory,
                         &mut pc,
-                        &mut ranges,
+                        &mut arr_sizes,
                         config,
                         &mut solver,
                         assertion,
                         &mut diagnostics,
                     )?,
                     Statement::Assignment((lhs, rhs)) => {
-                        lhs_from_rhs(&mut sym_memory, &pc, &ranges , &mut solver, &mut diagnostics, config,  lhs, rhs)?;
+                        lhs_from_rhs(&mut sym_memory, &pc, &arr_sizes , &mut solver, &mut diagnostics, config,  lhs, rhs)?;
                     }
                     Statement::Return(expr) => {
                         // stop path if current scope `id == None`, indicating we are in main scope
@@ -344,7 +344,7 @@ fn verify_program(
                                 (Specification::Requires(assertion), false) => assert(
                                     &mut sym_memory,
                                     &mut pc,
-                                    &mut ranges,
+                                    &mut arr_sizes,
                                     config,
                                     &mut solver,
                                     assertion,
@@ -359,7 +359,7 @@ fn verify_program(
                                     if !assume(
                                         &mut sym_memory,
                                         &mut pc,
-                                        &mut ranges,
+                                        &mut arr_sizes,
                                         config,
                                         prune_depth < d,
                                         &mut solver,
@@ -376,7 +376,7 @@ fn verify_program(
                 }
             }
             let next = edge.target();
-            q.push_back((sym_memory, pc.clone(), ranges.clone(), d - 1, next));
+            q.push_back((sym_memory, pc.clone(), arr_sizes.clone(), d - 1, next));
         }
     }
     return Ok(diagnostics);

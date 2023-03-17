@@ -305,8 +305,8 @@ fn expr_to_str<'a>(expr: &'a SymExpression) -> (String, FxHashSet<(SymType, Stri
             fv.insert((ty.clone(), id.clone()));
             (format!("{}", id), fv)
         },
+        SymExpression::SizeOf(_, _, _, Some(ArrSize::Point(n))) => expr_to_str(&SymExpression::Literal(Literal::Integer(*n))),
         SymExpression::SizeOf(_, _, size_expr, _) => expr_to_str(size_expr),
-        SymExpression::Range(r) => expr_to_str(&r.get()),
         SymExpression::Literal(Literal::Integer(n)) => (format!("{}", n), FxHashSet::default()),
         SymExpression::Literal(Literal::Boolean(b)) => (format!("{}", b), FxHashSet::default()),
         SymExpression::Reference(_, r) => (format!("{}", r.as_u64_pair().0), FxHashSet::default()),

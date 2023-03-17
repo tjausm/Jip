@@ -10,7 +10,7 @@ use crate::symbolic::ref_values::ArrSizes;
 pub fn parse_rhs<'a, 'b>(
     sym_memory: &mut SymMemory,
     pc: &PathConstraints,
-    ranges: &ArrSizes,
+    arr_sizes: &ArrSizes,
     solver: &mut Solver,
     diagnostics: &mut Diagnostics,
     rhs: &'a Rhs,
@@ -30,7 +30,7 @@ pub fn parse_rhs<'a, 'b>(
 
         Rhs::AccessArray(arr_name, index) => sym_memory.heap_access_array(
             &pc,
-            ranges,
+            arr_sizes,
             solver,
             diagnostics,
             arr_name,
@@ -50,14 +50,14 @@ pub fn parse_rhs<'a, 'b>(
 pub fn lhs_from_rhs<'a>(
     sym_memory: &mut SymMemory,
     pc: &PathConstraints,
-    ranges: &ArrSizes,
+    arr_sizes: &ArrSizes,
     solver: &mut Solver,
     diagnostics: &mut Diagnostics,
     config: Config,
     lhs: &'a Lhs,
     rhs: &'a Rhs,
 ) -> Result<(), Error> {
-    let var = parse_rhs(sym_memory, pc, ranges, solver, diagnostics, rhs)?;
+    let var = parse_rhs(sym_memory, pc, arr_sizes, solver, diagnostics, rhs)?;
     match lhs {
         Lhs::Identifier(id) => sym_memory.stack_insert(id, var),
         Lhs::AccessField(obj_name, field_name) => {
@@ -66,7 +66,7 @@ pub fn lhs_from_rhs<'a>(
         Lhs::AccessArray(arr_name, index) => {
             sym_memory.heap_access_array(
                 &pc,
-                &ranges,
+                &arr_sizes,
                 solver,
                 diagnostics,
                 arr_name,
@@ -145,7 +145,7 @@ pub fn params_to_vars<'ctx>(
 pub fn assert(
     sym_memory: &mut SymMemory,
     pc: &mut PathConstraints,
-    ranges: &mut ArrSizes,
+    arr_sizes: &mut ArrSizes,
     config: Config,
     solver: &mut Solver,
     assertion: &Expression,
@@ -155,12 +155,12 @@ pub fn assert(
 
     // update ranges
     if config.infer_size {
-        ranges.infer_arrsizes(sym_assertion.clone());
+        arr_sizes.update_inference(sym_assertion.clone());
     }
 
     // add (inferred  and / orsimplified) assertion
     if config.simplify {
-        let simple_assertion = sym_assertion.simplify();
+        let simple_assertion = sym_assertion.simplify(Some(arr_sizes));
         //let simple_assertion = assertion;
         match simple_assertion {
             SymExpression::Literal(Literal::Boolean(true)) => (),
@@ -172,11 +172,8 @@ pub fn assert(
 
     // calculate (inferred and / or simplified) constraints
     let mut constraints = pc.combine_over_true();
-    if config.infer_size {
-        constraints = ranges.substitute_sizeof(constraints);
-    };
     if config.simplify {
-        constraints = constraints.simplify()
+        constraints = constraints.simplify(Some(arr_sizes))
     };
     match constraints {
         SymExpression::Literal(Literal::Boolean(true)) => return Ok(()),
@@ -193,7 +190,7 @@ pub fn assert(
 pub fn assume(
     sym_memory: &mut SymMemory,
     pc: &mut PathConstraints,
-    ranges: &mut ArrSizes,
+    arr_sizes: &mut ArrSizes,
     config: Config,
     use_z3: bool,
     solver: &mut Solver,
@@ -202,12 +199,13 @@ pub fn assume(
 ) -> bool {
     let sym_assumption = SymExpression::new(&sym_memory, assumption.clone());
 
+    // update sizes if it's turned on
     if config.infer_size {
-        ranges.infer_arrsizes(sym_assumption.clone());
+        arr_sizes.update_inference(sym_assumption.clone());
     }
 
     if config.simplify {
-        let simple_assumption = sym_assumption.simplify();
+        let simple_assumption = sym_assumption.simplify(Some(arr_sizes));
 
         //  let z3_subt = smt_solver::expression_unsatisfiable(ctx, &subt_assumption, sym_memory);
         //  let z3_simple = smt_solver::expression_unsatisfiable(ctx, &simple_assumption, sym_memory);
@@ -223,11 +221,9 @@ pub fn assume(
     };
 
     let mut constraints = pc.conjunct();
-    if config.infer_size {
-        constraints = ranges.substitute_sizeof(constraints);
-    };
+
     if config.simplify {
-        constraints = constraints.simplify()
+        constraints = constraints.simplify(Some(arr_sizes))
     };
 
     // return false if expression always evaluates to false
