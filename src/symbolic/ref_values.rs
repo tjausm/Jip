@@ -237,7 +237,7 @@ impl ArrSizes {
                 // else if sizOf is LT or GT some freevar we set min or max to unknown
                 SymExpression::LT(l, r) => match (&**l, &**r) {
                     (
-                        SymExpression::SizeOf(_, r, size_expr, _),
+                        SymExpression::SizeOf(_, r, _, _),
                         SymExpression::Literal(Literal::Integer(n)),
                     ) => ArrSizes::new(
                         r.clone(),
@@ -245,12 +245,12 @@ impl ArrSizes {
                     ),
                     (
                         SymExpression::Literal(Literal::Integer(n)),
-                        SymExpression::SizeOf(_, r, size_expr, _),
+                        SymExpression::SizeOf(_, r, _, _),
                     ) => ArrSizes::new(
                         r.clone(),
                         ArrSize::Range( Boundary::Known(*n + 1), Boundary::None),
                     ),
-                    (_, SymExpression::SizeOf(_, r, size_expr, _),) => {
+                    (_, SymExpression::SizeOf(_, r, _, _),) => {
                         ArrSizes::new(
                             r.clone(),
                             ArrSize::Range(
@@ -261,7 +261,7 @@ impl ArrSizes {
                         )
                     }
 
-                    (SymExpression::SizeOf(_, r, size_expr, _), _) => {
+                    (SymExpression::SizeOf(_, r, _, _), _) => {
                         ArrSizes::new(
                             r.clone(),
                             ArrSize::Range(
@@ -276,7 +276,7 @@ impl ArrSizes {
                 },
                 SymExpression::GT(l, r) => match (&**l, &**r) {
                     (
-                        SymExpression::SizeOf(_, r, size_expr, _),
+                        SymExpression::SizeOf(_, r, _, _),
                         SymExpression::Literal(Literal::Integer(n)),
                     ) => ArrSizes::new(
                         r.clone(),
@@ -288,7 +288,7 @@ impl ArrSizes {
                     ),
                     (
                         SymExpression::Literal(Literal::Integer(n)),
-                        SymExpression::SizeOf(_, r, size_expr, _),
+                        SymExpression::SizeOf(_, r, _, _),
                     ) => ArrSizes::new(
                         r.clone(),
                         ArrSize::Range(
@@ -297,7 +297,7 @@ impl ArrSizes {
                             Boundary::Known(*n - 1),
                         ),
                     ),
-                    (_, SymExpression::SizeOf(_, r, size_expr, _),) => {
+                    (_, SymExpression::SizeOf(_, r, _, _),) => {
                         ArrSizes::new(r.clone(), 
                             ArrSize::Range(
                                 Boundary::None,
@@ -306,7 +306,7 @@ impl ArrSizes {
                             
                         ))
                     }
-                    (SymExpression::SizeOf(_, r, size_expr, _), _) => {
+                    (SymExpression::SizeOf(_, r, _, _), _) => {
                         ArrSizes::new(
                             r.clone(),
                             ArrSize::Range(
@@ -323,7 +323,7 @@ impl ArrSizes {
                 // else if sizOf is LT or GT some freevar we set min or max to unknown
                 SymExpression::GEQ(l, r) => match (&**l, &**r) {
                     (
-                        SymExpression::SizeOf(_, r, size_expr, _),
+                        SymExpression::SizeOf(_, r, _, _),
                         SymExpression::Literal(Literal::Integer(n)),
                     ) => ArrSizes::new(
                         r.clone(),
@@ -335,7 +335,7 @@ impl ArrSizes {
                     ),
                     (
                         SymExpression::Literal(Literal::Integer(n)),
-                        SymExpression::SizeOf(_, r, size_expr, _),
+                        SymExpression::SizeOf(_, r, _, _),
                     ) => ArrSizes::new(
                         r.clone(),
                         ArrSize::Range(
@@ -344,7 +344,7 @@ impl ArrSizes {
                             Boundary::Known(*n),
                         ),
                     ),
-                    (_, SymExpression::SizeOf(_, r, size_expr, _),) => {
+                    (_, SymExpression::SizeOf(_, r, _, _),) => {
                         ArrSizes::new(r.clone(), 
                             ArrSize::Range(
                                 Boundary::None,
@@ -353,7 +353,7 @@ impl ArrSizes {
                             )
                         )
                     }
-                    (SymExpression::SizeOf(_, r, size_expr, _), _) => {
+                    (SymExpression::SizeOf(_, r, _, _), _) => {
                         ArrSizes::new(r.clone(), 
                             ArrSize::Range(
                                 Boundary::Unknown,
@@ -366,7 +366,7 @@ impl ArrSizes {
                 },
                 SymExpression::LEQ(l, r) => match (&**l, &**r) {
                     (
-                        SymExpression::SizeOf(_, r, size_expr, _),
+                        SymExpression::SizeOf(_, r, _, _),
                         SymExpression::Literal(Literal::Integer(n)),
                     ) => ArrSizes::new(
                         r.clone(),
@@ -378,7 +378,7 @@ impl ArrSizes {
                     ),
                     (
                         SymExpression::Literal(Literal::Integer(n)),
-                        SymExpression::SizeOf(_, r, size_expr, _),
+                        SymExpression::SizeOf(_, r, _, _),
                     ) => ArrSizes::new(
                         r.clone(),
                         ArrSize::Range(
@@ -387,7 +387,7 @@ impl ArrSizes {
                             Boundary::None,
                         ),
                     ),
-                    (_, SymExpression::SizeOf(_, r, size_expr, _),) => {
+                    (_, SymExpression::SizeOf(_, r, _, _),) => {
                         ArrSizes::new(
                             r.clone(),
                             ArrSize::Range(
@@ -398,7 +398,7 @@ impl ArrSizes {
                         )
                     }
 
-                    (SymExpression::SizeOf(_, r, size_expr, _), _) => {
+                    (SymExpression::SizeOf(_, r, _, _), _) => {
                         ArrSizes::new(
                             r.clone(),
                             ArrSize::Range(
@@ -453,7 +453,7 @@ impl fmt::Debug for ArrSizes {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut res = "Ranges:\n".to_string();
         for (arr, range) in self.0.iter() {
-            res.push_str(&format!("    #{} -> {:?}\n", arr, range));
+            res.push_str(&format!("    #{} -> {:?}\n", &arr.to_string()[0..4], range));
         }
         write!(f, "{}", res)
     }

@@ -110,13 +110,12 @@ pub fn print_verification(
 }
 
 /// prints the verbose debug info
-fn print_debug(node: &Node, config: Config,   sym_memory: &SymMemory, pc: &PathConstraints, ranges: &ArrSizes,) {
+fn print_debug(node: &Node, config: Config,   sym_memory: &SymMemory, pc: &PathConstraints, arr_sizes: &ArrSizes,) {
     let print_node = format!("{:?}", node);
     let print_sym_memory = format!("{:?}", sym_memory);
-    let print_ranges = format!("{:?}", ranges);
+    let print_ranges = format!("{:?}", arr_sizes);
 
-    let mut pc = pc.combine_over_true();
-    if config.infer_size {todo!()};
+    let pc = pc.combine_over_true();
     let print_pc = format!("Path constraints -> {:?}", pc);
 
 
@@ -241,7 +240,7 @@ fn verify_program(
                         &mut diagnostics,
                     )?,
                     Statement::Assignment((lhs, rhs)) => {
-                        lhs_from_rhs(&mut sym_memory, &pc, &arr_sizes , &mut solver, &mut diagnostics, config,  lhs, rhs)?;
+                        lhs_from_rhs(&mut sym_memory, &pc, &mut arr_sizes , &mut solver, &mut diagnostics, config,  lhs, rhs)?;
                     }
                     Statement::Return(expr) => {
                         // stop path if current scope `id == None`, indicating we are in main scope
