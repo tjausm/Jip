@@ -170,8 +170,6 @@ pub fn assert(
         pc.push_assertion(sym_assertion);
     };
 
-    // if we have arr_sizes, simplify previous constraints with new information
-    pc.simplify(arr_sizes);
 
     // calculate (inferred and / or simplified) constraints
     let mut constraints = pc.combine_over_true();
@@ -217,11 +215,6 @@ pub fn assume(
     } else {
         pc.push_assumption(sym_assumption.clone());
     };
-
-    // if we have arr_sizes, simplify previous constraints with new information
-    if config.infer_size {
-        pc.simplify(arr_sizes);
-    }
 
     let mut constraints = pc.conjunct();
     if config.simplify {
