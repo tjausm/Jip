@@ -18,7 +18,7 @@ use crate::shared::{panic_with_diagnostics, Diagnostics, Error};
 use crate::smt_solver::Solver;
 use crate::symbolic::memory::SymMemory;
 use crate::symbolic::expression::{PathConstraints, SymExpression, SymType};
-use crate::symbolic::ref_values::{ ReferenceValue, Ranges,};
+use crate::symbolic::ref_values::{ ReferenceValue, ArrSizes,};
 
 use colored::Colorize;
 use petgraph::graph::NodeIndex;
@@ -110,7 +110,7 @@ pub fn print_verification(
 }
 
 /// prints the verbose debug info
-fn print_debug(node: &Node, config: Config,   sym_memory: &SymMemory, pc: &PathConstraints, ranges: &Ranges,) {
+fn print_debug(node: &Node, config: Config,   sym_memory: &SymMemory, pc: &PathConstraints, ranges: &ArrSizes,) {
     let print_node = format!("{:?}", node);
     let print_sym_memory = format!("{:?}", sym_memory);
     let print_ranges = format!("{:?}", ranges);
@@ -155,8 +155,8 @@ fn verify_program(
     let (start_node, cfg) = generate_cfg(prog.clone());
 
     //init our bfs through the cfg
-    let mut q: VecDeque<(SymMemory, PathConstraints, Ranges, Depth, NodeIndex)> = VecDeque::new();
-    q.push_back((SymMemory::default(), PathConstraints::default(), Ranges::default(), d, start_node));
+    let mut q: VecDeque<(SymMemory, PathConstraints, ArrSizes, Depth, NodeIndex)> = VecDeque::new();
+    q.push_back((SymMemory::default(), PathConstraints::default(), ArrSizes::default(), d, start_node));
 
     // Assert -> build & verify z3 formula, return error if disproven
     // Assume -> build & verify z3 formula, stop evaluating pad if disproven

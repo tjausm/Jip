@@ -5,7 +5,7 @@ use std::fmt;
 use uuid::Uuid;
 
 use super::expression::{PathConstraints, SymExpression, SymType};
-use super::ref_values::{Array, Boundary, Reference, ReferenceValue, Range, Ranges};
+use super::ref_values::{Array, Boundary, Reference, ReferenceValue, ArrSize, ArrSizes};
 use crate::ast::*;
 use crate::shared::{panic_with_diagnostics, Config, Diagnostics, Error, Scope};
 use crate::smt_solver::Solver;
@@ -167,7 +167,7 @@ impl<'a> SymMemory {
     pub fn heap_access_array(
         &mut self,
         pc: &PathConstraints,
-        ranges: &Ranges,
+        ranges: &ArrSizes,
         solver: &mut Solver,
         diagnostics: &mut Diagnostics,
         arr_name: &Identifier,

@@ -10,7 +10,7 @@ use std::{
 
 use rustc_hash::FxHashMap;
 
-use super::ref_values::{Array, Range, Reference};
+use super::ref_values::{Array, ArrSize, Reference};
 use crate::{
     ast::*,
     shared::{panic_with_diagnostics, Config},
@@ -116,8 +116,8 @@ pub enum SymExpression {
     Not(Box<SymExpression>),
     Literal(Literal),
     FreeVariable(SymType, Identifier),
-    SizeOf(Identifier, Box<SymExpression>),
-    Range(Box<Range>),
+    SizeOf(Identifier, Reference, Box<SymExpression>, Option<ArrSize>),
+    Range(Box<ArrSize>),
     Reference(Type, Reference),
     Uninitialized,
 }
@@ -139,10 +139,17 @@ impl SymExpression {
                 Some(sym_expr) => sym_expr,
                 _ => panic_with_diagnostics(&format!("{} was not declared", id), &sym_memory),
             },
-            Expression::SizeOf(arr_name) => SymExpression::SizeOf(
+            Expression::SizeOf(arr_name) => {
+                let r =  match sym_memory.stack_get(&arr_name) {
+                    SymExpression::Reference(Type::ArrayType(_), r) => r,
+                    _ => panic_with_diagnostics(&format!("identifier {} in expression #{:?} does not refer to an array", arr_name, expr), &sym_memory)
+                };
+                SymExpression::SizeOf(
                 arr_name.clone(),
+                r,
                 Box::new(sym_memory.heap_get_arr_length(&arr_name)),
-            ),
+                None
+            )},
             Expression::Implies(l, r) => SymExpression::Implies(
                 Box::new(SymExpression::new(sym_memory, *l)),
                 Box::new(SymExpression::new(sym_memory, *r)),

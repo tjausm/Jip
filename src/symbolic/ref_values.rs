@@ -1,7 +1,7 @@
 //! Symbolic model representing the values on the heap while symbolically executing a program
 //!
-use super::expression::{PathConstraint, PathConstraints, SymExpression};
-use crate::ast::*;
+use super::expression::{SymExpression};
+use crate::{ast::*, shared::panic_with_diagnostics};
 use core::fmt;
 use rustc_hash::FxHashMap;
 use uuid::Uuid;
@@ -30,35 +30,30 @@ pub enum Boundary {
 }
 
 #[derive(Clone)]
-pub struct Range {
-    min: Boundary,
-    size: SymExpression,
-    max: Boundary,
+pub enum ArrSize{
+    Range(Boundary, Boundary),
+    Point(i64),
 }
 
 #[derive(Clone)]
-pub struct Ranges {
-    mapping: FxHashMap<Identifier, Range>,
-}
+pub struct ArrSizes(FxHashMap<Reference, ArrSize>);
 
-impl Default for Ranges {
+impl Default for ArrSizes {
     fn default() -> Self {
-        Ranges {
-            mapping: FxHashMap::default(),
-        }
+        ArrSizes(FxHashMap::default())
     }
 }
 
-impl Ranges {
+impl ArrSizes {
     /// make a set of ranges with 1 mapping inserted
-    pub fn new(arr: Identifier, r: Range) -> Ranges {
-        let mut ranges = Ranges::default();
-        ranges.mapping.insert(arr, r);
+    pub fn new(arr: Reference, r: ArrSize) -> ArrSizes {
+        let mut ranges = ArrSizes::default();
+        ranges.0.insert(arr, r);
         ranges
     }
 
-    pub fn get<'a>(&'a self, arr: &Identifier) -> Option<&'a Range> {
-        self.mapping.get(arr)
+    pub fn get<'a>(&'a self, arr: &Reference) -> Option<&'a ArrSize> {
+        self.0.get(arr)
     }
 
     /// given 2 sets of symSizes, take the intersection of their boundaries
@@ -66,33 +61,39 @@ impl Ranges {
     /// e.g. if one boundary is unknown set boundary to unknown,
     /// if both are known set boundary to smallest min and largest max,
     /// otherwise set boundary to None
-    fn broaden(&mut self, new_ranges: &Ranges) {
-        for (arr, r_range) in new_ranges.mapping.iter() {
-            if let Some(l_range) = new_ranges.mapping.get(arr) {
-                self.mapping
-                    .insert(arr.clone(), broaden_one(l_range, &r_range));
+    fn broaden(&mut self, new_ranges: &ArrSizes) {
+        for (arr, r_range) in new_ranges.0.iter() {
+            if let Some(l_range) = new_ranges.0.get(arr) {
+                self.0.insert(arr.clone(), broaden_one(l_range, &r_range));
             } else {
-                self.mapping.insert(arr.clone(), r_range.clone());
+                self.0.insert(arr.clone(), r_range.clone());
             }
         }
 
-        fn broaden_one(l: &Range, r: &Range) -> Range {
-            let min = match (l.min, r.min) {
-                (Boundary::Known(l), Boundary::Known(r)) => Boundary::Known(l.min(r)),
-                (_, Boundary::Unknown) => Boundary::Unknown,
-                (Boundary::Unknown, _) => Boundary::Unknown,
-                _ => Boundary::None,
-            };
-            let max = match (l.max, r.max) {
-                (Boundary::Known(l), Boundary::Known(r)) => Boundary::Known(l.max(r)),
-                (_, Boundary::Unknown) => Boundary::Unknown,
-                (Boundary::Unknown, _) => Boundary::Unknown,
-                _ => Boundary::None,
-            };
-            Range {
-                min: min,
-                size: r.size.clone(),
-                max: max,
+        fn broaden_one(l: &ArrSize, r: &ArrSize) -> ArrSize {
+            match (l, r) {
+                (ArrSize::Range(l_min, l_max), ArrSize::Range(r_min, r_max)) => {
+                    let min = match (l_min, r_min) {
+                        (Boundary::Known(l), Boundary::Known(r)) => Boundary::Known(*l.min(r)),
+                        (_, Boundary::Unknown) => Boundary::Unknown,
+                        (Boundary::Unknown, _) => Boundary::Unknown,
+                        _ => Boundary::None,
+                    };
+                    let max = match (l_max, r_max) {
+                        (Boundary::Known(l), Boundary::Known(r)) => Boundary::Known(*l.max(r)),
+                        (_, Boundary::Unknown) => Boundary::Unknown,
+                        (Boundary::Unknown, _) => Boundary::Unknown,
+                        _ => Boundary::None,
+                    };
+                    ArrSize::Range(min, max)
+                }
+                (ArrSize::Range(_, _), _) => *l,
+                (_, ArrSize::Range(_, _)) => *r,
+                (ArrSize::Point(n), ArrSize::Point(m)) if m == n => *l,
+                _ => panic_with_diagnostics(
+                    "Something has gone very wrong here during inference",
+                    &vec![l, r],
+                ),
             }
         }
     }
@@ -102,126 +103,52 @@ impl Ranges {
     /// if one of the two boundaries is known set that boundary
     /// if one is unknown set boundary to unknown
     /// otherwise set boundary to None
-    fn narrow(&mut self, r_ranges: &Ranges) {
-        for (arr, r_range) in r_ranges.mapping.iter() {
-            if let Some(l_range) = self.mapping.get(arr) {
-                self.mapping
-                    .insert(arr.clone(), narrow_one(l_range, &r_range));
+    fn narrow(&mut self, r_ranges: &ArrSizes) {
+        for (arr, r_range) in r_ranges.0.iter() {
+            if let Some(l_range) = self.0.get(arr) {
+                self.0.insert(arr.clone(), narrow_one(l_range, &r_range));
             } else {
-                self.mapping.insert(arr.clone(), r_range.clone());
+                self.0.insert(arr.clone(), r_range.clone());
             }
         }
-        fn narrow_one(l: &Range, r: &Range) -> Range {
-            let min = match (l.min, r.min) {
-                (Boundary::Known(l), Boundary::Known(r)) => Boundary::Known(l.max(r)),
-                (Boundary::Known(_), _) => l.min,
-                (_, Boundary::Known(_)) => r.min,
-                (_, Boundary::Unknown) => Boundary::Unknown,
-                (Boundary::Unknown, _) => Boundary::Unknown,
-                _ => Boundary::None,
-            };
-            let max = match (l.max, r.max) {
-                (Boundary::Known(l), Boundary::Known(r)) => Boundary::Known(l.min(r)),
-                (Boundary::Known(_), _) => l.max,
-                (_, Boundary::Known(_)) => r.max,
-                (_, Boundary::Unknown) => Boundary::Unknown,
-                (Boundary::Unknown, _) => Boundary::Unknown,
-                _ => Boundary::None,
-            };
-
-            let size_expr = match (min, max) {
-                (Boundary::Known(l), Boundary::Known(r)) if l == r => {
-                    SymExpression::Literal(Literal::Integer(l))
+        fn narrow_one(l: &ArrSize, r: &ArrSize) -> ArrSize {
+            match (l, r) {
+                (ArrSize::Point(n), ArrSize::Point(m)) if n != m => panic_with_diagnostics(
+                    "Something has gone very wrong here during inference",
+                    &vec![l, r],
+                ),
+                (ArrSize::Point(n), _) => *l,
+                (_, ArrSize::Point(n)) => *r,
+                (ArrSize::Range(Boundary::Known(l_min), Boundary::Known(l_max)), _) if l_min == l_max => ArrSize::Point(*l_min),
+                (_, ArrSize::Range(Boundary::Known(r_min), Boundary::Known(r_max))) if r_min == r_max => ArrSize::Point(*r_min),
+                (ArrSize::Range(l_min, l_max), ArrSize::Range(r_min, r_max)) => {
+                    let min = match (l_min, r_min) {
+                        (Boundary::Known(l), Boundary::Known(r)) => Boundary::Known(*l.max(r)),
+                        (Boundary::Known(_), _) => *l_min,
+                        (_, Boundary::Known(_)) => *r_min,
+                        (_, Boundary::Unknown) => Boundary::Unknown,
+                        (Boundary::Unknown, _) => Boundary::Unknown,
+                        _ => Boundary::None,
+                    };
+                    let max = match (l_max, r_max) {
+                        (Boundary::Known(l), Boundary::Known(r)) => Boundary::Known(*l.min(r)),
+                        (Boundary::Known(_), _) => *l_max,
+                        (_, Boundary::Known(_)) => *r_max,
+                        (_, Boundary::Unknown) => Boundary::Unknown,
+                        (Boundary::Unknown, _) => Boundary::Unknown,
+                        _ => Boundary::None,
+                    };
+                    ArrSize::Range(min, max)
                 }
-                _ => r.size.clone(),
-            };
-
-            Range {
-                min: min,
-                size: size_expr,
-                max: max,
             }
         }
     }
 
-    /// substitute all instances of sizeOf with the ranges we have saved in path constraints
-    pub fn substitute_sizeof(&self, expr: SymExpression) -> SymExpression {
-        match expr {
-            SymExpression::Implies(l_expr, r_expr) => SymExpression::Implies(
-                Box::new(self.substitute_sizeof(*l_expr)),
-                Box::new(self.substitute_sizeof(*r_expr)),
-            ),
-            SymExpression::And(l_expr, r_expr) => SymExpression::And(
-                Box::new(self.substitute_sizeof(*l_expr)),
-                Box::new(self.substitute_sizeof(*r_expr)),
-            ),
-            SymExpression::Or(l_expr, r_expr) => SymExpression::Or(
-                Box::new(self.substitute_sizeof(*l_expr)),
-                Box::new(self.substitute_sizeof(*r_expr)),
-            ),
-            SymExpression::EQ(l_expr, r_expr) => SymExpression::EQ(
-                Box::new(self.substitute_sizeof(*l_expr)),
-                Box::new(self.substitute_sizeof(*r_expr)),
-            ),
-            SymExpression::NE(l_expr, r_expr) => SymExpression::NE(
-                Box::new(self.substitute_sizeof(*l_expr)),
-                Box::new(self.substitute_sizeof(*r_expr)),
-            ),
-            SymExpression::LT(l_expr, r_expr) => SymExpression::LT(
-                Box::new(self.substitute_sizeof(*l_expr)),
-                Box::new(self.substitute_sizeof(*r_expr)),
-            ),
-            SymExpression::GT(l_expr, r_expr) => SymExpression::GT(
-                Box::new(self.substitute_sizeof(*l_expr)),
-                Box::new(self.substitute_sizeof(*r_expr)),
-            ),
-            SymExpression::GEQ(l_expr, r_expr) => SymExpression::GEQ(
-                Box::new(self.substitute_sizeof(*l_expr)),
-                Box::new(self.substitute_sizeof(*r_expr)),
-            ),
-            SymExpression::LEQ(l_expr, r_expr) => SymExpression::LEQ(
-                Box::new(self.substitute_sizeof(*l_expr)),
-                Box::new(self.substitute_sizeof(*r_expr)),
-            ),
-            SymExpression::Plus(l_expr, r_expr) => SymExpression::Plus(
-                Box::new(self.substitute_sizeof(*l_expr)),
-                Box::new(self.substitute_sizeof(*r_expr)),
-            ),
-            SymExpression::Minus(l_expr, r_expr) => SymExpression::Minus(
-                Box::new(self.substitute_sizeof(*l_expr)),
-                Box::new(self.substitute_sizeof(*r_expr)),
-            ),
-            SymExpression::Multiply(l_expr, r_expr) => SymExpression::Multiply(
-                Box::new(self.substitute_sizeof(*l_expr)),
-                Box::new(self.substitute_sizeof(*r_expr)),
-            ),
-            SymExpression::Divide(l_expr, r_expr) => SymExpression::Divide(
-                Box::new(self.substitute_sizeof(*l_expr)),
-                Box::new(self.substitute_sizeof(*r_expr)),
-            ),
-            SymExpression::Mod(l_expr, r_expr) => SymExpression::Mod(
-                Box::new(self.substitute_sizeof(*l_expr)),
-                Box::new(self.substitute_sizeof(*r_expr)),
-            ),
-            SymExpression::Negative(expr) => {
-                SymExpression::Negative(Box::new(self.substitute_sizeof(*expr)))
-            }
-
-            SymExpression::Not(expr) => SymExpression::Not(Box::new(self.substitute_sizeof(*expr))),
-            SymExpression::SizeOf(arr, size) => {
-                if let Some(range) = self.mapping.get(&arr.clone()) {
-                    SymExpression::Range(Box::new(range.clone()))
-                } else {
-                    SymExpression::SizeOf(arr.clone(), size)
-                }
-            }
-            _ => expr,
-        }
-    }
-    pub fn infer_ranges(&mut self, expr: SymExpression) {
+    
+    pub fn infer_arrsizes(&mut self, expr: SymExpression) {
         self.narrow(&infer_new_ranges(&expr.simplify()));
 
-        fn infer_new_ranges(expr: &SymExpression) -> Ranges {
+        fn infer_new_ranges(expr: &SymExpression) -> ArrSizes {
             match expr {
                 // rewrite negations and recurse
                 SymExpression::Not(expr) => {
@@ -248,8 +175,8 @@ impl Ranges {
 
                 // if not falsifiable we assume it to be true and pick most pessimistic range?
                 SymExpression::Implies(l, r) => match (&**l, &**r) {
-                    (SymExpression::Literal(Literal::Boolean(false)), _) => Ranges::default(),
-                    (_, SymExpression::Literal(Literal::Boolean(false))) => Ranges::default(),
+                    (SymExpression::Literal(Literal::Boolean(false)), _) => ArrSizes::default(),
+                    (_, SymExpression::Literal(Literal::Boolean(false))) => ArrSizes::default(),
                     _ => {
                         let mut range = infer_new_ranges(l);
                         range.broaden(&infer_new_ranges(r));
@@ -275,295 +202,277 @@ impl Ranges {
                 // else if sizeof equals some freevar we set all boundaries to unknown and size to that fv
                 SymExpression::EQ(l, r) => match (&**l, &**r) {
                     (
-                        SymExpression::SizeOf(id, size_expr),
+                        SymExpression::SizeOf(_, r, size_expr, _),
                         SymExpression::Literal(Literal::Integer(n)),
-                    ) => Ranges::new(
-                        id.clone(),
-                        Range {
-                            min: Boundary::Known(*n),
-                            size: *r.clone(),
-                            max: Boundary::Known(*n),
-                        },
+                    ) => ArrSizes::new(
+                        r.clone(),
+                        ArrSize::Point(*n),
                     ),
                     (
                         SymExpression::Literal(Literal::Integer(n)),
-                        SymExpression::SizeOf(id, size_expr),
-                    ) => Ranges::new(
-                        id.clone(),
-                        Range {
-                            min: Boundary::Known(*n),
-                            size: *r.clone(),
-                            max: Boundary::Known(*n),
-                        },
+                        SymExpression::SizeOf(_, r, size_expr, _),
+                    ) => ArrSizes::new(
+                        r.clone(),
+                        ArrSize::Point(*n),
                     ),
-                    (SymExpression::SizeOf(id, size_expr), SymExpression::FreeVariable(_, _)) => {
-                        Ranges::new(
-                            id.clone(),
-                            Range {
-                                min: Boundary::Unknown,
-                                size: *r.clone(),
-                                max: Boundary::Unknown,
-                            },
+                    (SymExpression::SizeOf(_, r, size_expr, _), SymExpression::FreeVariable(_, _)) => {
+                        ArrSizes::new(
+                            r.clone(),
+                            ArrSize::Range(Boundary::Unknown, Boundary::Unknown),
                         )
                     }
 
-                    (SymExpression::FreeVariable(_, _), SymExpression::SizeOf(id, size_expr)) => {
-                        Ranges::new(
-                            id.clone(),
-                            Range {
-                                min: Boundary::Unknown,
-                                size: *l.clone(),
-                                max: Boundary::Unknown,
-                            },
+                    (SymExpression::FreeVariable(_, _), SymExpression::SizeOf(_, r, size_expr, _)) => {
+                        ArrSizes::new(
+                            r.clone(),
+                            ArrSize::Range(Boundary::Unknown, Boundary::Unknown),
                         )
                     }
 
-                    _ => Ranges::default(),
+                    _ => ArrSizes::default(),
                 },
 
                 // if sizeof is LT or GT some literal we set min or max to that literal - 1
                 // else if sizOf is LT or GT some freevar we set min or max to unknown
                 SymExpression::LT(l, r) => match (&**l, &**r) {
                     (
-                        SymExpression::SizeOf(id, size_expr),
+                        SymExpression::SizeOf(_, r, size_expr, _),
                         SymExpression::Literal(Literal::Integer(n)),
-                    ) => Ranges::new(
-                        id.clone(),
-                        Range {
-                            min: Boundary::None,
-                            size: *size_expr.clone(),
-                            max: Boundary::Known(*n - 1),
-                        },
+                    ) => ArrSizes::new(
+                        r.clone(),
+                        ArrSize::Range(Boundary::None,Boundary::Known(*n - 1)),
                     ),
                     (
                         SymExpression::Literal(Literal::Integer(n)),
-                        SymExpression::SizeOf(id, size_expr),
-                    ) => Ranges::new(
-                        id.clone(),
-                        Range {
-                            min: Boundary::Known(*n + 1),
-                            size: *size_expr.clone(),
-                            max: Boundary::None,
-                        },
+                        SymExpression::SizeOf(_, r, size_expr, _),
+                    ) => ArrSizes::new(
+                        r.clone(),
+                        ArrSize::Range( Boundary::Known(*n + 1), Boundary::None),
                     ),
-                    (SymExpression::FreeVariable(_, _), SymExpression::SizeOf(id, size_expr)) => {
-                        Ranges::new(
-                            id.clone(),
-                            Range {
-                                min: Boundary::Unknown,
-                                size: *size_expr.clone(),
-                                max: Boundary::None,
-                            },
+                    (SymExpression::FreeVariable(_, _), SymExpression::SizeOf(_, r, size_expr, _),) => {
+                        ArrSizes::new(
+                            r.clone(),
+                            ArrSize::Range(
+                                Boundary::Unknown,
+                                
+                                Boundary::None,
+                            ),
                         )
                     }
 
-                    (SymExpression::SizeOf(id, size_expr), SymExpression::FreeVariable(_, _)) => {
-                        Ranges::new(
-                            id.clone(),
-                            Range {
-                                min: Boundary::None,
-                                size: *size_expr.clone(),
-                                max: Boundary::Unknown,
-                            },
+                    (SymExpression::SizeOf(_, r, size_expr, _), SymExpression::FreeVariable(_, _)) => {
+                        ArrSizes::new(
+                            r.clone(),
+                            ArrSize::Range(
+                                Boundary::None,
+                                
+                                Boundary::Unknown,
+                            ),
                         )
                     }
 
-                    _ => Ranges::default(),
+                    _ => ArrSizes::default(),
                 },
                 SymExpression::GT(l, r) => match (&**l, &**r) {
                     (
-                        SymExpression::SizeOf(id, size_expr),
+                        SymExpression::SizeOf(_, r, size_expr, _),
                         SymExpression::Literal(Literal::Integer(n)),
-                    ) => Ranges::new(
-                        id.clone(),
-                        Range {
-                            min: Boundary::Known(*n + 1),
-                            size: *size_expr.clone(),
-                            max: Boundary::None,
-                        },
+                    ) => ArrSizes::new(
+                        r.clone(),
+                        ArrSize::Range(
+                            Boundary::Known(*n + 1),
+                            
+                            Boundary::None,
+                        ),
                     ),
                     (
                         SymExpression::Literal(Literal::Integer(n)),
-                        SymExpression::SizeOf(id, size_expr),
-                    ) => Ranges::new(
-                        id.clone(),
-                        Range {
-                            min: Boundary::None,
-                            size: *size_expr.clone(),
-                            max: Boundary::Known(*n - 1),
-                        },
+                        SymExpression::SizeOf(_, r, size_expr, _),
+                    ) => ArrSizes::new(
+                        r.clone(),
+                        ArrSize::Range(
+                            Boundary::None,
+                            
+                            Boundary::Known(*n - 1),
+                        ),
                     ),
-                    (SymExpression::FreeVariable(_, _), SymExpression::SizeOf(id, size_expr)) => {
-                        Ranges::new(id.clone(), {
-                            Range {
-                                min: Boundary::None,
-                                size: *size_expr.clone(),
-                                max: Boundary::Unknown,
-                            }
-                        })
+                    (SymExpression::FreeVariable(_, _), SymExpression::SizeOf(_, r, size_expr, _),) => {
+                        ArrSizes::new(r.clone(), 
+                            ArrSize::Range(
+                                Boundary::None,
+                                
+                                Boundary::Unknown,
+                            
+                        ))
                     }
-                    (SymExpression::SizeOf(id, size_expr), SymExpression::FreeVariable(_, _)) => {
-                        Ranges::new(
-                            id.clone(),
-                            Range {
-                                min: Boundary::Unknown,
-                                size: *size_expr.clone(),
-                                max: Boundary::None,
-                            },
+                    (SymExpression::SizeOf(_, r, size_expr, _), SymExpression::FreeVariable(_, _)) => {
+                        ArrSizes::new(
+                            r.clone(),
+                            ArrSize::Range(
+                                Boundary::Unknown,
+                                
+                                Boundary::None,
+                            ),
                         )
                     }
-                    _ => Ranges::default(),
+                    _ => ArrSizes::default(),
                 },
 
                 // if sizeof is LEQ or GEQ some literal we set min or max to that literal
                 // else if sizOf is LT or GT some freevar we set min or max to unknown
                 SymExpression::GEQ(l, r) => match (&**l, &**r) {
                     (
-                        SymExpression::SizeOf(id, size_expr),
+                        SymExpression::SizeOf(_, r, size_expr, _),
                         SymExpression::Literal(Literal::Integer(n)),
-                    ) => Ranges::new(
-                        id.clone(),
-                        Range {
-                            min: Boundary::Known(*n),
-                            size: *size_expr.clone(),
-                            max: Boundary::None,
-                        },
+                    ) => ArrSizes::new(
+                        r.clone(),
+                        ArrSize::Range(
+                            Boundary::Known(*n),
+                            
+                            Boundary::None,
+                        ),
                     ),
                     (
                         SymExpression::Literal(Literal::Integer(n)),
-                        SymExpression::SizeOf(id, size_expr),
-                    ) => Ranges::new(
-                        id.clone(),
-                        Range {
-                            min: Boundary::None,
-                            size: *size_expr.clone(),
-                            max: Boundary::Known(*n),
-                        },
+                        SymExpression::SizeOf(_, r, size_expr, _),
+                    ) => ArrSizes::new(
+                        r.clone(),
+                        ArrSize::Range(
+                            Boundary::None,
+                            
+                            Boundary::Known(*n),
+                        ),
                     ),
-                    (SymExpression::FreeVariable(_, _), SymExpression::SizeOf(id, size_expr)) => {
-                        Ranges::new(id.clone(), {
-                            Range {
-                                min: Boundary::None,
-                                size: *size_expr.clone(),
-                                max: Boundary::Unknown,
-                            }
-                        })
+                    (SymExpression::FreeVariable(_, _), SymExpression::SizeOf(_, r, size_expr, _),) => {
+                        ArrSizes::new(r.clone(), 
+                            ArrSize::Range(
+                                Boundary::None,
+                                
+                                Boundary::Unknown,
+                            )
+                        )
                     }
-                    (SymExpression::SizeOf(id, size_expr), SymExpression::FreeVariable(_, _)) => {
-                        Ranges::new(id.clone(), {
-                            Range {
-                                min: Boundary::Unknown,
-                                size: *size_expr.clone(),
-                                max: Boundary::None,
-                            }
-                        })
+                    (SymExpression::SizeOf(_, r, size_expr, _), SymExpression::FreeVariable(_, _)) => {
+                        ArrSizes::new(r.clone(), 
+                            ArrSize::Range(
+                                Boundary::Unknown,
+                                
+                                Boundary::None,
+                            )
+                        )
                     }
-                    _ => Ranges::default(),
+                    _ => ArrSizes::default(),
                 },
                 SymExpression::LEQ(l, r) => match (&**l, &**r) {
                     (
-                        SymExpression::SizeOf(id, size_expr),
+                        SymExpression::SizeOf(_, r, size_expr, _),
                         SymExpression::Literal(Literal::Integer(n)),
-                    ) => Ranges::new(
-                        id.clone(),
-                        Range {
-                            min: Boundary::None,
-                            size: *size_expr.clone(),
-                            max: Boundary::Known(*n),
-                        },
+                    ) => ArrSizes::new(
+                        r.clone(),
+                        ArrSize::Range(
+                            Boundary::None,
+                            
+                            Boundary::Known(*n),
+                        ),
                     ),
                     (
                         SymExpression::Literal(Literal::Integer(n)),
-                        SymExpression::SizeOf(id, size_expr),
-                    ) => Ranges::new(
-                        id.clone(),
-                        Range {
-                            min: Boundary::Known(*n),
-                            size: *size_expr.clone(),
-                            max: Boundary::None,
-                        },
+                        SymExpression::SizeOf(_, r, size_expr, _),
+                    ) => ArrSizes::new(
+                        r.clone(),
+                        ArrSize::Range(
+                            Boundary::Known(*n),
+                            
+                            Boundary::None,
+                        ),
                     ),
-                    (SymExpression::FreeVariable(_, _), SymExpression::SizeOf(id, size_expr)) => {
-                        Ranges::new(
-                            id.clone(),
-                            Range {
-                                min: Boundary::Unknown,
-                                size: *size_expr.clone(),
-                                max: Boundary::None,
-                            },
+                    (SymExpression::FreeVariable(_, _), SymExpression::SizeOf(_, r, size_expr, _),) => {
+                        ArrSizes::new(
+                            r.clone(),
+                            ArrSize::Range(
+                                Boundary::Unknown,
+                                
+                                Boundary::None,
+                            ),
                         )
                     }
 
-                    (SymExpression::SizeOf(id, size_expr), SymExpression::FreeVariable(_, _)) => {
-                        Ranges::new(
-                            id.clone(),
-                            Range {
-                                min: Boundary::None,
-                                size: *size_expr.clone(),
-                                max: Boundary::Unknown,
-                            },
+                    (SymExpression::SizeOf(_, r, size_expr, _), SymExpression::FreeVariable(_, _)) => {
+                        ArrSizes::new(
+                            r.clone(),
+                            ArrSize::Range(
+                                Boundary::None,
+                                
+                                Boundary::Unknown,
+                            ),
                         )
                     }
 
-                    _ => Ranges::default(),
+                    _ => ArrSizes::default(),
                 },
-                _ => Ranges::default(),
+                _ => ArrSizes::default(),
             }
         }
     }
 }
 
-impl Range {
+impl ArrSize {
     pub fn new(size_expr: SymExpression, arr: Identifier) -> Self {
         match size_expr.simplify() {
-            SymExpression::Literal(Literal::Integer(n)) => Range {
-                min: Boundary::Known(n),
-                size: SymExpression::Literal(Literal::Integer(n)),
-                max: Boundary::Known(n),
-            },
-            expr => Range {
-                min: Boundary::None,
-                size: expr,
-                max: Boundary::None,
-            },
+            SymExpression::Literal(Literal::Integer(n)) => ArrSize::Range(
+                Boundary::Known(n),
+                Boundary::Known(n),
+            ),
+            expr => ArrSize::Range(
+                Boundary::None,
+                Boundary::None,
+            ),
         }
     }
 
     pub fn min(&self) -> Option<i64> {
-        match self.min {
-            Boundary::Known(n) => Some(n),
+        match self {
+            ArrSize::Point(n)=> Some(*n),
+            ArrSize::Range(Boundary::Known(n), _) => Some(*n),
             _ => None,
         }
     }
-    pub fn get(&self) -> SymExpression {
-        self.size.clone()
-    }
+
 
     pub fn max(&self) -> Option<i64> {
-        match self.max {
-            Boundary::Known(n) => Some(n),
+        match self {
+            ArrSize::Point(n)=> Some(*n),
+            ArrSize::Range(_, Boundary::Known(n)) => Some(*n),
             _ => None,
         }
     }
 }
 
-impl fmt::Debug for Ranges {
+impl fmt::Debug for ArrSizes {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut res = "Ranges:\n".to_string();
-        for (arr, range) in self.mapping.iter() {
+        for (arr, range) in self.0.iter() {
             res.push_str(&format!("    #{} -> {:?}\n", arr, range));
         }
         write!(f, "{}", res)
     }
 }
 
-impl fmt::Debug for Range {
+impl fmt::Debug for ArrSize {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "(min: {:?}, size: {:?}, max: {:?})",
-            self.min, self.size, self.max
-        )
+        match self {
+            ArrSize::Range(min, max) =>         write!(
+                f,
+                "({:?} - {:?})",
+                min, max
+            ),
+            ArrSize::Point(n) => write!(
+                f,
+                "({})",
+                n
+            ),
+        }
+
     }
 }
 

@@ -4,13 +4,13 @@ use crate::shared::{Config, Error};
 use crate::smt_solver::Solver;
 use crate::symbolic::expression::{PathConstraints, SymExpression};
 use crate::symbolic::memory::SymMemory;
-use crate::symbolic::ref_values::Ranges;
+use crate::symbolic::ref_values::ArrSizes;
 
 /// returns the symbolic expression rhs refers to
 pub fn parse_rhs<'a, 'b>(
     sym_memory: &mut SymMemory,
     pc: &PathConstraints,
-    ranges: &Ranges,
+    ranges: &ArrSizes,
     solver: &mut Solver,
     diagnostics: &mut Diagnostics,
     rhs: &'a Rhs,
@@ -50,7 +50,7 @@ pub fn parse_rhs<'a, 'b>(
 pub fn lhs_from_rhs<'a>(
     sym_memory: &mut SymMemory,
     pc: &PathConstraints,
-    ranges: &Ranges,
+    ranges: &ArrSizes,
     solver: &mut Solver,
     diagnostics: &mut Diagnostics,
     config: Config,
@@ -145,7 +145,7 @@ pub fn params_to_vars<'ctx>(
 pub fn assert(
     sym_memory: &mut SymMemory,
     pc: &mut PathConstraints,
-    ranges: &mut Ranges,
+    ranges: &mut ArrSizes,
     config: Config,
     solver: &mut Solver,
     assertion: &Expression,
@@ -155,7 +155,7 @@ pub fn assert(
 
     // update ranges
     if config.infer_size {
-        ranges.infer_ranges(sym_assertion.clone());
+        ranges.infer_arrsizes(sym_assertion.clone());
     }
 
     // add (inferred  and / orsimplified) assertion
@@ -193,7 +193,7 @@ pub fn assert(
 pub fn assume(
     sym_memory: &mut SymMemory,
     pc: &mut PathConstraints,
-    ranges: &mut Ranges,
+    ranges: &mut ArrSizes,
     config: Config,
     use_z3: bool,
     solver: &mut Solver,
@@ -203,7 +203,7 @@ pub fn assume(
     let sym_assumption = SymExpression::new(&sym_memory, assumption.clone());
 
     if config.infer_size {
-        ranges.infer_ranges(sym_assumption.clone());
+        ranges.infer_arrsizes(sym_assumption.clone());
     }
 
     if config.simplify {

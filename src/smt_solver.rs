@@ -5,7 +5,7 @@ use core::panic;
 use crate::ast::*;
 use crate::shared::{panic_with_diagnostics, Error, SolverType};
 use crate::symbolic::expression::{PathConstraints, SymExpression, SymType};
-use crate::symbolic::ref_values::Range;
+use crate::symbolic::ref_values::ArrSize;
 use rsmt2::print::{ModelParser};
 use rsmt2::{self, SmtConf, SmtRes};
 use rustc_hash::FxHashSet;
@@ -305,7 +305,7 @@ fn expr_to_str<'a>(expr: &'a SymExpression) -> (String, FxHashSet<(SymType, Stri
             fv.insert((ty.clone(), id.clone()));
             (format!("{}", id), fv)
         },
-        SymExpression::SizeOf(_, size_expr) => expr_to_str(size_expr),
+        SymExpression::SizeOf(_, _, size_expr, _) => expr_to_str(size_expr),
         SymExpression::Range(r) => expr_to_str(&r.get()),
         SymExpression::Literal(Literal::Integer(n)) => (format!("{}", n), FxHashSet::default()),
         SymExpression::Literal(Literal::Boolean(b)) => (format!("{}", b), FxHashSet::default()),
