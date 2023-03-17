@@ -37,10 +37,6 @@ impl Default for PathConstraints {
 }
 
 impl PathConstraints {
-    pub fn into_iter(self) -> IntoIter<PathConstraint> {
-        self.constraints.into_iter()
-    }
-
     /// combine constraints over true as follows: `assume(a), assert(b) -> a ==> b && true`
     pub fn combine_over_true(&self) -> SymExpression {
 
@@ -85,22 +81,6 @@ impl PathConstraints {
     /// adds a new constraint
     pub fn push_assumption(&mut self, assumption: SymExpression) {
         self.constraints.push(PathConstraint::Assume(assumption));
-    }
-
-    /// removes all trivially true constraints, can be used to retroactively apply information we have about an arrays size
-    pub fn simplify(&mut self, arr_sizes: &ArrSizes) {
-
-        let mut i = 0;
-        while i < self.constraints.len() {
-            let c_expr = match &self.constraints[i] {
-                PathConstraint::Assert(e) => e,
-                PathConstraint::Assume(e) => e,
-            };
-            match c_expr.clone().simplify(Some(arr_sizes)){
-                SymExpression::Literal(Literal::Boolean(true)) => {self.constraints.remove(i);},
-                _ => {i += 1;},  
-            }
-        };
     }
 }
 
