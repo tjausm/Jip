@@ -35,8 +35,8 @@ struct Cli {
     #[clap(short, long)]
     infer_size: bool,
 
-    /// number between 0 and 255 denoting how deep we should prune
-    /// , 0 = no pruning, 127 = prune to 50% of depth and so on
+    /// number between 0 and 127 denoting how deep we should prune
+    /// , 0 = no pruning, 63 = prune to 50% of depth and so on
     #[clap(default_value_t = 0)]
     prune_ratio: i8,
 
