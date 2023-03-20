@@ -31,7 +31,7 @@ struct Cli {
     #[clap(short, long)]
     simplifier: bool,
     
-    /// Turns on array size inference
+    /// Turns on array size inference & simplifier
     #[clap(short, long)]
     infer_size: bool,
 
@@ -91,7 +91,7 @@ fn main() {
         Mode::PrintCFG => exit(see::print_cfg(&program)),
         Mode::Verify { depth, verbose } => {
             let config = Config {
-                simplify: cli.simplifier,
+                simplify: cli.simplifier || cli.infer_size,
                 infer_size: cli.infer_size,
                 prune_ratio: cli.prune_ratio,
                 solver_type: cli.solver,
@@ -105,7 +105,7 @@ fn main() {
             interval,
         } => {
             let config = Config {
-                simplify: cli.simplifier,
+                simplify: cli.simplifier || cli.infer_size,
                 infer_size: cli.infer_size,
                 prune_ratio: cli.prune_ratio,
                 solver_type: cli.solver,

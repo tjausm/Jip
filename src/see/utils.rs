@@ -101,7 +101,7 @@ pub fn params_to_vars<'ctx>(
     loop {
         match (params_iter.next(), args_iter.next()) {
             (Some((Type::ArrayType(ty), arg_id)), Some(expr)) => match expr {
-                Expression::Identifier(param_id) => match sym_memory.stack_get(param_id) {
+                Expression::Identifier(param_id) => match sym_memory.stack_get(&param_id) {
                     Some(SymExpression::Reference(ty, r)) => {
                         variables.push((arg_id, SymExpression::Reference(ty, r)))
                     }
@@ -110,13 +110,13 @@ pub fn params_to_vars<'ctx>(
                 _ => return err(&format!("{:?}[]", ty), arg_id, expr),
             },
             (Some((Type::ClassType(class), arg_id)), Some(expr)) => match expr {
-                Expression::Identifier(param_id) => match sym_memory.stack_get(param_id) {
+                Expression::Identifier(param_id) => match sym_memory.stack_get(&param_id) {
                     Some(SymExpression::Reference(ty, r)) => {
                         variables.push((arg_id, SymExpression::Reference(ty, r)))
                     }
-                    _ => return err(class, arg_id, expr),
+                    _ => return err(&class, arg_id, expr),
                 },
-                _ => return err(class, arg_id, expr),
+                _ => return err(&class, arg_id, expr),
             },
             (Some((_, arg_id)), Some(expr)) => {
                 variables.push((arg_id, SymExpression::new(&sym_memory, expr.clone())));
