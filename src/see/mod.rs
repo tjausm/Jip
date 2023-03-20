@@ -181,7 +181,8 @@ fn verify_program(
                             let size = SymExpression::FreeVariable(SymType::Int, format!("|#{}|", id));
                             let arr = sym_memory.init_array(
                                 *ty.clone(),
-                                size
+                                size,
+                                true
                             );
                             let r = sym_memory.heap_insert(None, arr);
                             sym_memory
@@ -190,7 +191,7 @@ fn verify_program(
                         (Type::ClassType(ty), id) => {
                             let class = prog.get_class(ty);
                             let r = sym_memory
-                                .heap_insert(None, ReferenceValue::UninitializedObj(class.clone()));
+                                .heap_insert(None, ReferenceValue::LazyObject(class.clone()));
                             sym_memory
                                 .stack_insert(id, SymExpression::Reference(parameter.0.clone(), r));
                         }

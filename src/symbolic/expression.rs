@@ -5,15 +5,13 @@ use core::fmt;
 use std::{
     collections::hash_map::DefaultHasher,
     hash::{Hash, Hasher},
-    vec::IntoIter,
 };
 
-use rustc_hash::FxHashMap;
 
 use super::ref_values::{ArrSize, ArrSizes, Array, Reference};
 use crate::{
     ast::*,
-    shared::{panic_with_diagnostics, Config},
+    shared::{panic_with_diagnostics},
     symbolic::memory::SymMemory,
 };
 
@@ -488,7 +486,7 @@ impl SymExpression {
 /// return c && e
 /// ```
 fn destruct_forall<'a>(
-    (ty, arr, size): &Array,
+    (ty, arr, size, _): &Array,
     index: &Identifier,
     value: &Identifier,
     inner_expr: &Expression,

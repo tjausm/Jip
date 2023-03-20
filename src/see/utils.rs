@@ -23,7 +23,7 @@ pub fn parse_rhs<'a, 'b>(
         // generate reference, build arrayname from said reference, insert array into heap and return reference
         Rhs::NewArray(ty, len) => {
             let size_expr = SymExpression::new(&sym_memory, len.clone());
-            let arr = sym_memory.init_array(ty.clone(), size_expr);
+            let arr = sym_memory.init_array(ty.clone(), size_expr, false);
             let r = sym_memory.heap_insert(None, arr);
             Ok(SymExpression::Reference(ty.clone(), r))
         }

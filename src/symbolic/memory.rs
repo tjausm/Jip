@@ -5,7 +5,7 @@ use std::fmt;
 use uuid::Uuid;
 
 use super::expression::{PathConstraints, SymExpression, SymType};
-use super::ref_values::{Array, Boundary, Reference, ReferenceValue, ArrSize, ArrSizes};
+use super::ref_values::{Array, Boundary, Lazy, Reference, ReferenceValue, ArrSize, ArrSizes};
 use crate::ast::*;
 use crate::shared::{panic_with_diagnostics, Config, Diagnostics, Error, Scope};
 use crate::smt_solver::Solver;
@@ -129,7 +129,7 @@ impl<'a> SymMemory {
                         None => expr.clone(),
                     }
                 }
-                Some(ReferenceValue::UninitializedObj(class)) => {
+                Some(ReferenceValue::LazyObject(class)) => {
                     let class = class.clone();
                     let new_obj = self.init_object(r, class);
                     self.heap_insert(Some(r), new_obj);
@@ -178,7 +178,7 @@ impl<'a> SymMemory {
         //get mutable HashMap representing array
         let (_, _, size_expr) = match self.stack_get(&arr_name){
             Some(SymExpression::Reference(_, r)) => match self.heap.get(&r){
-                Some(ReferenceValue::Array((ty, arr, length))) => (ty, arr, length),
+                Some(ReferenceValue::Array((ty, arr, length, _))) => (ty, arr, length),
                 otherwise => panic_with_diagnostics(&format!("{:?} is not an array and can't be assigned to in assignment '{}[{:?}] := {:?}'", otherwise, arr_name, index, var), &self),
             },
             _ => panic_with_diagnostics(&format!("{} is not a reference", arr_name), &self),
@@ -226,9 +226,9 @@ impl<'a> SymMemory {
         };
 
         //get mutable HashMap representing array
-        let (ty, arr, _) = match self.stack_get(&arr_name){
+        let (ty, arr, is_lazy) = match self.stack_get(&arr_name){
             Some(SymExpression::Reference(_, r)) => match self.heap.get_mut(&r){
-                Some(ReferenceValue::Array((ty, arr, length))) => (ty, arr, length),
+                Some(ReferenceValue::Array((ty, arr, _, is_lazy))) => (ty, arr, is_lazy),
                 otherwise => panic_with_diagnostics(&format!("{:?} is not an array and can't be assigned to in assignment '{}[{:?}] := {:?}'", otherwise, arr_name, sym_index, var), &self),
             },
             _ => panic_with_diagnostics(&format!("{} is not a reference", arr_name), &self),
@@ -243,11 +243,12 @@ impl<'a> SymMemory {
                 Some(v) => Ok(v.clone()),
                 None => {
                     let fv_id = format!("|{}[{:?}]|", arr_name.clone(), simple_index);
-                    let fv = match ty {
-                        Type::Int => SymExpression::FreeVariable(SymType::Int, fv_id),
-                        Type::Bool => SymExpression::FreeVariable(SymType::Bool, fv_id),
-                        Type::ClassType(_) => todo!(),
-                        Type::ArrayType(_) => todo!(),
+                    let fv = match (ty, is_lazy) {
+                        (Type::Int, _) => SymExpression::FreeVariable(SymType::Int, fv_id),
+                        (Type::Bool, _) => SymExpression::FreeVariable(SymType::Bool, fv_id),
+                        (Type::ClassType(_), false) => todo!(),
+                        (Type::ClassType(_), true) => todo!(),
+                        (Type::ArrayType(_), _) => todo!("2+ dimensional arrays are not yet implemented"),
                         _ => todo!(),
                     };
                     arr.insert(simple_index, fv.clone());
@@ -261,7 +262,7 @@ impl<'a> SymMemory {
     pub fn heap_get_arr_length(&self, arr_name: &Identifier) -> SymExpression {
         match self.stack_get(&arr_name){
         Some(SymExpression::Reference(_, r)) => match self.heap.get(&r){
-            Some(ReferenceValue::Array((_, _, length))) => length.clone(),
+            Some(ReferenceValue::Array((_, _, length, _))) => length.clone(),
             otherwise => panic_with_diagnostics(&format!("Can't return length of {} since the value it references to ({:?}) is not an array", arr_name, otherwise), &self),
         },
         _ => panic_with_diagnostics(&format!("{} is not a reference", arr_name), &self),
@@ -297,7 +298,7 @@ impl<'a> SymMemory {
                         let ty = Type::ClassType(class.clone());
                         let r = self.heap_insert(
                             None,
-                            ReferenceValue::UninitializedObj((class.clone(), members.clone())),
+                            ReferenceValue::LazyObject((class.clone(), members.clone())),
                         );
                         fields.insert(field.clone(), SymExpression::Reference(ty, r));
                     }
@@ -314,8 +315,8 @@ impl<'a> SymMemory {
     }
 
     //todo: how to initialize correctly
-    pub fn init_array(&mut self, ty: Type, size_expr: SymExpression) -> ReferenceValue {
-        ReferenceValue::Array((ty, FxHashMap::default(), size_expr))
+    pub fn init_array(&mut self, ty: Type, size_expr: SymExpression, lazy_arr: Lazy) -> ReferenceValue {
+        ReferenceValue::Array((ty, FxHashMap::default(), size_expr, lazy_arr))
     }
 }
 
@@ -330,7 +331,7 @@ impl fmt::Debug for ReferenceValue {
                 }
                 write!(f, "{}", formated_obj)
             }
-            ReferenceValue::Array((ty, entries, len)) => {
+            ReferenceValue::Array((ty, entries, len, _)) => {
                 let mut formated_obj = format!("{:?}[] with length {:?}", ty, len);
                 for (index, value) in entries {
                     formated_obj
@@ -338,7 +339,7 @@ impl fmt::Debug for ReferenceValue {
                 }
                 write!(f, "{}", formated_obj)
             }
-            ReferenceValue::UninitializedObj((class, _)) => write!(f, "Uninitialized {}", class),
+            ReferenceValue::LazyObject((class, _)) => write!(f, "Uninitialized {}", class),
         }
     }
 }

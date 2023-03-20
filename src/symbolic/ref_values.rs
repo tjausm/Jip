@@ -15,12 +15,13 @@ pub type Object = (Identifier, FxHashMap<Identifier, SymExpression>);
 pub enum ReferenceValue {
     Object(Object),
     Array(Array),
-    /// Takes classname as input
-    UninitializedObj(Class),
+    LazyObject(Class),
 }
 
-/// Consists of type, a mapping from expression to symbolic expression and Substituted expression representing size
-pub type Array = (Type, FxHashMap<SymExpression, SymExpression>, SymExpression);
+pub type Lazy = bool;
+
+/// Consists of type, a mapping from expression to symbolic expression, expression representing size and flag to indicate that we should lazily initialize objects from this array
+pub type Array = (Type, FxHashMap<SymExpression, SymExpression>, SymExpression, Lazy);
 
 #[derive(Clone, Copy)]
 pub enum Boundary {
