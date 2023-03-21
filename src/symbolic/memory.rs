@@ -22,13 +22,15 @@ type SymHeap = FxHashMap<Reference, ReferenceValue>;
 
 #[derive(Clone)]
 pub struct SymMemory {
+    prog: Program,
     stack: SymStack,
     heap: SymHeap,
 }
 
-impl Default for SymMemory {
-    fn default() -> Self {
+impl<'a> SymMemory {
+    pub fn new(prog: Program) -> Self {
         SymMemory {
+            prog,
             stack: vec![Frame {
                 scope: Scope { id: None },
                 env: FxHashMap::default(),
@@ -36,10 +38,6 @@ impl Default for SymMemory {
             heap: FxHashMap::default(),
         }
     }
-}
-
-impl<'a> SymMemory {
-
     /// Insert mapping `Identifier |-> SymbolicExpression` in top most frame of stack
     pub fn stack_insert(&mut self, id: &'a Identifier, sym_expr: SymExpression) -> () {
         if let Some(s) = self.stack.last_mut() {
