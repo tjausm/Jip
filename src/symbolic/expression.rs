@@ -680,7 +680,7 @@ impl fmt::Debug for SymExpression {
                 formated.push_str(&r.clone().to_string()[0..4]);
                 write!(f, "Ref({})", formated)
             }
-            SymExpression::Uninitialized => write!(f, "Unitialized)"),
+            SymExpression::Uninitialized => write!(f, "Unitialized"),
         }
     }
 }

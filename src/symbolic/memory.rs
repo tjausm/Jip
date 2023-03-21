@@ -129,7 +129,7 @@ impl<'a> SymMemory {
                 }
                 Some(ReferenceValue::LazyObject(class)) => {
                     let class = class.clone();
-                    let new_obj = self.init_object(r, class.clone());
+                    let new_obj = self.init_lazy_object(r, class.clone());
                     self.heap_insert(Some(r), new_obj);
                     self.heap_access_object(obj_name, field_name, var)
                 }
@@ -266,9 +266,16 @@ impl<'a> SymMemory {
         _ => panic_with_diagnostics(&format!("{} is not a reference", arr_name), &self),
     }
     }
+    pub fn init_object(&mut self, r: Reference, class : Identifier) -> ReferenceValue{
+        self.internal_init_object(r, class, false)
+    }
+
+    pub fn init_lazy_object(&mut self, r: Reference, class : Identifier) -> ReferenceValue{
+        self.internal_init_object(r, class, true)
+    }
 
     /// given a reference and the class, initializes all fields lazily and returns a ReferenceValue
-    pub fn init_object(&mut self, r: Reference, class : Identifier) -> ReferenceValue {
+    fn internal_init_object(&mut self, r: Reference, class : Identifier, lazy: bool) -> ReferenceValue {
         let mut fields = FxHashMap::default();
 
         let members = self.prog.get_class(&class).1.clone();
@@ -293,13 +300,12 @@ impl<'a> SymMemory {
                         );
                     }
                     Type::Class(class) => {
-                        // insert uninitialized object to heap
-                        let ty = Type::Class(class.clone());
-                        let r = self.heap_insert(
+                        // either make lazy object or uninitialized
+                        let obj = if (lazy) {SymExpression::Reference(self.heap_insert(
                             None,
                             ReferenceValue::LazyObject(class.clone()),
-                        );
-                        fields.insert(field.clone(), SymExpression::Reference(r));
+                        ))} else {SymExpression::Uninitialized};
+                        fields.insert(field.clone(), obj);
                     }
                     Type::Void => panic_with_diagnostics(
                         &format!("Type of {}.{} can't be void", class, field),
