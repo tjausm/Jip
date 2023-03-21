@@ -309,7 +309,7 @@ fn expr_to_str<'a>(expr: &'a SymExpression) -> (String, FxHashSet<(SymType, Stri
         SymExpression::SizeOf(_, _, size_expr, _) => expr_to_str(size_expr),
         SymExpression::Literal(Literal::Integer(n)) => (format!("{}", n), FxHashSet::default()),
         SymExpression::Literal(Literal::Boolean(b)) => (format!("{}", b), FxHashSet::default()),
-        SymExpression::Reference(_, r) => (format!("{}", r.as_u64_pair().0), FxHashSet::default()),
+        SymExpression::Reference(r) => (format!("{}", r.as_u64_pair().0), FxHashSet::default()),
 
         otherwise => {
             panic_with_diagnostics(

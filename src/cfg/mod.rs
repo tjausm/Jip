@@ -308,12 +308,11 @@ fn stmts_to_cfg<'a>(
                 );
             }
             Statement::Assignment((lhs, Rhs::Newobject(class_name, args))) => {
-                let class = prog.get_class(&class_name);
 
                 // we pass actions InitObj and declareThis
                 let append_actions = vec![
                     Action::InitObj {
-                        from: class.clone(),
+                        from_class: class_name.clone(),
                         to: lhs.clone(),
                     },
                     Action::DeclareThis {

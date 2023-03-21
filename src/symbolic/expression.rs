@@ -110,7 +110,7 @@ pub enum SymExpression {
     Literal(Literal),
     FreeVariable(SymType, Identifier),
     SizeOf(Identifier, Reference, Box<SymExpression>, Option<ArrSize>),
-    Reference(Type, Reference),
+    Reference(Reference),
     Uninitialized,
 }
 
@@ -133,7 +133,7 @@ impl SymExpression {
             },
             Expression::SizeOf(arr_name) => {
                 let r = match sym_memory.stack_get(&arr_name) {
-                    Some(SymExpression::Reference(Type::Array(_), r)) => r,
+                    Some(SymExpression::Reference(r)) => r,
                     _ => panic_with_diagnostics(
                         &format!(
                             "identifier {} in expression #{:?} does not refer to an array",
@@ -464,7 +464,9 @@ impl SymExpression {
             },
             SymExpression::Literal(_) => self,
             SymExpression::FreeVariable(_, _) => self,
-            SymExpression::Reference(_, _) => self,
+            SymExpression::Reference(_) => self,
+            SymExpression::Uninitialized => 
+                panic_with_diagnostics("There is an uninitialized value in an expression. Did you declare all variables?", &self),
             otherwise => {
                 panic_with_diagnostics(&format!("{:?} is not yet implemented", otherwise), &self)
             }
@@ -554,7 +556,7 @@ enum HashExpression {
     Negative(u64),
     FreeVariable(SymType, Identifier),
     SizeOf(Reference),
-    Reference(Type, Reference),
+    Reference(Reference),
 }
 
 fn calculate_hash<T: Hash>(t: &T) -> u64 {
@@ -628,8 +630,8 @@ impl Hash for SymExpression {
             SymExpression::FreeVariable(ty, id) => {
                 HashExpression::FreeVariable(ty.clone(), id.clone()).hash(state)
             }
-            SymExpression::Reference(ty, r) => {
-                HashExpression::Reference(ty.clone(), r.clone()).hash(state)
+            SymExpression::Reference(r) => {
+                HashExpression::Reference(r.clone()).hash(state)
             }
             SymExpression::Literal(lit) => lit.hash(state),
             _ => panic_with_diagnostics(&format!("Cannot hash expression {:?}", self), &()),
@@ -673,7 +675,7 @@ impl fmt::Debug for SymExpression {
             SymExpression::Literal(Literal::Integer(val)) => write!(f, "{:?}", val),
             SymExpression::FreeVariable(_, fv) => write!(f, "{}", fv),
             SymExpression::SizeOf(id, _, _, _) => write!(f, "#{}", id),
-            SymExpression::Reference(_, r) => {
+            SymExpression::Reference(r) => {
                 let mut formated = "".to_string();
                 formated.push_str(&r.clone().to_string()[0..4]);
                 write!(f, "Ref({})", formated)

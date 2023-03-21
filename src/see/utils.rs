@@ -32,7 +32,7 @@ pub fn parse_rhs<'a, 'b>(
             let size_expr = SymExpression::new(&sym_memory, len.clone());
             let arr = sym_memory.init_array(sym_ty, size_expr);
             let r = sym_memory.heap_insert(None, arr);
-            Ok(SymExpression::Reference(ty.clone(), r))
+            Ok(SymExpression::Reference(r))
         }
 
         Rhs::AccessArray(arr_name, index) => sym_memory.heap_access_array(
@@ -109,8 +109,8 @@ pub fn params_to_vars<'ctx>(
         match (params_iter.next(), args_iter.next()) {
             (Some((Type::Array(ty), arg_id)), Some(expr)) => match expr {
                 Expression::Identifier(param_id) => match sym_memory.stack_get(&param_id) {
-                    Some(SymExpression::Reference(ty, r)) => {
-                        variables.push((arg_id, SymExpression::Reference(ty, r)))
+                    Some(SymExpression::Reference(r)) => {
+                        variables.push((arg_id, SymExpression::Reference(r)))
                     }
                     _ => return err(&format!("{:?}[]", ty), arg_id, expr),
                 },
@@ -118,8 +118,8 @@ pub fn params_to_vars<'ctx>(
             },
             (Some((Type::Class(class), arg_id)), Some(expr)) => match expr {
                 Expression::Identifier(param_id) => match sym_memory.stack_get(&param_id) {
-                    Some(SymExpression::Reference(ty, r)) => {
-                        variables.push((arg_id, SymExpression::Reference(ty, r)))
+                    Some(SymExpression::Reference(r)) => {
+                        variables.push((arg_id, SymExpression::Reference(r)))
                     }
                     _ => return err(&class, arg_id, expr),
                 },

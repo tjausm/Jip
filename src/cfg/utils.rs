@@ -78,8 +78,8 @@ impl fmt::Debug for Action {
                 write!(f, "Leaving scope {}", print_short_id(from))
             }
             Action::DeclareThis { class, obj } => write!(f, "{} this := {:?}", class, obj),
-            Action::InitObj { from, to } => {
-                write!(f, "Init {} {:?} on heap", from.0, to)
+            Action::InitObj { from_class, to } => {
+                write!(f, "Init {} {:?} on heap", from_class, to)
             }
             Action::LiftRetval => write!(f, "Lifting retval"),
             Action::DeclareRetval { ty } => write!(f, "Declaring '{:?} retval'", ty),

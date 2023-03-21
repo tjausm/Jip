@@ -13,15 +13,16 @@ pub type Object = (Identifier, FxHashMap<Identifier, SymExpression>);
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum SymRefType {
+    Array(Box<SymType>),
     Object(Identifier),
-    LazyObject(Identifier)
+    LazyObject(Identifier),
 }
 
 #[derive(Clone)]
 pub enum ReferenceValue {
     Object(Object),
     Array(Array),
-    LazyObject(Class),
+    LazyObject(Identifier),
 }
 
 /// Consists of type, a mapping from expression to symbolic expression, expression representing size and flag to indicate that we should lazily initialize objects from this array

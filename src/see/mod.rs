@@ -187,19 +187,19 @@ fn verify_program(
                                 Type::Void => panic_with_diagnostics("Can't pass an array of type void as argument to main()", &sym_memory),
                             };
                             let arr = sym_memory.init_array(
-                                sym_ty,
+                                sym_ty.clone(),
                                 size
                             );
                             let r = sym_memory.heap_insert(None, arr);
                             sym_memory
-                                .stack_insert(id, SymExpression::Reference(parameter.0.clone(), r));
+                                .stack_insert(id, SymExpression::Reference(r));
                         }
-                        (Type::Class(ty), id) => {
-                            let class = prog.get_class(ty);
+                        (Type::Class(class_name), id) => {
                             let r = sym_memory
-                                .heap_insert(None, ReferenceValue::LazyObject(class.clone()));
+                                .heap_insert(None, ReferenceValue::LazyObject(class_name.clone()));
+                            todo!("init lazy object here already? or use this as template for both array and normal lazy object access?");
                             sym_memory
-                                .stack_insert(id, SymExpression::Reference(parameter.0.clone(), r));
+                                .stack_insert(id, SymExpression::Reference(r));
                         }
                         (ty, id) => panic_with_diagnostics(
                             &format!("Can't call main with parameter {} of type {:?}", id, ty),
@@ -211,18 +211,7 @@ fn verify_program(
 
             Node::Statement(stmt) => {
                 match stmt {
-                    Statement::Declaration((ty, id)) => match ty {
-                        Type::Int => {
-                            sym_memory.stack_insert(&id, SymExpression::Uninitialized);
-                        }
-                        Type::Bool => {
-                            sym_memory.stack_insert(&id, SymExpression::Uninitialized);
-                        }
-                        ty => {
-                            let r = Uuid::new_v4();
-                            sym_memory.stack_insert(&id, SymExpression::Reference(ty.clone(), r))
-                        }
-                    },
+                    Statement::Declaration((ty, id)) => sym_memory.stack_insert(&id, SymExpression::Uninitialized),
                     Statement::Assume(assumption) => {
                         if !assume(
                             &mut sym_memory,
@@ -283,7 +272,7 @@ fn verify_program(
                     }
                     Action::DeclareThis { class, obj } => match obj {
                         Lhs::Identifier(id) => match sym_memory.stack_get(id) {
-                            Some(SymExpression::Reference(Type::Class(lhs_class), r)) if class == &lhs_class => sym_memory.stack_insert(this_id, SymExpression::Reference(Type::Class(lhs_class), r)),
+                            Some(SymExpression::Reference(r)) => sym_memory.stack_insert(this_id, SymExpression::Reference(r)),
                         
                             Some(_) => panic_with_diagnostics(
                                 &format!("{} is not of type {}", id, class),
@@ -300,19 +289,19 @@ fn verify_program(
                         Lhs::AccessArray(_, _) => todo!(),
                     },
                     Action::InitObj {
-                        from: class,
+                        from_class,
                         to: lhs,
                     } => {
                         // get reference r, init object, and insert into heap under reference
                         match lhs {
                             Lhs::Identifier(id) => {
                                 match sym_memory.stack_get( id) {
-                                    Some(SymExpression::Reference(_, r)) => {
+                                    Some(SymExpression::Reference(r)) => {
                                         // make an empty object
-                                        let obj = sym_memory.init_object(r, class.clone());
+                                        let obj = sym_memory.init_object(r, from_class.clone());
                                         // insert into heap
                                         sym_memory.heap_insert(Some(r), obj);},
-                                    _ => panic_with_diagnostics(&format!("Can't initialize '{} {}' because no reference is declared on the stack", class.0, id), &sym_memory),
+                                    _ => panic_with_diagnostics(&format!("Can't initialize '{} {}' because no reference is declared on the stack", from_class, id), &sym_memory),
                                 };
                             }
                             Lhs::AccessField(_, _) => todo!(),

@@ -35,7 +35,7 @@ pub enum Action {
     },
     /// Initialise object of class on heap and make lhs a reference to object
     InitObj {
-        from: Class,
+        from_class: Identifier,
         to: Lhs,
     },
     /// lifts value of retval 1 scope higher
