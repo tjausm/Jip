@@ -291,10 +291,19 @@ fn verify_program(
                                 &sym_memory,
                             ),
                         },
-                        Lhs::AccessField(_, _) => {
-                            todo!("assigning objects to accesfields not implemented")
+                        Lhs::AccessField(obj, field) => {
+                            match sym_memory.heap_access_object(obj, field, None) {
+                                SymExpression::Reference(r) => sym_memory.stack_insert(this_id, SymExpression::Reference(r)),  
+                                _ => panic_with_diagnostics(&format!("Can't assign '{} this' because there is no reference at {}.{}", class, obj, field), &sym_memory),
+                            };
                         }
-                        Lhs::AccessArray(_, _) => todo!(),
+                        Lhs::AccessArray(arr_name, index) => {
+                            let expr = sym_memory.heap_access_array(&pc, &arr_sizes, &mut solver, &mut diagnostics, arr_name, index.clone(), None)?;
+                                match expr {
+                                    SymExpression::Reference(r) => sym_memory.stack_insert(this_id, SymExpression::Reference(r)),  
+                                    _ => panic_with_diagnostics(&format!("Can't assign '{} this' because there is no reference at {}[{:?}]", class, arr_name, index), &sym_memory),
+                                };
+                        },
                     },
                     Action::InitObj {
                         from_class,
@@ -312,8 +321,27 @@ fn verify_program(
                                     _ => panic_with_diagnostics(&format!("Can't initialize '{} {}' because it has not been declared yet", from_class, id), &sym_memory),
                                 };
                             }
-                            Lhs::AccessField(_, _) => todo!(),
-                            Lhs::AccessArray(_, _) => todo!(),
+                            Lhs::AccessField(obj, field) => {
+                                match sym_memory.heap_access_object(obj, field, None) {
+                                    SymExpression::Reference(r) => {
+                                        // make an empty object and insert into heap
+                                        let obj = sym_memory.init_object(r, from_class.clone());
+                                        sym_memory.heap_insert(Some(r), obj);
+                                    },  
+                                    _ => panic_with_diagnostics(&format!("Can't initialize '{}' because there is no reference at {}.{}", from_class, obj, field), &sym_memory),
+                                };
+                            },
+                            Lhs::AccessArray(arr_name, index) => {
+                                let expr = sym_memory.heap_access_array(&pc, &arr_sizes, &mut solver, &mut diagnostics, arr_name, index.clone(), None)?;
+                                match expr {
+                                    SymExpression::Reference(r) => {
+                                        // make an empty object and insert into heap
+                                        let obj = sym_memory.init_object(r, from_class.clone());
+                                        sym_memory.heap_insert(Some(r), obj);
+                                    },  
+                                    _ => panic_with_diagnostics(&format!("Can't initialize '{}' because there is no reference at {}[{:?}]", from_class, arr_name, index), &sym_memory),
+                                };
+                            },
                         };
                     }
                     // lift retval 1 scope up

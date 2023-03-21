@@ -266,16 +266,29 @@ impl<'a> SymMemory {
         _ => panic_with_diagnostics(&format!("{} is not a reference", arr_name), &self),
     }
     }
+
+    // inits an object with al it's fields uninitialised
     pub fn init_object(&mut self, r: Reference, class : Identifier) -> ReferenceValue{
-        self.internal_init_object(r, class, false)
+        let mut fields = FxHashMap::default();
+
+        let members = self.prog.get_class(&class).1.clone();
+        // map all fields to symbolic values
+        for member in members {
+            match member {
+                Member::Field((_, field)) => {fields.insert(
+                            field.clone(),
+                            SymExpression::Uninitialized,
+                        );},
+                        _ => ()
+                    }
+                    
+        }
+        ReferenceValue::Object((class, fields))
     }
 
+    // inits 1 objects with its concrete fields as free variables and its reference fields as lazy objects
     pub fn init_lazy_object(&mut self, r: Reference, class : Identifier) -> ReferenceValue{
-        self.internal_init_object(r, class, true)
-    }
-
-    /// given a reference and the class, initializes all fields lazily and returns a ReferenceValue
-    fn internal_init_object(&mut self, r: Reference, class : Identifier, lazy: bool) -> ReferenceValue {
+        let r = Uuid::new_v4();
         let mut fields = FxHashMap::default();
 
         let members = self.prog.get_class(&class).1.clone();
@@ -283,7 +296,7 @@ impl<'a> SymMemory {
         for member in members {
             match member {
                 Member::Field((ty, field)) => match ty {
-                    Type::Int => {
+                    (Type::Int) => {
                         let field_name = format!("|{}.{}|", &r.to_string()[0..4], field);
 
                         fields.insert(
@@ -301,10 +314,10 @@ impl<'a> SymMemory {
                     }
                     Type::Class(class) => {
                         // either make lazy object or uninitialized
-                        let obj = if (lazy) {SymExpression::Reference(self.heap_insert(
+                        let obj = SymExpression::Reference(self.heap_insert(
                             None,
                             ReferenceValue::LazyObject(class.clone()),
-                        ))} else {SymExpression::Uninitialized};
+                        ));
                         fields.insert(field.clone(), obj);
                     }
                     Type::Void => panic_with_diagnostics(
@@ -318,6 +331,8 @@ impl<'a> SymMemory {
         }
         ReferenceValue::Object((class, fields))
     }
+
+
 
     //todo: how to initialize correctly
     pub fn init_array(&mut self, ty: SymType, size_expr: SymExpression) -> ReferenceValue {
