@@ -190,7 +190,7 @@ impl<'a> SymMemory {
 
         //get ArrSize if it's inferred
         let size = match self.stack_get(arr_name) {
-            Some(SymExpression::Reference(Type::ArrayType(_), r)) => arr_sizes.get(&r),
+            Some(SymExpression::Reference(Type::Array(_), r)) => arr_sizes.get(&r),
             _ => panic_with_diagnostics(&format!("Cannot access array {}", arr_name), &self)
 
         };
@@ -246,9 +246,9 @@ impl<'a> SymMemory {
                     let fv = match (ty, is_lazy) {
                         (Type::Int, _) => SymExpression::FreeVariable(SymType::Int, fv_id),
                         (Type::Bool, _) => SymExpression::FreeVariable(SymType::Bool, fv_id),
-                        (Type::ClassType(_), false) => todo!(),
-                        (Type::ClassType(_), true) => todo!(),
-                        (Type::ArrayType(_), _) => todo!("2+ dimensional arrays are not yet implemented"),
+                        (Type::Class(_), false) => todo!(),
+                        (Type::Class(_), true) => todo!(),
+                        (Type::Array(_), _) => todo!("2+ dimensional arrays are not yet implemented"),
                         _ => todo!(),
                     };
                     arr.insert(simple_index, fv.clone());
@@ -293,9 +293,9 @@ impl<'a> SymMemory {
                             SymExpression::FreeVariable(SymType::Bool, field_name),
                         );
                     }
-                    Type::ClassType(class) => {
+                    Type::Class(class) => {
                         // insert uninitialized object to heap
-                        let ty = Type::ClassType(class.clone());
+                        let ty = Type::Class(class.clone());
                         let r = self.heap_insert(
                             None,
                             ReferenceValue::LazyObject((class.clone(), members.clone())),
@@ -306,7 +306,7 @@ impl<'a> SymMemory {
                         &format!("Type of {}.{} can't be void", class, field),
                         &self,
                     ),
-                    Type::ArrayType(_) => todo!(),
+                    Type::Array(_) => todo!(),
                 },
                 _ => (),
             }

@@ -133,7 +133,7 @@ impl SymExpression {
             },
             Expression::SizeOf(arr_name) => {
                 let r = match sym_memory.stack_get(&arr_name) {
-                    Some(SymExpression::Reference(Type::ArrayType(_), r)) => r,
+                    Some(SymExpression::Reference(Type::Array(_), r)) => r,
                     _ => panic_with_diagnostics(
                         &format!(
                             "identifier {} in expression #{:?} does not refer to an array",

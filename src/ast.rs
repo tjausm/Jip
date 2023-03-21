@@ -133,8 +133,8 @@ pub enum Type {
     Void,
     Int,
     Bool,
-    ClassType(Identifier),
-    ArrayType(Box<Type>),
+    Class(Identifier),
+    Array(Box<Type>),
 }
 
 pub type Assignment = (Lhs, Rhs);
@@ -297,8 +297,8 @@ impl fmt::Debug for Type {
             Type::Void => write!(f, "void"),
             Type::Bool => write!(f, "bool"),
             Type::Int => write!(f, "int"),
-            Type::ClassType(name) => write!(f, "{}", name),
-            Type::ArrayType(ty) => write!(f, "{:?}[]", ty),
+            Type::Class(name) => write!(f, "{}", name),
+            Type::Array(ty) => write!(f, "{:?}[]", ty),
         }
     }
 }

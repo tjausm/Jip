@@ -177,7 +177,7 @@ fn verify_program(
                     match parameter {
                         (Type::Int, id) => sym_memory.stack_insert(id, SymExpression::FreeVariable(SymType::Int, id.clone())),
                         (Type::Bool, id) =>sym_memory.stack_insert(id, SymExpression::FreeVariable(SymType::Bool, id.clone())),
-                        (Type::ArrayType(ty), id) => {
+                        (Type::Array(ty), id) => {
                             let size = SymExpression::FreeVariable(SymType::Int, format!("|#{}|", id));
                             let arr = sym_memory.init_array(
                                 *ty.clone(),
@@ -188,7 +188,7 @@ fn verify_program(
                             sym_memory
                                 .stack_insert(id, SymExpression::Reference(parameter.0.clone(), r));
                         }
-                        (Type::ClassType(ty), id) => {
+                        (Type::Class(ty), id) => {
                             let class = prog.get_class(ty);
                             let r = sym_memory
                                 .heap_insert(None, ReferenceValue::LazyObject(class.clone()));
@@ -277,7 +277,7 @@ fn verify_program(
                     }
                     Action::DeclareThis { class, obj } => match obj {
                         Lhs::Identifier(id) => match sym_memory.stack_get(id) {
-                            Some(SymExpression::Reference(Type::ClassType(lhs_class), r)) if class == &lhs_class => sym_memory.stack_insert(this_id, SymExpression::Reference(Type::ClassType(lhs_class), r)),
+                            Some(SymExpression::Reference(Type::Class(lhs_class), r)) if class == &lhs_class => sym_memory.stack_insert(this_id, SymExpression::Reference(Type::Class(lhs_class), r)),
                         
                             Some(_) => panic_with_diagnostics(
                                 &format!("{} is not of type {}", id, class),
