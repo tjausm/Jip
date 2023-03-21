@@ -59,15 +59,15 @@ Primitivetype : Type = {
 }
 
 Referencetype : Type = {
-    Class,
-    Array
+    ClassType,
+    ArrayType
 }
 
-Class : Type = {
+ClassType : Type = {
     <Identifier> => Type::Class(<>),
 }
 
-Array : Type = {
+ArrayType : Type = {
     <Nonvoidtype> "[]" => Type::Array(Box::new(<>))
 }
 
