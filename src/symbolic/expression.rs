@@ -8,7 +8,7 @@ use std::{
 };
 
 
-use super::ref_values::{ArrSize, ArrSizes, Array, Reference};
+use super::ref_values::{ArrSize, ArrSizes, Array, Reference, SymRefType};
 use crate::{
     ast::*,
     shared::{panic_with_diagnostics},
@@ -86,7 +86,7 @@ impl PathConstraints {
 pub enum SymType {
     Int,
     Bool,
-    Ref(Type),
+    Ref(SymRefType),
 }
 
 #[derive(Clone)]
@@ -486,18 +486,14 @@ impl SymExpression {
 /// return c && e
 /// ```
 fn destruct_forall<'a>(
-    (ty, arr, size, _): &Array,
+    (sym_ty, arr, size): &Array,
     index: &Identifier,
     value: &Identifier,
     inner_expr: &Expression,
     sym_memory: &SymMemory,
 ) -> SymExpression {
     let index_id = SymExpression::FreeVariable(SymType::Int, index.clone());
-    let sym_ty = match ty {
-        Type::Int => SymType::Int,
-        Type::Bool => SymType::Bool,
-        _ => SymType::Ref(ty.clone()),
-    };
+
     // foreach (i, v) pair in arr:
     // - C = for each[i |-> index, v |-> value]expr && C
     // - O = index != i && O
@@ -533,7 +529,7 @@ fn destruct_forall<'a>(
         &index,
         SymExpression::FreeVariable(SymType::Int, index.clone()),
     );
-    extended_memory.stack_insert(&value, SymExpression::FreeVariable(sym_ty, value.clone()));
+    extended_memory.stack_insert(&value, SymExpression::FreeVariable(sym_ty.clone(), value.clone()));
     let inner_expr = SymExpression::new(&extended_memory, inner_expr.clone());
 
     let e = SymExpression::Implies(
@@ -697,7 +693,7 @@ mod tests {
         let expr = parser::VerificationExpressionParser::new()
             .parse(i)
             .unwrap();
-        SymExpression::new(&SymMemory::default(), expr)
+        SymExpression::new(&SymMemory::new(Program(vec![])), expr)
     }
 
     #[test]

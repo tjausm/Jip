@@ -18,7 +18,7 @@ use crate::shared::{panic_with_diagnostics, Diagnostics, Error};
 use crate::smt_solver::Solver;
 use crate::symbolic::memory::SymMemory;
 use crate::symbolic::expression::{PathConstraints, SymExpression, SymType};
-use crate::symbolic::ref_values::{ ReferenceValue, ArrSizes,};
+use crate::symbolic::ref_values::{ ReferenceValue, ArrSizes, SymRefType,};
 
 use colored::Colorize;
 use petgraph::graph::NodeIndex;
@@ -179,10 +179,16 @@ fn verify_program(
                         (Type::Bool, id) =>sym_memory.stack_insert(id, SymExpression::FreeVariable(SymType::Bool, id.clone())),
                         (Type::Array(ty), id) => {
                             let size = SymExpression::FreeVariable(SymType::Int, format!("|#{}|", id));
+                            let sym_ty = match &**ty{
+                                Type::Int => SymType::Int,
+                                Type::Bool => SymType::Bool,
+                                Type::Class(id) => SymType::Ref(SymRefType::LazyObject(id.clone())),
+                                Type::Array(_) => todo!("2+ dimensional arrays are not yet supported"),
+                                Type::Void => panic_with_diagnostics("Can't pass an array of type void as argument to main()", &sym_memory),
+                            };
                             let arr = sym_memory.init_array(
-                                *ty.clone(),
-                                size,
-                                true
+                                sym_ty,
+                                size
                             );
                             let r = sym_memory.heap_insert(None, arr);
                             sym_memory

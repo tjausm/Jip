@@ -2,9 +2,9 @@ use crate::ast::*;
 use crate::shared::{panic_with_diagnostics, Diagnostics};
 use crate::shared::{Config, Error};
 use crate::smt_solver::Solver;
-use crate::symbolic::expression::{PathConstraints, SymExpression};
+use crate::symbolic::expression::{PathConstraints, SymExpression, SymType};
 use crate::symbolic::memory::SymMemory;
-use crate::symbolic::ref_values::ArrSizes;
+use crate::symbolic::ref_values::{ArrSizes, SymRefType};
 
 /// returns the symbolic expression rhs refers to
 pub fn parse_rhs<'a, 'b>(
@@ -22,8 +22,15 @@ pub fn parse_rhs<'a, 'b>(
 
         // generate reference, build arrayname from said reference, insert array into heap and return reference
         Rhs::NewArray(ty, len) => {
+            let sym_ty = match ty{
+                Type::Int => SymType::Int,
+                Type::Bool => SymType::Bool,
+                Type::Class(id) => SymType::Ref(SymRefType::Object(id.clone())),
+                Type::Array(_) => todo!("2+ dimensional arrays are not yet supported"),
+                Type::Void => panic_with_diagnostics("Can't initialize an an array of type void", &sym_memory),
+            };
             let size_expr = SymExpression::new(&sym_memory, len.clone());
-            let arr = sym_memory.init_array(ty.clone(), size_expr, false);
+            let arr = sym_memory.init_array(sym_ty, size_expr);
             let r = sym_memory.heap_insert(None, arr);
             Ok(SymExpression::Reference(ty.clone(), r))
         }

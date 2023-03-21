@@ -1,6 +1,6 @@
 //! Symbolic model representing the values on the heap while symbolically executing a program
 //!
-use super::expression::{SymExpression};
+use super::expression::{SymExpression, SymType};
 use crate::{ast::*, shared::panic_with_diagnostics};
 use core::fmt;
 use rustc_hash::FxHashMap;
@@ -11,6 +11,12 @@ pub type Reference = Uuid;
 /// Consists of `identifier` (= classname) and a hashmap describing it's fields
 pub type Object = (Identifier, FxHashMap<Identifier, SymExpression>);
 
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub enum SymRefType {
+    Object(Identifier),
+    LazyObject(Identifier)
+}
+
 #[derive(Clone)]
 pub enum ReferenceValue {
     Object(Object),
@@ -18,10 +24,8 @@ pub enum ReferenceValue {
     LazyObject(Class),
 }
 
-pub type Lazy = bool;
-
 /// Consists of type, a mapping from expression to symbolic expression, expression representing size and flag to indicate that we should lazily initialize objects from this array
-pub type Array = (Type, FxHashMap<SymExpression, SymExpression>, SymExpression, Lazy);
+pub type Array = (SymType, FxHashMap<SymExpression, SymExpression>, SymExpression);
 
 #[derive(Clone, Copy)]
 pub enum Boundary {
