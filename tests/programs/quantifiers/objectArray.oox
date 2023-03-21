@@ -6,7 +6,7 @@ class Main {
     {
         int j := 0;
         while(j < #a1){
-            a1[1] := a2[j];
+            a1[j] := a2[j];
             j := j + 1;
         }
         assert

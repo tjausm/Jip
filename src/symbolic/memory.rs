@@ -5,7 +5,9 @@ use std::fmt;
 use uuid::Uuid;
 
 use super::expression::{PathConstraints, SymExpression, SymType};
-use super::ref_values::{Array, Boundary, Reference, ReferenceValue, ArrSize, ArrSizes, SymRefType};
+use super::ref_values::{
+    ArrSize, ArrSizes, Array, Boundary, Reference, ReferenceValue, SymRefType,
+};
 use crate::ast::*;
 use crate::shared::{panic_with_diagnostics, Config, Diagnostics, Error, Scope};
 use crate::smt_solver::Solver;
@@ -172,7 +174,6 @@ impl<'a> SymMemory {
         index: Expression,
         var: Option<SymExpression>,
     ) -> Result<SymExpression, Error> {
-
         //get mutable HashMap representing array
         let (_, _, size_expr) = match self.stack_get(&arr_name){
             Some(SymExpression::Reference(r)) => match self.heap.get(&r){
@@ -182,15 +183,13 @@ impl<'a> SymMemory {
             _ => panic_with_diagnostics(&format!("{} is not a reference", arr_name), &self),
         };
 
-
         // substitute expr and simplify
         let sym_index = SymExpression::new(self, index);
 
         //get ArrSize if it's inferred
         let size = match self.stack_get(arr_name) {
             Some(SymExpression::Reference(r)) => arr_sizes.get(&r),
-            _ => panic_with_diagnostics(&format!("Cannot access array {}", arr_name), &self)
-
+            _ => panic_with_diagnostics(&format!("Cannot access array {}", arr_name), &self),
         };
 
         // always simplify index, otherwise unsimplified SE could return different results than simplified SE
@@ -208,15 +207,12 @@ impl<'a> SymMemory {
             {
                 ()
             }
-            (SymExpression::Literal(Literal::Integer(lit_i)), _, Some(ArrSize::Range(Boundary::Known(min), _)))
-                if lit_i < min =>
-            {
-                ()
-            }
-            (_, _, Some(ArrSize::Range(Boundary::None, Boundary::None))) =>
-            {
-                ()
-            }
+            (
+                SymExpression::Literal(Literal::Integer(lit_i)),
+                _,
+                Some(ArrSize::Range(Boundary::Known(min), _)),
+            ) if lit_i < min => (),
+            (_, _, Some(ArrSize::Range(Boundary::None, Boundary::None))) => (),
             _ => {
                 diagnostics.z3_invocations += 1;
                 solver.verify_array_access(pc, &size_expr, &simple_index)?
@@ -232,27 +228,50 @@ impl<'a> SymMemory {
             _ => panic_with_diagnostics(&format!("{} is not a reference", arr_name), &self),
         };
 
-        match var {
-            Some(var) => {
-                arr.insert(simple_index, var.clone());
-                Ok(var)
-            }
-            None => match arr.get(&simple_index) {
-                Some(v) => Ok(v.clone()),
-                None => {
-                    let fv_id = format!("|{}[{:?}]|", arr_name.clone(), simple_index);
-                    let fv = match ty {
-                        SymType::Ref(ref_type) => match ref_type {
-                            SymRefType::Object(_) => SymExpression::Uninitialized,
-                            SymRefType::LazyObject(_) => todo!("Initialize object"),
-                            SymRefType::Array(_) => todo!("2+ dimensional arrays are not supported"),
-                        },
-                        _ => SymExpression::FreeVariable(ty.clone(), fv_id)
-                    };
-                    arr.insert(simple_index, fv.clone());
-                    Ok(fv)
+        if let Some(var) = var {
+            arr.insert(simple_index, var.clone());
+            return Ok(var);
+        }
+        if let Some(v) = arr.get(&simple_index) {
+            return Ok(v.clone());
+        }
+
+        match ty {
+            SymType::Ref(ref_type) => match ref_type {
+                SymRefType::Object(class) => {
+
+                    // generate and insert reference
+                    let r = Uuid::new_v4();
+                    let sym_r = SymExpression::Reference(r);
+                    arr.insert(simple_index, sym_r.clone());
+
+                    // instantiate object and insert under reference afterwards (to please borrowchecker)
+                    let class = class.clone();
+                    let obj = self.init_object(r, class);
+                    self.heap_insert(Some(r), obj);
+
+                    Ok(sym_r)
+                },
+                SymRefType::LazyObject(class) => {
+                    // generate and insert reference
+                    let r = Uuid::new_v4();
+                    let sym_r = SymExpression::Reference(r);
+                    arr.insert(simple_index, sym_r.clone());
+
+                    // instantiate lazy object and insert under reference afterwards (to please borrowchecker)
+                    let class = class.clone();
+                    let obj = self.init_lazy_object(r, class.clone());
+                    self.heap_insert(Some(r), obj);
+
+                    Ok(sym_r)
                 }
+                SymRefType::Array(_) => todo!("2+ dimensional arrays are not supported"),
             },
+            _ => {
+                let fv_id = format!("|{}[{:?}]|", arr_name.clone(), simple_index);
+                let fv = SymExpression::FreeVariable(ty.clone(), fv_id);
+                arr.insert(simple_index, fv.clone());
+                Ok(fv)},
         }
     }
 
@@ -268,26 +287,24 @@ impl<'a> SymMemory {
     }
 
     // inits an object with al it's fields uninitialised
-    pub fn init_object(&mut self, r: Reference, class : Identifier) -> ReferenceValue{
+    pub fn init_object(&mut self, r: Reference, class: Identifier) -> ReferenceValue {
         let mut fields = FxHashMap::default();
 
         let members = self.prog.get_class(&class).1.clone();
         // map all fields to symbolic values
         for member in members {
             match member {
-                Member::Field((_, field)) => {fields.insert(
-                            field.clone(),
-                            SymExpression::Uninitialized,
-                        );},
-                        _ => ()
-                    }
-                    
+                Member::Field((_, field)) => {
+                    fields.insert(field.clone(), SymExpression::Uninitialized);
+                }
+                _ => (),
+            }
         }
         ReferenceValue::Object((class, fields))
     }
 
     // inits 1 objects with its concrete fields as free variables and its reference fields as lazy objects
-    pub fn init_lazy_object(&mut self, r: Reference, class : Identifier) -> ReferenceValue{
+    pub fn init_lazy_object(&mut self, r: Reference, class: Identifier) -> ReferenceValue {
         let r = Uuid::new_v4();
         let mut fields = FxHashMap::default();
 
@@ -314,10 +331,9 @@ impl<'a> SymMemory {
                     }
                     Type::Class(class) => {
                         // either make lazy object or uninitialized
-                        let obj = SymExpression::Reference(self.heap_insert(
-                            None,
-                            ReferenceValue::LazyObject(class.clone()),
-                        ));
+                        let obj = SymExpression::Reference(
+                            self.heap_insert(None, ReferenceValue::LazyObject(class.clone())),
+                        );
                         fields.insert(field.clone(), obj);
                     }
                     Type::Void => panic_with_diagnostics(
@@ -331,8 +347,6 @@ impl<'a> SymMemory {
         }
         ReferenceValue::Object((class, fields))
     }
-
-
 
     //todo: how to initialize correctly
     pub fn init_array(&mut self, ty: SymType, size_expr: SymExpression) -> ReferenceValue {
