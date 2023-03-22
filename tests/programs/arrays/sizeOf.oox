@@ -1,0 +1,8 @@
+// this program deliberately throws off the size inference algorithm
+class Main {
+    static void main(int[] a){
+        assume #a > 5;
+        assume #a <  6;
+        int x := a[7];
+    }
+}
