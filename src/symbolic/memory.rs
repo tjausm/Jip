@@ -174,7 +174,6 @@ impl<'a> SymMemory {
         index: Expression,
         var: Option<SymExpression>,
     ) -> Result<SymExpression, Error> {
-        let infer_size = true;
 
         //get mutable HashMap representing array
         let (r, size_expr) = match self.stack_get(&arr_name){
