@@ -187,10 +187,10 @@ pub fn assert(
         SymExpression::Literal(Literal::Boolean(true)) => return Ok(()),
         _ => (),
     }
-
     // if we have not solved by now, invoke z3
     diagnostics.z3_invocations = diagnostics.z3_invocations + 1;
-    solver.verify_constraints(&pc)
+
+    solver.verify_constraints(constraints)
 }
 
 /// handles the assume in the SEE (used in `assume`, `require` and `ensure` statements)

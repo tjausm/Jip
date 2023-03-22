@@ -105,17 +105,14 @@ impl Solver {
         }
     }
 
-    /// Combine the constraints in reversed order and check correctness using z3
+    /// given a set of pathconstraints combined over true, method returns a counterexample to violate them if there is one
     /// `solve_constraints(ctx, vec![assume x, assert y, assume z] = x -> (y && z)`
     pub fn verify_constraints<'a>(
         &mut self,
-        pc: &PathConstraints,
+        constraints: SymExpression
     ) -> Result<(), Error> {
-        //negate assumption and try to find counter-example
-        let constraints = pc.combine_over_true();
 
 
-        //println!("#a = {:?}", Range::infer(SymExpression::FreeVariable(SymType::Int, "#a".to_string()), &"a".to_string(), pc));
 
         match self.verify_expr(&SymExpression::Not(Box::new(constraints))) {
             (SmtResult::Unsat) => return Ok(()),
@@ -155,8 +152,7 @@ impl Solver {
                 (SymType::Ref(_), id) => self.s.declare_const(id, "Int").unwrap(),
             }
         }
-        println!("{:?}", expr);
-        println!("{}", expr_str);
+
         self.s.assert(expr_str.clone()).unwrap();
         let satisfiable = match self.s.check_sat() {
             Ok(b) => b,
