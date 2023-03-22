@@ -314,14 +314,23 @@ impl SymExpression {
                 (
                     SymExpression::SizeOf(_, _, _, Some(size)),
                     SymExpression::Literal(Literal::Integer(n)),
-                ) if size.max().unwrap_or(i64::MAX) < n => {
-                    SymExpression::Literal(Literal::Boolean(true))
+                )  if size.lt(&ArrSize::Point(n)).is_some() => {
+                    let b = size.lt(&ArrSize::Point(n)).unwrap();
+                    SymExpression::Literal(Literal::Boolean(b))
                 }
                 (
                     SymExpression::Literal(Literal::Integer(n)),
                     SymExpression::SizeOf(_, _, _, Some(size)),
-                ) if n < size.min().unwrap_or(i64::MIN) => {
-                    SymExpression::Literal(Literal::Boolean(true))
+                ) if ArrSize::Point(n).lt(&size).is_some() => {
+                    let b = ArrSize::Point(n).lt(&size).unwrap();
+                    SymExpression::Literal(Literal::Boolean(b))
+                }
+                (
+                    SymExpression::SizeOf(_, _, _, Some(l_size)),
+                    SymExpression::SizeOf(_, _, _, Some(r_size)),
+                ) if l_size.lt(&r_size).is_some() => {
+                    let b = l_size.lt(&r_size).unwrap();
+                    SymExpression::Literal(Literal::Boolean(b))
                 }
                 (l_simple, r_simple) => SymExpression::LT(Box::new(l_simple), Box::new(r_simple)),
             },
@@ -334,14 +343,23 @@ impl SymExpression {
                 (
                     SymExpression::SizeOf(_, _, _, Some(size)),
                     SymExpression::Literal(Literal::Integer(n)),
-                ) if size.max().unwrap_or(i64::MIN) > n => {
-                    SymExpression::Literal(Literal::Boolean(true))
+                )  if size.gt(&ArrSize::Point(n)).is_some() => {
+                    let b = size.gt(&ArrSize::Point(n)).unwrap();
+                    SymExpression::Literal(Literal::Boolean(b))
                 }
                 (
                     SymExpression::Literal(Literal::Integer(n)),
                     SymExpression::SizeOf(_, _, _, Some(size)),
-                ) if n > size.min().unwrap_or(i64::MAX) => {
-                    SymExpression::Literal(Literal::Boolean(true))
+                ) if ArrSize::Point(n).gt(&size).is_some() => {
+                    let b = ArrSize::Point(n).gt(&size).unwrap();
+                    SymExpression::Literal(Literal::Boolean(b))
+                }
+                (
+                    SymExpression::SizeOf(_, _, _, Some(l_size)),
+                    SymExpression::SizeOf(_, _, _, Some(r_size)),
+                ) if l_size.gt(&r_size).is_some() => {
+                    let b = l_size.gt(&r_size).unwrap();
+                    SymExpression::Literal(Literal::Boolean(b))
                 }
                 (l_simple, r_simple) => SymExpression::GT(Box::new(l_simple), Box::new(r_simple)),
             },
@@ -354,14 +372,23 @@ impl SymExpression {
                     (
                         SymExpression::SizeOf(_, _, _, Some(size)),
                         SymExpression::Literal(Literal::Integer(n)),
-                    ) if size.max().unwrap_or(i64::MIN) >= n => {
-                        SymExpression::Literal(Literal::Boolean(true))
+                    )  if size.ge(&ArrSize::Point(n)).is_some() => {
+                        let b = size.ge(&ArrSize::Point(n)).unwrap();
+                        SymExpression::Literal(Literal::Boolean(b))
                     }
                     (
                         SymExpression::Literal(Literal::Integer(n)),
                         SymExpression::SizeOf(_, _, _, Some(size)),
-                    ) if n >= size.min().unwrap_or(i64::MAX) => {
-                        SymExpression::Literal(Literal::Boolean(true))
+                    ) if ArrSize::Point(n).ge(&size).is_some() => {
+                        let b = ArrSize::Point(n).ge(&size).unwrap();
+                        SymExpression::Literal(Literal::Boolean(b))
+                    }
+                    (
+                        SymExpression::SizeOf(_, _, _, Some(l_size)),
+                        SymExpression::SizeOf(_, _, _, Some(r_size)),
+                    ) if l_size.ge(&r_size).is_some() => {
+                        let b = l_size.ge(&r_size).unwrap();
+                        SymExpression::Literal(Literal::Boolean(b))
                     }
                     (l_simple, r_simple) => {
                         SymExpression::GEQ(Box::new(l_simple), Box::new(r_simple))
@@ -378,14 +405,23 @@ impl SymExpression {
                     (
                         SymExpression::SizeOf(_, _, _, Some(size)),
                         SymExpression::Literal(Literal::Integer(n)),
-                    ) if size.max().unwrap_or(i64::MAX) <= n => {
-                        SymExpression::Literal(Literal::Boolean(true))
+                    )  if size.le(&ArrSize::Point(n)).is_some() => {
+                        let b = size.le(&ArrSize::Point(n)).unwrap();
+                        SymExpression::Literal(Literal::Boolean(size.le(&ArrSize::Point(n)).unwrap()))
                     }
                     (
                         SymExpression::Literal(Literal::Integer(n)),
                         SymExpression::SizeOf(_, _, _, Some(size)),
-                    ) if n <= size.min().unwrap_or(i64::MIN) => {
-                        SymExpression::Literal(Literal::Boolean(true))
+                    ) if ArrSize::Point(n).le(&size).is_some() => {
+                        let b = ArrSize::Point(n).le(&size).unwrap();
+                        SymExpression::Literal(Literal::Boolean(b))
+                    }
+                    (
+                        SymExpression::SizeOf(_, _, _, Some(l_size)),
+                        SymExpression::SizeOf(_, _, _, Some(r_size)),
+                    ) if l_size.le(&r_size).is_some() => {
+                        let b = l_size.le(&r_size).unwrap();
+                        SymExpression::Literal(Literal::Boolean(b))
                     }
                     (l_simple, r_simple) => {
                         SymExpression::LEQ(Box::new(l_simple), Box::new(r_simple))

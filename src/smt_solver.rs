@@ -5,7 +5,7 @@ use core::panic;
 use crate::ast::*;
 use crate::shared::{panic_with_diagnostics, Error, SolverType};
 use crate::symbolic::expression::{PathConstraints, SymExpression, SymType};
-use crate::symbolic::ref_values::ArrSize;
+use crate::symbolic::ref_values::{ArrSize, Boundary};
 use rsmt2::print::{ModelParser};
 use rsmt2::{self, SmtConf, SmtRes};
 use rustc_hash::FxHashSet;
@@ -155,7 +155,8 @@ impl Solver {
                 (SymType::Ref(_), id) => self.s.declare_const(id, "Int").unwrap(),
             }
         }
-
+        println!("{:?}", expr);
+        println!("{}", expr_str);
         self.s.assert(expr_str.clone()).unwrap();
         let satisfiable = match self.s.check_sat() {
             Ok(b) => b,
@@ -306,6 +307,7 @@ fn expr_to_str<'a>(expr: &'a SymExpression) -> (String, FxHashSet<(SymType, Stri
             (format!("{}", id), fv)
         },
         SymExpression::SizeOf(_, _, _, Some(ArrSize::Point(n))) => expr_to_str(&SymExpression::Literal(Literal::Integer(*n))),
+        SymExpression::SizeOf(_, _, _, Some(ArrSize::Range(Boundary::Known(min),Boundary::Known(max)))) if min == max => expr_to_str(&SymExpression::Literal(Literal::Integer(*min))),
         SymExpression::SizeOf(_, _, size_expr, _) => expr_to_str(size_expr),
         SymExpression::Literal(Literal::Integer(n)) => (format!("{}", n), FxHashSet::default()),
         SymExpression::Literal(Literal::Boolean(b)) => (format!("{}", b), FxHashSet::default()),
