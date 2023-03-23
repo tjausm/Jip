@@ -205,14 +205,8 @@ impl<'a> SymMemory {
                 ()
             }
             _ => {
-<<<<<<< HEAD
-                diagnostics.z3_invocations += 1;
-                let size_of =
-                    SymExpression::SizeOf(arr_name.clone(), r, Box::new(size_expr.clone()), size);
-=======
                 diagnostics.z3_calls += 1;
                 let size_of =SymExpression::SizeOf(arr_name.clone(), r, Box::new(size_expr.clone()), size);
->>>>>>> master
                 solver.verify_array_access(pc, &size_of, &simple_index)?
             }
         };
