@@ -188,7 +188,7 @@ pub fn assert(
         _ => (),
     }
     // if we have not solved by now, invoke z3
-    diagnostics.z3_invocations = diagnostics.z3_invocations + 1;
+    diagnostics.z3_calls = diagnostics.z3_calls + 1;
 
     solver.verify_constraints(constraints)
 }
@@ -229,13 +229,13 @@ pub fn assume(
     };
 
     // return false if expression always evaluates to false
-    match (use_z3, constraints) {
+    match (use_z3, &constraints) {
         // if is unsatisfiable return false
         (_, SymExpression::Literal(Literal::Boolean(false))) => return false,
         // if z3 confirms it is unsatisfiable, we must return false again
         (true, _) => {
-            diagnostics.z3_invocations = diagnostics.z3_invocations + 1;
-            !solver.expression_unsatisfiable(&pc.conjunct())
+            diagnostics.z3_calls = diagnostics.z3_calls + 1;
+            !solver.expression_unsatisfiable(&constraints)
         }
         // if either not proved or z3 is turned off we just return true and go on
         (false, _) => true,
