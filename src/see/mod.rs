@@ -164,7 +164,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
     // Assume -> build & verify z3 formula, stop evaluating pad if disproven
     // assignment -> evaluate rhs and update env
     // then we enque all connected nodes, till d=0 or we reach end of cfg
-    while let Some((mut sym_memory, mut pc, mut arr_sizes, d, curr_node)) = q.pop_front() {
+    'q_states: while let Some((mut sym_memory, mut pc, mut arr_sizes, d, curr_node)) = q.pop_front() {
         if d == 0 {
             continue;
         }
@@ -273,11 +273,14 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                     _ => (),
                 }
             }
-            Node::End => diagnostics.paths_explored = diagnostics.paths_explored + 1,
+            Node::End => {
+                diagnostics.paths_explored = diagnostics.paths_explored + 1;
+                continue 'q_states;
+            },
             _ => (),
         }
 
-        'q_nodes: for edge in cfg.edges(curr_node) {
+        'q_edges: for edge in cfg.edges(curr_node) {
             // clone new stack and heap for each edge we travel to
             let mut sym_memory = sym_memory.clone();
 
@@ -391,7 +394,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                         if *sym_memory.get_scope(0) == *to_scope {
                             sym_memory.stack_pop()
                         } else {
-                            continue 'q_nodes;
+                            continue 'q_edges;
                         }
                     }
 
