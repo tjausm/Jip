@@ -3,8 +3,8 @@
 use super::expression::{SymExpression, SymType};
 use crate::{ast::*, shared::panic_with_diagnostics};
 use core::fmt;
-use std::cmp::Ordering;
 use rustc_hash::FxHashMap;
+use std::cmp::Ordering;
 use uuid::Uuid;
 
 pub type Reference = Uuid;
@@ -27,7 +27,11 @@ pub enum ReferenceValue {
 }
 
 /// Consists of type, a mapping from expression to symbolic expression, expression representing size and flag to indicate that we should lazily initialize objects from this array
-pub type Array = (SymType, FxHashMap<SymExpression, SymExpression>, SymExpression);
+pub type Array = (
+    SymType,
+    FxHashMap<SymExpression, SymExpression>,
+    SymExpression,
+);
 
 #[derive(Clone, Copy)]
 pub enum Boundary {
@@ -37,7 +41,7 @@ pub enum Boundary {
 }
 
 #[derive(Clone, Copy)]
-pub enum ArrSize{
+pub enum ArrSize {
     Range(Boundary, Boundary),
     Point(i64),
 }
@@ -111,7 +115,6 @@ impl ArrSizes {
     /// if one is unknown set boundary to unknown
     /// otherwise set boundary to None
     fn narrow(&mut self, r_ranges: &ArrSizes) {
-
         for (arr, r_range) in r_ranges.0.iter() {
             if let Some(l_range) = self.0.get(arr) {
                 self.0.insert(arr.clone(), narrow_one(l_range, &r_range));
@@ -125,10 +128,18 @@ impl ArrSizes {
                     "Something has gone very wrong here during inference",
                     &vec![l, r],
                 ),
-                (ArrSize::Point(n), _) => *l,
-                (_, ArrSize::Point(n)) => *r,
-                (ArrSize::Range(Boundary::Known(l_min), Boundary::Known(l_max)), _) if l_min == l_max => ArrSize::Point(*l_min),
-                (_, ArrSize::Range(Boundary::Known(r_min), Boundary::Known(r_max))) if r_min == r_max => ArrSize::Point(*r_min),
+                (ArrSize::Point(_), _) => *l,
+                (_, ArrSize::Point(_)) => *r,
+                (ArrSize::Range(Boundary::Known(l_min), Boundary::Known(l_max)), _)
+                    if l_min == l_max =>
+                {
+                    ArrSize::Point(*l_min)
+                }
+                (_, ArrSize::Range(Boundary::Known(r_min), Boundary::Known(r_max)))
+                    if r_min == r_max =>
+                {
+                    ArrSize::Point(*r_min)
+                }
                 (ArrSize::Range(l_min, l_max), ArrSize::Range(r_min, r_max)) => {
                     let min = match (l_min, r_min) {
                         (Boundary::Known(l), Boundary::Known(r)) => Boundary::Known(*l.max(r)),
@@ -152,7 +163,6 @@ impl ArrSizes {
         }
     }
 
-    
     pub fn update_inference(&mut self, expr: SymExpression) {
         self.narrow(&infer_new_ranges(&expr.simplify(None)));
 
@@ -209,43 +219,35 @@ impl ArrSizes {
                 // if sizeof equals some literal we set all boundarys and size to that literal
                 // else if sizeof equals some other expression we set all boundaries to unknown
                 SymExpression::EQ(l, r) => match (&**l, &**r) {
-                    (
-                        SymExpression::SizeOf(_, r1, _, _),
-                        SymExpression::SizeOf(_, r2, _, _),
-                    ) => {
+                    (SymExpression::SizeOf(_, r1, _, _), SymExpression::SizeOf(_, r2, _, _)) => {
                         let mut ar_s = FxHashMap::default();
-                        ar_s.insert(r1.clone(), ArrSize::Range(Boundary::Unknown, Boundary::Unknown));
-                        ar_s.insert(r2.clone(), ArrSize::Range(Boundary::Unknown, Boundary::Unknown));
+                        ar_s.insert(
+                            r1.clone(),
+                            ArrSize::Range(Boundary::Unknown, Boundary::Unknown),
+                        );
+                        ar_s.insert(
+                            r2.clone(),
+                            ArrSize::Range(Boundary::Unknown, Boundary::Unknown),
+                        );
                         ArrSizes(ar_s)
-                    },
-                    (
-                        SymExpression::SizeOf(_, r, size_expr, _),
-                        SymExpression::Literal(Literal::Integer(n)),
-                    ) => ArrSizes::new(
-                        r.clone(),
-                        ArrSize::Point(*n),
-                    ),
-                    (
-                        SymExpression::Literal(Literal::Integer(n)),
-                        SymExpression::SizeOf(_, r, size_expr, _),
-                    ) => ArrSizes::new(
-                        r.clone(),
-                        ArrSize::Point(*n),
-                    ),
-                    (SymExpression::SizeOf(_, r, size_expr, _), _) => {
-                        ArrSizes::new(
-                            r.clone(),
-                            ArrSize::Range(Boundary::Unknown, Boundary::Unknown),
-                        )
                     }
+                    (
+                        SymExpression::SizeOf(_, r, _, _),
+                        SymExpression::Literal(Literal::Integer(n)),
+                    ) => ArrSizes::new(r.clone(), ArrSize::Point(*n)),
+                    (
+                        SymExpression::Literal(Literal::Integer(n)),
+                        SymExpression::SizeOf(_, r, _, _),
+                    ) => ArrSizes::new(r.clone(), ArrSize::Point(*n)),
+                    (SymExpression::SizeOf(_, r, size_expr, _), _) => ArrSizes::new(
+                        r.clone(),
+                        ArrSize::Range(Boundary::Unknown, Boundary::Unknown),
+                    ),
 
-                    (_, SymExpression::SizeOf(_, r, size_expr, _)) => {
-                        ArrSizes::new(
-                            r.clone(),
-                            ArrSize::Range(Boundary::Unknown, Boundary::Unknown),
-                        )
-                    }
-                    
+                    (_, SymExpression::SizeOf(_, r, size_expr, _)) => ArrSizes::new(
+                        r.clone(),
+                        ArrSize::Range(Boundary::Unknown, Boundary::Unknown),
+                    ),
 
                     _ => ArrSizes::default(),
                 },
@@ -253,103 +255,74 @@ impl ArrSizes {
                 // if sizeof is LT or GT some literal we set min or max to that literal - 1
                 // else if sizOf is LT or GT some freevar we set min or max to unknown
                 SymExpression::LT(l, r) => match (&**l, &**r) {
-                    (
-                        SymExpression::SizeOf(_, r1, _, _),
-                        SymExpression::SizeOf(_, r2, _, _),
-                    ) => {
+                    (SymExpression::SizeOf(_, r1, _, _), SymExpression::SizeOf(_, r2, _, _)) => {
                         let mut ar_s = FxHashMap::default();
-                        ar_s.insert(r1.clone(), ArrSize::Range(Boundary::Unknown, Boundary::Unknown));
-                        ar_s.insert(r2.clone(), ArrSize::Range(Boundary::Unknown, Boundary::Unknown));
+                        ar_s.insert(
+                            r1.clone(),
+                            ArrSize::Range(Boundary::Unknown, Boundary::Unknown),
+                        );
+                        ar_s.insert(
+                            r2.clone(),
+                            ArrSize::Range(Boundary::Unknown, Boundary::Unknown),
+                        );
                         ArrSizes(ar_s)
-                    },
+                    }
                     (
                         SymExpression::SizeOf(_, r, _, _),
                         SymExpression::Literal(Literal::Integer(n)),
                     ) => ArrSizes::new(
                         r.clone(),
-                        ArrSize::Range(Boundary::None,Boundary::Known(*n - 1)),
+                        ArrSize::Range(Boundary::None, Boundary::Known(*n - 1)),
                     ),
                     (
                         SymExpression::Literal(Literal::Integer(n)),
                         SymExpression::SizeOf(_, r, _, _),
                     ) => ArrSizes::new(
                         r.clone(),
-                        ArrSize::Range( Boundary::Known(*n + 1), Boundary::None),
+                        ArrSize::Range(Boundary::Known(*n + 1), Boundary::None),
                     ),
-                    (_, SymExpression::SizeOf(_, r, _, _),) => {
-                        ArrSizes::new(
-                            r.clone(),
-                            ArrSize::Range(
-                                Boundary::Unknown,
-                                
-                                Boundary::None,
-                            ),
-                        )
+                    (_, SymExpression::SizeOf(_, r, _, _)) => {
+                        ArrSizes::new(r.clone(), ArrSize::Range(Boundary::Unknown, Boundary::None))
                     }
 
                     (SymExpression::SizeOf(_, r, _, _), _) => {
-                        ArrSizes::new(
-                            r.clone(),
-                            ArrSize::Range(
-                                Boundary::None,
-                                
-                                Boundary::Unknown,
-                            ),
-                        )
+                        ArrSizes::new(r.clone(), ArrSize::Range(Boundary::None, Boundary::Unknown))
                     }
 
                     _ => ArrSizes::default(),
                 },
                 SymExpression::GT(l, r) => match (&**l, &**r) {
-                    (
-                        SymExpression::SizeOf(_, r1, _, _),
-                        SymExpression::SizeOf(_, r2, _, _),
-                    ) => {
+                    (SymExpression::SizeOf(_, r1, _, _), SymExpression::SizeOf(_, r2, _, _)) => {
                         let mut ar_s = FxHashMap::default();
-                        ar_s.insert(r1.clone(), ArrSize::Range(Boundary::Unknown, Boundary::Unknown));
-                        ar_s.insert(r2.clone(), ArrSize::Range(Boundary::Unknown, Boundary::Unknown));
+                        ar_s.insert(
+                            r1.clone(),
+                            ArrSize::Range(Boundary::Unknown, Boundary::Unknown),
+                        );
+                        ar_s.insert(
+                            r2.clone(),
+                            ArrSize::Range(Boundary::Unknown, Boundary::Unknown),
+                        );
                         ArrSizes(ar_s)
-                    },
+                    }
                     (
                         SymExpression::SizeOf(_, r, _, _),
                         SymExpression::Literal(Literal::Integer(n)),
                     ) => ArrSizes::new(
                         r.clone(),
-                        ArrSize::Range(
-                            Boundary::Known(*n + 1),
-                            
-                            Boundary::None,
-                        ),
+                        ArrSize::Range(Boundary::Known(*n + 1), Boundary::None),
                     ),
                     (
                         SymExpression::Literal(Literal::Integer(n)),
                         SymExpression::SizeOf(_, r, _, _),
                     ) => ArrSizes::new(
                         r.clone(),
-                        ArrSize::Range(
-                            Boundary::None,
-                            
-                            Boundary::Known(*n - 1),
-                        ),
+                        ArrSize::Range(Boundary::None, Boundary::Known(*n - 1)),
                     ),
-                    (_, SymExpression::SizeOf(_, r, _, _),) => {
-                        ArrSizes::new(r.clone(), 
-                            ArrSize::Range(
-                                Boundary::None,
-                                
-                                Boundary::Unknown,
-                            
-                        ))
+                    (_, SymExpression::SizeOf(_, r, _, _)) => {
+                        ArrSizes::new(r.clone(), ArrSize::Range(Boundary::None, Boundary::Unknown))
                     }
                     (SymExpression::SizeOf(_, r, _, _), _) => {
-                        ArrSizes::new(
-                            r.clone(),
-                            ArrSize::Range(
-                                Boundary::Unknown,
-                                
-                                Boundary::None,
-                            ),
-                        )
+                        ArrSizes::new(r.clone(), ArrSize::Range(Boundary::Unknown, Boundary::None))
                     }
                     _ => ArrSizes::default(),
                 },
@@ -357,109 +330,73 @@ impl ArrSizes {
                 // if sizeof is LEQ or GEQ some literal we set min or max to that literal
                 // else if sizOf is LT or GT some freevar we set min or max to unknown
                 SymExpression::GEQ(l, r) => match (&**l, &**r) {
-                    (
-                        SymExpression::SizeOf(_, r1, _, _),
-                        SymExpression::SizeOf(_, r2, _, _),
-                    ) => {
+                    (SymExpression::SizeOf(_, r1, _, _), SymExpression::SizeOf(_, r2, _, _)) => {
                         let mut ar_s = FxHashMap::default();
-                        ar_s.insert(r1.clone(), ArrSize::Range(Boundary::Unknown, Boundary::Unknown));
-                        ar_s.insert(r2.clone(), ArrSize::Range(Boundary::Unknown, Boundary::Unknown));
+                        ar_s.insert(
+                            r1.clone(),
+                            ArrSize::Range(Boundary::Unknown, Boundary::Unknown),
+                        );
+                        ar_s.insert(
+                            r2.clone(),
+                            ArrSize::Range(Boundary::Unknown, Boundary::Unknown),
+                        );
                         ArrSizes(ar_s)
-                    },
+                    }
                     (
                         SymExpression::SizeOf(_, r, _, _),
                         SymExpression::Literal(Literal::Integer(n)),
                     ) => ArrSizes::new(
                         r.clone(),
-                        ArrSize::Range(
-                            Boundary::Known(*n),
-                            
-                            Boundary::None,
-                        ),
+                        ArrSize::Range(Boundary::Known(*n), Boundary::None),
                     ),
                     (
                         SymExpression::Literal(Literal::Integer(n)),
                         SymExpression::SizeOf(_, r, _, _),
                     ) => ArrSizes::new(
                         r.clone(),
-                        ArrSize::Range(
-                            Boundary::None,
-                            
-                            Boundary::Known(*n),
-                        ),
+                        ArrSize::Range(Boundary::None, Boundary::Known(*n)),
                     ),
-                    (_, SymExpression::SizeOf(_, r, _, _),) => {
-                        ArrSizes::new(r.clone(), 
-                            ArrSize::Range(
-                                Boundary::None,
-                                
-                                Boundary::Unknown,
-                            )
-                        )
+                    (_, SymExpression::SizeOf(_, r, _, _)) => {
+                        ArrSizes::new(r.clone(), ArrSize::Range(Boundary::None, Boundary::Unknown))
                     }
                     (SymExpression::SizeOf(_, r, _, _), _) => {
-                        ArrSizes::new(r.clone(), 
-                            ArrSize::Range(
-                                Boundary::Unknown,
-                                
-                                Boundary::None,
-                            )
-                        )
+                        ArrSizes::new(r.clone(), ArrSize::Range(Boundary::Unknown, Boundary::None))
                     }
                     _ => ArrSizes::default(),
                 },
                 SymExpression::LEQ(l, r) => match (&**l, &**r) {
-                    (
-                        SymExpression::SizeOf(_, r1, _, _),
-                        SymExpression::SizeOf(_, r2, _, _),
-                    ) => {
+                    (SymExpression::SizeOf(_, r1, _, _), SymExpression::SizeOf(_, r2, _, _)) => {
                         let mut ar_s = FxHashMap::default();
-                        ar_s.insert(r1.clone(), ArrSize::Range(Boundary::Unknown, Boundary::Unknown));
-                        ar_s.insert(r2.clone(), ArrSize::Range(Boundary::Unknown, Boundary::Unknown));
+                        ar_s.insert(
+                            r1.clone(),
+                            ArrSize::Range(Boundary::Unknown, Boundary::Unknown),
+                        );
+                        ar_s.insert(
+                            r2.clone(),
+                            ArrSize::Range(Boundary::Unknown, Boundary::Unknown),
+                        );
                         ArrSizes(ar_s)
-                    },
+                    }
                     (
                         SymExpression::SizeOf(_, r, _, _),
                         SymExpression::Literal(Literal::Integer(n)),
                     ) => ArrSizes::new(
                         r.clone(),
-                        ArrSize::Range(
-                            Boundary::None,
-                            
-                            Boundary::Known(*n),
-                        ),
+                        ArrSize::Range(Boundary::None, Boundary::Known(*n)),
                     ),
                     (
                         SymExpression::Literal(Literal::Integer(n)),
                         SymExpression::SizeOf(_, r, _, _),
                     ) => ArrSizes::new(
                         r.clone(),
-                        ArrSize::Range(
-                            Boundary::Known(*n),
-                            
-                            Boundary::None,
-                        ),
+                        ArrSize::Range(Boundary::Known(*n), Boundary::None),
                     ),
-                    (_, SymExpression::SizeOf(_, r, _, _),) => {
-                        ArrSizes::new(
-                            r.clone(),
-                            ArrSize::Range(
-                                Boundary::Unknown,
-                                
-                                Boundary::None,
-                            ),
-                        )
+                    (_, SymExpression::SizeOf(_, r, _, _)) => {
+                        ArrSizes::new(r.clone(), ArrSize::Range(Boundary::Unknown, Boundary::None))
                     }
 
                     (SymExpression::SizeOf(_, r, _, _), _) => {
-                        ArrSizes::new(
-                            r.clone(),
-                            ArrSize::Range(
-                                Boundary::None,
-                                
-                                Boundary::Unknown,
-                            ),
-                        )
+                        ArrSizes::new(r.clone(), ArrSize::Range(Boundary::None, Boundary::Unknown))
                     }
 
                     _ => ArrSizes::default(),
@@ -471,127 +408,121 @@ impl ArrSizes {
 }
 
 impl ArrSize {
-    pub fn new(size_expr: SymExpression, arr: Identifier) -> Self {
-        match size_expr.simplify(None) {
-            SymExpression::Literal(Literal::Integer(n)) => ArrSize::Range(
-                Boundary::Known(n),
-                Boundary::Known(n),
-            ),
-            expr => ArrSize::Range(
-                Boundary::None,
-                Boundary::None,
-            ),
-        }
-    }
-
-    pub fn min(&self) -> Option<i64> {
-        match self {
-            ArrSize::Point(n)=> Some(*n),
-            ArrSize::Range(Boundary::Known(n), _) => Some(*n),
-            _ => None,
-        }
-    }
-
-
-    pub fn max(&self) -> Option<i64> {
-        match self {
-            ArrSize::Point(n)=> Some(*n),
-            ArrSize::Range(_, Boundary::Known(n)) => Some(*n),
-            _ => None,
-        }
-    }
-
-    pub fn lt(&self, &other: &Self) -> Option<bool>{
+    pub fn lt(&self, &other: &Self) -> Option<bool> {
         match self.partial_cmp(&other) {
-            Some(ord) => match ord{
+            Some(ord) => match ord {
                 Ordering::Less => Some(true),
                 Ordering::Equal => Some(false),
                 Ordering::Greater => Some(false),
             },
             // trivially returns true if there are no constraints on 1 boundary
-            None => match (self, other){
+            None => match (self, other) {
                 (ArrSize::Range(Boundary::None, Boundary::None), _) => Some(true),
                 (_, ArrSize::Range(Boundary::None, Boundary::None)) => Some(true),
-                _ => None
+                _ => None,
             },
         }
-}
-    pub fn le(&self, &other: &Self) -> Option<bool>{
+    }
+    pub fn le(&self, &other: &Self) -> Option<bool> {
         match self.partial_cmp(&other) {
-            Some(ord) => match ord{
+            Some(ord) => match ord {
                 Ordering::Less => Some(true),
                 Ordering::Equal => Some(true),
                 Ordering::Greater => Some(false),
             },
             // trivially returns true if there are no constraints on 1 boundary
-            None => match (self, other){
+            None => match (self, other) {
                 (ArrSize::Range(Boundary::None, Boundary::None), _) => Some(true),
                 (_, ArrSize::Range(Boundary::None, Boundary::None)) => Some(true),
-                _ => None
+                _ => None,
             },
         }
-}
-    pub fn gt(&self, &other: &Self) -> Option<bool>{
+    }
+    pub fn gt(&self, &other: &Self) -> Option<bool> {
         match self.partial_cmp(&other) {
-            Some(ord) => match ord{
+            Some(ord) => match ord {
                 Ordering::Less => Some(false),
                 Ordering::Equal => Some(false),
                 Ordering::Greater => Some(true),
             },
             // trivially returns true if there are no constraints on 1 boundary
-            None => match (self, other){
+            None => match (self, other) {
                 (ArrSize::Range(Boundary::None, Boundary::None), _) => Some(true),
                 (_, ArrSize::Range(Boundary::None, Boundary::None)) => Some(true),
-                _ => None
+                _ => None,
             },
         }
-}
-    pub fn ge(&self, &other: &Self) -> Option<bool>{
+    }
+    pub fn ge(&self, &other: &Self) -> Option<bool> {
         match self.partial_cmp(&other) {
-            Some(ord) => match ord{
+            Some(ord) => match ord {
                 Ordering::Less => Some(false),
                 Ordering::Equal => Some(true),
                 Ordering::Greater => Some(true),
             },
             // trivially returns true if there are no constraints on 1 boundary
-            None => match (self, other){
+            None => match (self, other) {
                 (ArrSize::Range(Boundary::None, Boundary::None), _) => Some(true),
                 (_, ArrSize::Range(Boundary::None, Boundary::None)) => Some(true),
-                _ => None
+                _ => None,
             },
         }
-}
+    }
 }
 
 impl PartialOrd for ArrSize {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        match (self, other){
-            (ArrSize::Range(Boundary::Known(min), Boundary::Known(max)),_) if min == max => ArrSize::Point(*min).partial_cmp(other),
-            (_, ArrSize::Range(Boundary::Known(min), Boundary::Known(max))) if min == max => self.partial_cmp(&ArrSize::Point(*min)),
+        match (self, other) {
+            (ArrSize::Range(Boundary::Known(min), Boundary::Known(max)), _) if min == max => {
+                ArrSize::Point(*min).partial_cmp(other)
+            }
+            (_, ArrSize::Range(Boundary::Known(min), Boundary::Known(max))) if min == max => {
+                self.partial_cmp(&ArrSize::Point(*min))
+            }
 
-            (ArrSize::Range(_, Boundary::Known(l_max)), ArrSize::Range(Boundary::Known(r_min), _)) if l_max < r_min => Some(Ordering::Less) ,
-            (ArrSize::Range(_, Boundary::Known(l_max)), ArrSize::Range(Boundary::None, Boundary::Known(r_min))) if l_max < r_min => Some(Ordering::Less) ,
-            (ArrSize::Range(Boundary::Known(l_min), _), ArrSize::Range(_, Boundary::Known(r_max))) if l_min > r_max => Some(Ordering::Greater),
+            (
+                ArrSize::Range(_, Boundary::Known(l_max)),
+                ArrSize::Range(Boundary::Known(r_min), _),
+            ) if l_max < r_min => Some(Ordering::Less),
+            (
+                ArrSize::Range(_, Boundary::Known(l_max)),
+                ArrSize::Range(Boundary::None, Boundary::Known(r_min)),
+            ) if l_max < r_min => Some(Ordering::Less),
+            (
+                ArrSize::Range(Boundary::Known(l_min), _),
+                ArrSize::Range(_, Boundary::Known(r_max)),
+            ) if l_min > r_max => Some(Ordering::Greater),
 
-            (ArrSize::Range(Boundary::Known(l_min), _), ArrSize::Point(p2)) if p2 < l_min => Some(Ordering::Greater),
-            (ArrSize::Range(_, Boundary::Known(l_max)), ArrSize::Point(p2)) if p2 > l_max => Some(Ordering::Less),
+            (ArrSize::Range(Boundary::Known(l_min), _), ArrSize::Point(p2)) if p2 < l_min => {
+                Some(Ordering::Greater)
+            }
+            (ArrSize::Range(_, Boundary::Known(l_max)), ArrSize::Point(p2)) if p2 > l_max => {
+                Some(Ordering::Less)
+            }
 
-            (ArrSize::Point(p1), ArrSize::Range(Boundary::Known(n), _)) if p1 < n => Some(Ordering::Less),
-            (ArrSize::Point(p1), ArrSize::Range(_, Boundary::Known(n))) if p1 > n => Some(Ordering::Greater),
+            (ArrSize::Point(p1), ArrSize::Range(Boundary::Known(n), _)) if p1 < n => {
+                Some(Ordering::Less)
+            }
+            (ArrSize::Point(p1), ArrSize::Range(_, Boundary::Known(n))) if p1 > n => {
+                Some(Ordering::Greater)
+            }
             (ArrSize::Point(p1), ArrSize::Point(p2)) => Some(p1.cmp(p2)),
-            _ => None
+            _ => None,
         }
     }
-
 }
 
 impl PartialEq for ArrSize {
     fn eq(&self, other: &Self) -> bool {
-        match (self, other){
-            (ArrSize::Range(Boundary::Known(min), Boundary::Known(max)),_) if min == max => ArrSize::Point(*min).eq(other),
-            (_, ArrSize::Range(Boundary::Known(min), Boundary::Known(max))) if min == max => self.eq(&ArrSize::Point(*min)),
+        match (self, other) {
+            (ArrSize::Range(Boundary::Known(min), Boundary::Known(max)), _) if min == max => {
+                ArrSize::Point(*min).eq(other)
+            }
+            (_, ArrSize::Range(Boundary::Known(min), Boundary::Known(max))) if min == max => {
+                self.eq(&ArrSize::Point(*min))
+            }
             (ArrSize::Point(p1), ArrSize::Point(p2)) => p1 == p2,
-            _ => false
+            _ => false,
         }
     }
 }
@@ -609,18 +540,9 @@ impl fmt::Debug for ArrSizes {
 impl fmt::Debug for ArrSize {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ArrSize::Range(min, max) =>         write!(
-                f,
-                "({:?} - {:?})",
-                min, max
-            ),
-            ArrSize::Point(n) => write!(
-                f,
-                "({})",
-                n
-            ),
+            ArrSize::Range(min, max) => write!(f, "({:?} - {:?})", min, max),
+            ArrSize::Point(n) => write!(f, "({})", n),
         }
-
     }
 }
 

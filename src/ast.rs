@@ -1,6 +1,6 @@
 use crate::shared::panic_with_diagnostics;
 use std::fmt;
-use std::hash::{Hash};
+use std::hash::Hash;
 /*
 use non_empty_vec::NonEmpty;
 
@@ -245,8 +245,12 @@ impl fmt::Debug for Statement {
 impl fmt::Debug for Expression {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Expression::Forall(arr, i, v, body) => write!(f, "forall {}, {}, {} : {:?}", arr, i, v, body),
-            Expression::Exists(arr, i, v, body) => write!(f, "exists {}, {}, {} : {:?}", arr, i, v, body),
+            Expression::Forall(arr, i, v, body) => {
+                write!(f, "forall {}, {}, {} : {:?}", arr, i, v, body)
+            }
+            Expression::Exists(arr, i, v, body) => {
+                write!(f, "exists {}, {}, {} : {:?}", arr, i, v, body)
+            }
             Expression::Implies(l_expr, r_expr) => write!(f, "({:?} ==> {:?})", l_expr, r_expr),
             Expression::And(l_expr, r_expr) => write!(f, "({:?} && {:?})", l_expr, r_expr),
             Expression::Or(l_expr, r_expr) => write!(f, "({:?} || {:?})", l_expr, r_expr),

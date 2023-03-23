@@ -22,12 +22,14 @@ pub fn parse_rhs<'a, 'b>(
 
         // generate reference, build arrayname from said reference, insert array into heap and return reference
         Rhs::NewArray(ty, len) => {
-            let sym_ty = match ty{
+            let sym_ty = match ty {
                 Type::Int => SymType::Int,
                 Type::Bool => SymType::Bool,
                 Type::Class(id) => SymType::Ref(SymRefType::Object(id.clone())),
                 Type::Array(_) => todo!("2+ dimensional arrays are not yet supported"),
-                Type::Void => panic_with_diagnostics("Can't initialize an an array of type void", &sym_memory),
+                Type::Void => {
+                    panic_with_diagnostics("Can't initialize an an array of type void", &sym_memory)
+                }
             };
             let size_expr = SymExpression::new(&sym_memory, len.clone());
             let arr = sym_memory.init_array(sym_ty, size_expr);
@@ -60,7 +62,6 @@ pub fn lhs_from_rhs<'a>(
     arr_sizes: &mut ArrSizes,
     solver: &mut Solver,
     diagnostics: &mut Diagnostics,
-    config: &Config,
     lhs: &'a Lhs,
     rhs: &'a Rhs,
 ) -> Result<(), Error> {
@@ -176,7 +177,6 @@ pub fn assert(
     } else {
         pc.push_assertion(sym_assertion);
     };
-
 
     // calculate (inferred and / or simplified) constraints
     let mut constraints = pc.combine_over_true();

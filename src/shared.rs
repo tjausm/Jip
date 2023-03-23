@@ -4,7 +4,6 @@
 use std::fmt::Debug;
 use std::panic;
 use std::process::exit;
-use clap::ArgEnum;
 use uuid::Uuid;
 
 /// Indicates if program is valid, counterexample was found or other error occured
@@ -26,13 +25,12 @@ pub struct Scope {
     pub id: Option<Uuid>,
 }
 
-
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum SolverType {
     Z3(String),
     Yices2(String),
     CVC4(String),
-    Default
+    Default,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -41,7 +39,7 @@ pub struct Config {
     pub infer_size: bool,
     pub prune_ratio: i8,
     pub solver_type: SolverType,
-    pub verbose: bool
+    pub verbose: bool,
 }
 
 #[derive(Clone)]

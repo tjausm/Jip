@@ -7,13 +7,8 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-
 use super::ref_values::{ArrSize, ArrSizes, Array, Reference, SymRefType};
-use crate::{
-    ast::*,
-    shared::{panic_with_diagnostics},
-    symbolic::memory::SymMemory,
-};
+use crate::{ast::*, shared::panic_with_diagnostics, symbolic::memory::SymMemory};
 
 #[derive(Clone)]
 pub struct PathConstraints {
@@ -37,7 +32,6 @@ impl Default for PathConstraints {
 impl PathConstraints {
     /// combine constraints over true as follows: `assume(a), assert(b) -> a ==> b && true`
     pub fn combine_over_true(&self) -> SymExpression {
-
         let mut constraints = SymExpression::Literal(Literal::Boolean(true));
 
         for constraint in self.constraints.iter().rev() {
@@ -315,7 +309,7 @@ impl SymExpression {
                 (
                     SymExpression::SizeOf(_, _, _, Some(size)),
                     SymExpression::Literal(Literal::Integer(n)),
-                )  if size.lt(&ArrSize::Point(n)).is_some() => {
+                ) if size.lt(&ArrSize::Point(n)).is_some() => {
                     let b = size.lt(&ArrSize::Point(n)).unwrap();
                     SymExpression::Literal(Literal::Boolean(b))
                 }
@@ -344,7 +338,7 @@ impl SymExpression {
                 (
                     SymExpression::SizeOf(_, _, _, Some(size)),
                     SymExpression::Literal(Literal::Integer(n)),
-                )  if size.gt(&ArrSize::Point(n)).is_some() => {
+                ) if size.gt(&ArrSize::Point(n)).is_some() => {
                     let b = size.gt(&ArrSize::Point(n)).unwrap();
                     SymExpression::Literal(Literal::Boolean(b))
                 }
@@ -373,7 +367,7 @@ impl SymExpression {
                     (
                         SymExpression::SizeOf(_, _, _, Some(size)),
                         SymExpression::Literal(Literal::Integer(n)),
-                    )  if size.ge(&ArrSize::Point(n)).is_some() => {
+                    ) if size.ge(&ArrSize::Point(n)).is_some() => {
                         let b = size.ge(&ArrSize::Point(n)).unwrap();
                         SymExpression::Literal(Literal::Boolean(b))
                     }
@@ -406,9 +400,9 @@ impl SymExpression {
                     (
                         SymExpression::SizeOf(_, _, _, Some(size)),
                         SymExpression::Literal(Literal::Integer(n)),
-                    )  if size.le(&ArrSize::Point(n)).is_some() => {
+                    ) if size.le(&ArrSize::Point(n)).is_some() => {
                         let b = size.le(&ArrSize::Point(n)).unwrap();
-                        SymExpression::Literal(Literal::Boolean(size.le(&ArrSize::Point(n)).unwrap()))
+                        SymExpression::Literal(Literal::Boolean(b))
                     }
                     (
                         SymExpression::Literal(Literal::Integer(n)),
@@ -502,8 +496,10 @@ impl SymExpression {
             SymExpression::Literal(_) => self,
             SymExpression::FreeVariable(_, _) => self,
             SymExpression::Reference(_) => self,
-            SymExpression::Uninitialized => 
-                panic_with_diagnostics("There is an uninitialized value in an expression. Did you declare all variables?", &self),
+            SymExpression::Uninitialized => panic_with_diagnostics(
+                "There is an uninitialized value in an expression. Did you declare all variables?",
+                &self,
+            ),
             otherwise => {
                 panic_with_diagnostics(&format!("{:?} is not yet implemented", otherwise), &self)
             }
@@ -566,7 +562,15 @@ fn destruct_forall<'a>(
         _ => todo!("shouldn't occur"),
     };
 
-    let i_lt_size = SymExpression::LT(Box::new(index_id.clone()), Box::new(SymExpression::SizeOf(arr_name, r, Box::new(size_expr.clone()), None)));
+    let i_lt_size = SymExpression::LT(
+        Box::new(index_id.clone()),
+        Box::new(SymExpression::SizeOf(
+            arr_name,
+            r,
+            Box::new(size_expr.clone()),
+            None,
+        )),
+    );
 
     // build inner expression with index and value as freevars
     let mut extended_memory = sym_memory.clone();
@@ -574,7 +578,10 @@ fn destruct_forall<'a>(
         &index,
         SymExpression::FreeVariable(SymType::Int, index.clone()),
     );
-    extended_memory.stack_insert(&value, SymExpression::FreeVariable(sym_ty.clone(), value.clone()));
+    extended_memory.stack_insert(
+        &value,
+        SymExpression::FreeVariable(sym_ty.clone(), value.clone()),
+    );
     let inner_expr = SymExpression::new(&extended_memory, inner_expr.clone());
 
     let e = SymExpression::Implies(
@@ -673,9 +680,7 @@ impl Hash for SymExpression {
             SymExpression::FreeVariable(ty, id) => {
                 HashExpression::FreeVariable(ty.clone(), id.clone()).hash(state)
             }
-            SymExpression::Reference(r) => {
-                HashExpression::Reference(r.clone()).hash(state)
-            }
+            SymExpression::Reference(r) => HashExpression::Reference(r.clone()).hash(state),
             SymExpression::Literal(lit) => lit.hash(state),
             _ => panic_with_diagnostics(&format!("Cannot hash expression {:?}", self), &()),
         }
@@ -719,12 +724,13 @@ impl fmt::Debug for SymExpression {
             SymExpression::FreeVariable(_, fv) => write!(f, "{}", fv),
             SymExpression::SizeOf(_, r, _, s) => {
                 let mut formated = "".to_string();
-                formated.push_str(&r.clone().to_string()[0..4]);  
+                formated.push_str(&r.clone().to_string()[0..4]);
                 if let Some(size) = s {
                     write!(f, "(#{} -> {:?})", formated, size)
-                } else{
+                } else {
                     write!(f, "#{}", formated)
-                }},
+                }
+            }
             SymExpression::Reference(r) => {
                 let mut formated = "".to_string();
                 formated.push_str(&r.clone().to_string()[0..4]);

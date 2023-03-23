@@ -1,11 +1,9 @@
 //! Encode expressions into the smt-lib format to test satisfiability using the chosen backend
 
-use core::panic;
-
 use crate::ast::*;
 use crate::shared::{panic_with_diagnostics, Error, SolverType};
 use crate::symbolic::expression::{PathConstraints, SymExpression, SymType};
-use crate::symbolic::ref_values::{ArrSize, ArrSizes, Boundary};
+use crate::symbolic::ref_values::{ArrSize, Boundary};
 use rsmt2::print::ModelParser;
 use rsmt2::{self, SmtConf, SmtRes};
 use rustc_hash::FxHashSet;
@@ -23,7 +21,7 @@ impl<'a> rsmt2::print::IdentParser<String, String, &'a str> for Parser {
     fn parse_ident(self, input: &'a str) -> rsmt2::SmtRes<String> {
         Ok(input.into())
     }
-    fn parse_type(self, input: &'a str) -> rsmt2::SmtRes<String> {
+    fn parse_type(self, _: &'a str) -> rsmt2::SmtRes<String> {
         Ok("".to_string())
     }
 }
@@ -61,8 +59,8 @@ impl Solver {
                 conf.option("--incremental"); //add support for scope popping and pushing from solver
                 conf.option("--rewrite-divk"); //add support for `div` and `mod` operators (not working)
                 conf
-            },
-            SolverType::Default => SmtConf::default_z3()
+            }
+            SolverType::Default => SmtConf::default_z3(),
         };
 
         let mut solver = rsmt2::Solver::new(conf, Parser).unwrap();
@@ -80,8 +78,7 @@ impl Solver {
         index: &'a SymExpression,
     ) -> Result<(), Error> {
         //append length > index to PathConstraints and try to falsify
-        let length_gt_index =
-            SymExpression::GT(Box::new(size_of.clone()), Box::new(index.clone()));
+        let length_gt_index = SymExpression::GT(Box::new(size_of.clone()), Box::new(index.clone()));
         let mut pc = pc.clone();
         pc.push_assertion(length_gt_index);
         let constraints = pc.combine_over_true();
@@ -94,11 +91,6 @@ impl Solver {
                     model
                 )));
             }
-            _ => {
-                return Err(Error::Verification(
-                    "Huh, verification gave an unkown result".to_string(),
-                ))
-            }
         }
     }
 
@@ -106,17 +98,12 @@ impl Solver {
     /// `solve_constraints(ctx, vec![assume x, assert y, assume z] = x -> (y && z)`
     pub fn verify_constraints<'a>(&mut self, constraints: SymExpression) -> Result<(), Error> {
         match self.verify_expr(&SymExpression::Not(Box::new(constraints))) {
-            (SmtResult::Unsat) => return Ok(()),
-            (SmtResult::Sat(model)) => {
+            SmtResult::Unsat => return Ok(()),
+            SmtResult::Sat(model) => {
                 return Err(Error::Verification(format!(
                     "Following input violates one of the assertion:\n{}",
                     model
                 )));
-            }
-            _ => {
-                return Err(Error::Verification(
-                    "Huh, verification gave an unkown result".to_string(),
-                ))
             }
         }
     }
@@ -347,7 +334,6 @@ fn expr_to_str<'a>(
 #[cfg(test)]
 mod tests {
 
-    use rustc_hash::FxHashMap;
 
     use crate::symbolic::memory::SymMemory;
 
@@ -361,7 +347,7 @@ mod tests {
             .parse("!(((1 >= 0) && (2 > 0)) ==> ((((1 + 2) >= 1) && ((1 + 2) >= 1)) && true))")
             .unwrap();
 
-        let se = SymExpression::new(&SymMemory::new(Program(vec![])), expr);
+        //let se = SymExpression::new(&SymMemory::new(Program(vec![])), expr);
         // todo!()
         // let sat = verify_expr(&se);
 

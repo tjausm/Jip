@@ -6,10 +6,10 @@ use uuid::Uuid;
 
 use super::expression::{PathConstraints, SymExpression, SymType};
 use super::ref_values::{
-    ArrSize, ArrSizes, Array, Boundary, Reference, ReferenceValue, SymRefType,
+    ArrSize, ArrSizes, Array,  Reference, ReferenceValue, SymRefType,
 };
 use crate::ast::*;
-use crate::shared::{panic_with_diagnostics,  Diagnostics, Error, Scope};
+use crate::shared::{panic_with_diagnostics, Diagnostics, Error, Scope};
 use crate::smt_solver::Solver;
 
 #[derive(Debug, Clone)]
@@ -174,11 +174,10 @@ impl<'a> SymMemory {
         index: Expression,
         var: Option<SymExpression>,
     ) -> Result<SymExpression, Error> {
-
         //get mutable HashMap representing array
         let (r, size_expr) = match self.stack_get(&arr_name){
             Some(SymExpression::Reference(r)) => match self.heap.get(&r){
-                Some(ReferenceValue::Array((ty, arr, length))) => (r, length),
+                Some(ReferenceValue::Array((_, _, length))) => (r, length),
                 otherwise => panic_with_diagnostics(&format!("{:?} is not an array and can't be assigned to in assignment '{}[{:?}] := {:?}'", otherwise, arr_name, index, var), &self),
             },
             _ => panic_with_diagnostics(&format!("{} is not a reference", arr_name), &self),
@@ -200,14 +199,15 @@ impl<'a> SymMemory {
                 SymExpression::Literal(Literal::Integer(lit_l)),
                 _,
             ) if lit_i < lit_l => (),
-            (
-                SymExpression::Literal(Literal::Integer(lit_i)),
-                _,
-                Some(s),
-            ) if ArrSize::Point(*lit_i).lt(s) == Some(true) => (),
+            (SymExpression::Literal(Literal::Integer(lit_i)), _, Some(s))
+                if ArrSize::Point(*lit_i).lt(s) == Some(true) =>
+            {
+                ()
+            }
             _ => {
                 diagnostics.z3_invocations += 1;
-                let size_of =SymExpression::SizeOf(arr_name.clone(), r, Box::new(size_expr.clone()), size);
+                let size_of =
+                    SymExpression::SizeOf(arr_name.clone(), r, Box::new(size_expr.clone()), size);
                 solver.verify_array_access(pc, &size_of, &simple_index)?
             }
         };
@@ -232,7 +232,6 @@ impl<'a> SymMemory {
         match ty {
             SymType::Ref(ref_type) => match ref_type {
                 SymRefType::Object(class) => {
-
                     // generate and insert reference
                     let r = Uuid::new_v4();
                     let sym_r = SymExpression::Reference(r);
@@ -244,7 +243,7 @@ impl<'a> SymMemory {
                     self.heap_insert(Some(r), obj);
 
                     Ok(sym_r)
-                },
+                }
                 SymRefType::LazyObject(class) => {
                     // generate and insert reference
                     let r = Uuid::new_v4();
@@ -264,7 +263,8 @@ impl<'a> SymMemory {
                 let fv_id = format!("|{}[{:?}]|", arr_name.clone(), simple_index);
                 let fv = SymExpression::FreeVariable(ty.clone(), fv_id);
                 arr.insert(simple_index, fv.clone());
-                Ok(fv)},
+                Ok(fv)
+            }
         }
     }
 

@@ -16,9 +16,9 @@ use crate::shared::Config;
 use crate::shared::ExitCode;
 use crate::shared::{panic_with_diagnostics, Diagnostics, Error};
 use crate::smt_solver::Solver;
-use crate::symbolic::memory::SymMemory;
 use crate::symbolic::expression::{PathConstraints, SymExpression, SymType};
-use crate::symbolic::ref_values::{ ReferenceValue, ArrSizes, SymRefType,};
+use crate::symbolic::memory::SymMemory;
+use crate::symbolic::ref_values::{ArrSizes, ReferenceValue, SymRefType};
 
 use colored::Colorize;
 use petgraph::graph::NodeIndex;
@@ -45,7 +45,7 @@ pub fn bench(
 
         // Code block to measure.
         {
-            match verify_program(program, d,  &config) {
+            match verify_program(program, d, &config) {
                 Ok(_) => (),
                 r => return print_result(r),
             }
@@ -100,17 +100,13 @@ pub fn print_cfg(program: &str) -> (ExitCode, String) {
     (ExitCode::Valid, generate_dot_cfg(program))
 }
 
-pub fn print_verification(
-    program: &str,
-    d: Depth,
-    config: &Config,
-) -> (ExitCode, String) {
+pub fn print_verification(program: &str, d: Depth, config: &Config) -> (ExitCode, String) {
     let result = verify_program(program, d, config);
     print_result(result.clone())
 }
 
 /// prints the verbose debug info
-fn print_debug(node: &Node, config: &Config,   sym_memory: &SymMemory, pc: &PathConstraints, arr_sizes: &ArrSizes,) {
+fn print_debug(node: &Node, sym_memory: &SymMemory, pc: &PathConstraints, arr_sizes: &ArrSizes) {
     let print_node = format!("{:?}", node);
     let print_sym_memory = format!("{:?}", sym_memory);
     let print_ranges = format!("{:?}", arr_sizes);
@@ -118,25 +114,22 @@ fn print_debug(node: &Node, config: &Config,   sym_memory: &SymMemory, pc: &Path
     let pc = pc.combine_over_true();
     let print_pc = format!("Path constraints -> {:?}", pc);
 
-
-
     let dump_state = match node {
         Node::Statement(Statement::Assert(_)) => true,
         Node::Statement(Statement::Assignment((_, Rhs::AccessArray(_, _)))) => true,
         _ => false,
     };
     if dump_state {
-        println!("{}\n\n{}\n\n{}\n\n{}", print_node, print_pc, print_ranges, print_sym_memory);
+        println!(
+            "{}\n\n{}\n\n{}\n\n{}",
+            print_node, print_pc, print_ranges, print_sym_memory
+        );
     } else {
         println!("{}", print_node);
     }
 }
 
-fn verify_program(
-    prog_string: &str,
-    d: Depth,
-    config: &Config,
-) -> Result<Diagnostics, Error> {
+fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagnostics, Error> {
     let prune_coefficient = f64::from(config.prune_ratio) / f64::from(i8::MAX);
     let prune_depth = (f64::from(d) - f64::from(d) * prune_coefficient) as i32;
 
@@ -155,7 +148,13 @@ fn verify_program(
 
     //init our bfs through the cfg
     let mut q: VecDeque<(SymMemory, PathConstraints, ArrSizes, Depth, NodeIndex)> = VecDeque::new();
-    q.push_back((SymMemory::new(prog.clone()), PathConstraints::default(), ArrSizes::default(), d, start_node));
+    q.push_back((
+        SymMemory::new(prog.clone()),
+        PathConstraints::default(),
+        ArrSizes::default(),
+        d,
+        start_node,
+    ));
 
     // Assert -> build & verify z3 formula, return error if disproven
     // Assume -> build & verify z3 formula, stop evaluating pad if disproven
@@ -167,7 +166,7 @@ fn verify_program(
         }
 
         if config.verbose {
-            print_debug(&cfg[curr_node], config,  &sym_memory, &pc, &arr_sizes);
+            print_debug(&cfg[curr_node], &sym_memory, &pc, &arr_sizes);
         };
 
         match &cfg[curr_node] {
@@ -175,31 +174,38 @@ fn verify_program(
             Node::EnteringMain(parameters) => {
                 for parameter in parameters {
                     match parameter {
-                        (Type::Int, id) => sym_memory.stack_insert(id, SymExpression::FreeVariable(SymType::Int, id.clone())),
-                        (Type::Bool, id) =>sym_memory.stack_insert(id, SymExpression::FreeVariable(SymType::Bool, id.clone())),
+                        (Type::Int, id) => sym_memory.stack_insert(
+                            id,
+                            SymExpression::FreeVariable(SymType::Int, id.clone()),
+                        ),
+                        (Type::Bool, id) => sym_memory.stack_insert(
+                            id,
+                            SymExpression::FreeVariable(SymType::Bool, id.clone()),
+                        ),
                         (Type::Array(ty), id) => {
-                            let size = SymExpression::FreeVariable(SymType::Int, format!("|#{}|", id));
-                            let sym_ty = match &**ty{
+                            let size =
+                                SymExpression::FreeVariable(SymType::Int, format!("|#{}|", id));
+                            let sym_ty = match &**ty {
                                 Type::Int => SymType::Int,
                                 Type::Bool => SymType::Bool,
                                 Type::Class(id) => SymType::Ref(SymRefType::LazyObject(id.clone())),
-                                Type::Array(_) => todo!("2+ dimensional arrays are not yet supported"),
-                                Type::Void => panic_with_diagnostics("Can't pass an array of type void as argument to main()", &sym_memory),
+                                Type::Array(_) => {
+                                    todo!("2+ dimensional arrays are not yet supported")
+                                }
+                                Type::Void => panic_with_diagnostics(
+                                    "Can't pass an array of type void as argument to main()",
+                                    &sym_memory,
+                                ),
                             };
-                            let arr = sym_memory.init_array(
-                                sym_ty.clone(),
-                                size
-                            );
+                            let arr = sym_memory.init_array(sym_ty.clone(), size);
                             let r = sym_memory.heap_insert(None, arr);
-                            sym_memory
-                                .stack_insert(id, SymExpression::Reference(r));
+                            sym_memory.stack_insert(id, SymExpression::Reference(r));
                         }
                         (Type::Class(class_name), id) => {
                             // generate reference and insert lazy object into heap & stack
                             let r = sym_memory
                                 .heap_insert(None, ReferenceValue::LazyObject(class_name.clone()));
-                            sym_memory
-                                .stack_insert(id, SymExpression::Reference(r));
+                            sym_memory.stack_insert(id, SymExpression::Reference(r));
                         }
                         (ty, id) => panic_with_diagnostics(
                             &format!("Can't call main with parameter {} of type {:?}", id, ty),
@@ -211,15 +217,11 @@ fn verify_program(
 
             Node::Statement(stmt) => {
                 match stmt {
-                    Statement::Declaration((ty, id)) => {
-                        match ty {
-                            Type::Int => 
-                                sym_memory.stack_insert(&id, SymExpression::Uninitialized),
-                            Type::Bool => 
-                                sym_memory.stack_insert(&id, SymExpression::Uninitialized),
-                            _ => 
-                            sym_memory.stack_insert(&id, SymExpression::Reference(Uuid::new_v4())),
-                        }},
+                    Statement::Declaration((ty, id)) => match ty {
+                        Type::Int => sym_memory.stack_insert(&id, SymExpression::Uninitialized),
+                        Type::Bool => sym_memory.stack_insert(&id, SymExpression::Uninitialized),
+                        _ => sym_memory.stack_insert(&id, SymExpression::Reference(Uuid::new_v4())),
+                    },
                     Statement::Assume(assumption) => {
                         if !assume(
                             &mut sym_memory,
@@ -244,7 +246,15 @@ fn verify_program(
                         &mut diagnostics,
                     )?,
                     Statement::Assignment((lhs, rhs)) => {
-                        lhs_from_rhs(&mut sym_memory, &pc, &mut arr_sizes , &mut solver, &mut diagnostics, config,  lhs, rhs)?;
+                        lhs_from_rhs(
+                            &mut sym_memory,
+                            &pc,
+                            &mut arr_sizes,
+                            &mut solver,
+                            &mut diagnostics,
+                            lhs,
+                            rhs,
+                        )?;
                     }
                     Statement::Return(expr) => {
                         // stop path if current scope `id == None`, indicating we are in main scope
@@ -254,7 +264,7 @@ fn verify_program(
 
                         // add return value to stack
                         sym_memory
-                            .stack_insert(retval_id, SymExpression::new( &sym_memory, expr.clone()));
+                            .stack_insert(retval_id, SymExpression::new(&sym_memory, expr.clone()));
                     }
                     _ => (),
                 }
@@ -280,8 +290,10 @@ fn verify_program(
                     }
                     Action::DeclareThis { class, obj } => match obj {
                         Lhs::Identifier(id) => match sym_memory.stack_get(id) {
-                            Some(SymExpression::Reference(r)) => sym_memory.stack_insert(this_id, SymExpression::Reference(r)),
-                        
+                            Some(SymExpression::Reference(r)) => {
+                                sym_memory.stack_insert(this_id, SymExpression::Reference(r))
+                            }
+
                             Some(ty) => panic_with_diagnostics(
                                 &format!("{} is not of type {} but of type {:?}", id, class, ty),
                                 &sym_memory,
@@ -293,17 +305,25 @@ fn verify_program(
                         },
                         Lhs::AccessField(obj, field) => {
                             match sym_memory.heap_access_object(obj, field, None) {
-                                SymExpression::Reference(r) => sym_memory.stack_insert(this_id, SymExpression::Reference(r)),  
+                                SymExpression::Reference(r) => sym_memory.stack_insert(this_id, SymExpression::Reference(r)),
                                 _ => panic_with_diagnostics(&format!("Can't assign '{} this' because there is no reference at {}.{}", class, obj, field), &sym_memory),
                             };
                         }
                         Lhs::AccessArray(arr_name, index) => {
-                            let expr = sym_memory.heap_access_array(&pc, &arr_sizes, &mut solver, &mut diagnostics, arr_name, index.clone(), None)?;
-                                match expr {
-                                    SymExpression::Reference(r) => sym_memory.stack_insert(this_id, SymExpression::Reference(r)),  
+                            let expr = sym_memory.heap_access_array(
+                                &pc,
+                                &arr_sizes,
+                                &mut solver,
+                                &mut diagnostics,
+                                arr_name,
+                                index.clone(),
+                                None,
+                            )?;
+                            match expr {
+                                    SymExpression::Reference(r) => sym_memory.stack_insert(this_id, SymExpression::Reference(r)),
                                     _ => panic_with_diagnostics(&format!("Can't assign '{} this' because there is no reference at {}[{:?}]", class, arr_name, index), &sym_memory),
                                 };
-                        },
+                        }
                     },
                     Action::InitObj {
                         from_class,
@@ -317,7 +337,7 @@ fn verify_program(
                                         // make an empty object and insert into heap
                                         let obj = sym_memory.init_object(r, from_class.clone());
                                         sym_memory.heap_insert(Some(r), obj);
-                                    },  
+                                    },
                                     _ => panic_with_diagnostics(&format!("Can't initialize '{} {}' because it has not been declared yet", from_class, id), &sym_memory),
                                 };
                             }
@@ -327,21 +347,29 @@ fn verify_program(
                                         // make an empty object and insert into heap
                                         let obj = sym_memory.init_object(r, from_class.clone());
                                         sym_memory.heap_insert(Some(r), obj);
-                                    },  
+                                    },
                                     _ => panic_with_diagnostics(&format!("Can't initialize '{}' because there is no reference at {}.{}", from_class, obj, field), &sym_memory),
                                 };
-                            },
+                            }
                             Lhs::AccessArray(arr_name, index) => {
-                                let expr = sym_memory.heap_access_array(&pc, &arr_sizes, &mut solver, &mut diagnostics, arr_name, index.clone(), None)?;
+                                let expr = sym_memory.heap_access_array(
+                                    &pc,
+                                    &arr_sizes,
+                                    &mut solver,
+                                    &mut diagnostics,
+                                    arr_name,
+                                    index.clone(),
+                                    None,
+                                )?;
                                 match expr {
                                     SymExpression::Reference(r) => {
                                         // make an empty object and insert into heap
                                         let obj = sym_memory.init_object(r, from_class.clone());
                                         sym_memory.heap_insert(Some(r), obj);
-                                    },  
+                                    },
                                     _ => panic_with_diagnostics(&format!("Can't initialize '{}' because there is no reference at {}[{:?}]", from_class, arr_name, index), &sym_memory),
                                 };
-                            },
+                            }
                         };
                     }
                     // lift retval 1 scope up
@@ -403,7 +431,7 @@ fn verify_program(
                             };
                         }
                     }
-                    _ => ()
+                    _ => (),
                 }
             }
             let next = edge.target();
