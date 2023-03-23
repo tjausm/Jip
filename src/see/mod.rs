@@ -34,7 +34,7 @@ pub fn bench(
     start: Depth,
     end: Option<Depth>,
     step: i32,
-    config: Config,
+    config: &Config,
 ) -> (ExitCode, String) {
     let end = end.unwrap_or(start) + 1;
     let depths = (start..end).step_by(step.try_into().unwrap());
@@ -45,7 +45,7 @@ pub fn bench(
 
         // Code block to measure.
         {
-            match verify_program(program, d,  config.clone()) {
+            match verify_program(program, d,  &config) {
                 Ok(_) => (),
                 r => return print_result(r),
             }
@@ -103,14 +103,14 @@ pub fn print_cfg(program: &str) -> (ExitCode, String) {
 pub fn print_verification(
     program: &str,
     d: Depth,
-    config: Config,
+    config: &Config,
 ) -> (ExitCode, String) {
     let result = verify_program(program, d, config);
     print_result(result.clone())
 }
 
 /// prints the verbose debug info
-fn print_debug(node: &Node, config: Config,   sym_memory: &SymMemory, pc: &PathConstraints, arr_sizes: &ArrSizes,) {
+fn print_debug(node: &Node, config: &Config,   sym_memory: &SymMemory, pc: &PathConstraints, arr_sizes: &ArrSizes,) {
     let print_node = format!("{:?}", node);
     let print_sym_memory = format!("{:?}", sym_memory);
     let print_ranges = format!("{:?}", arr_sizes);
@@ -135,7 +135,7 @@ fn print_debug(node: &Node, config: Config,   sym_memory: &SymMemory, pc: &PathC
 fn verify_program(
     prog_string: &str,
     d: Depth,
-    config: Config,
+    config: &Config,
 ) -> Result<Diagnostics, Error> {
     let prune_coefficient = f64::from(config.prune_ratio) / f64::from(i8::MAX);
     let prune_depth = (f64::from(d) - f64::from(d) * prune_coefficient) as i32;
@@ -144,7 +144,7 @@ fn verify_program(
     let mut diagnostics = Diagnostics::default();
 
     //init solver
-    let mut solver = Solver::new(config.solver_type);
+    let mut solver = Solver::new(&config.solver_type);
 
     // init retval and this such that it outlives env
     let retval_id = &"retval".to_string();

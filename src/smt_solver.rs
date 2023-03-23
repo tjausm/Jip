@@ -50,21 +50,22 @@ impl Solver {
 
     /// Creates a new solver using the configured backend.
     /// For both Yices and Cvc we pas a set of flags to make them work with the rust interface
-    pub fn new(solver_type: SolverType) -> Solver {
+    pub fn new(solver_type: &SolverType) -> Solver {
         let conf = match solver_type {
-            SolverType::Z3 => SmtConf::default_z3(),
-            SolverType::Yices2 => {
-                let mut conf = SmtConf::default_yices_2();
+            SolverType::Z3(arg) => SmtConf::z3(arg),
+            SolverType::Yices2(arg) => {
+                let mut conf = SmtConf::yices_2(arg);
                 conf.option("--incremental"); //add support for scope popping and pushing from solver
                 conf.option("--interactive"); //add support for scope popping and pushing from solvercargo
                 conf
             }
-            SolverType::CVC4 => {
-                let mut conf = SmtConf::default_cvc4();
+            SolverType::CVC4(arg) => {
+                let mut conf = SmtConf::cvc4(arg);
                 conf.option("--incremental"); //add support for scope popping and pushing from solver
                 conf.option("--rewrite-divk"); //add support for `div` and `mod` operators (not working)
                 conf
-            }
+            },
+            SolverType::Default => SmtConf::default_z3()
         };
 
         let mut solver = rsmt2::Solver::new(conf, Parser).unwrap();

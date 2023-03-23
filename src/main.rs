@@ -4,7 +4,7 @@
 #[macro_use]
 extern crate lalrpop_util;
 
-use clap::{ Parser, Subcommand};
+use clap::{Parser, Subcommand};
 use see::types::Depth;
 use shared::{Config, ExitCode, SolverType};
 use std::process::exit;
@@ -14,8 +14,8 @@ mod ast;
 mod cfg;
 mod see;
 mod shared;
-mod symbolic;
 mod smt_solver;
+mod symbolic;
 
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]
@@ -30,7 +30,7 @@ struct Cli {
     /// Turns on the front end simplifier
     #[clap(short, long)]
     simplifier: bool,
-    
+
     /// Turns on array size inference & simplifier
     #[clap(short, long)]
     infer_size: bool,
@@ -40,9 +40,15 @@ struct Cli {
     #[clap(default_value_t = 0)]
     prune_ratio: i8,
 
-    /// Defines the smt-solver used by the backend
-    #[clap(arg_enum, default_value_t = SolverType::Z3)]
-    solver: SolverType,
+    /// Passes the custom argument to call z3
+    #[clap(long)]
+    z3_arg: Option<String>,
+    /// Passes the custom argument to call cvc4
+    #[clap(long)]
+    cvc4_arg: Option<String>,
+    /// Passes the custom argument to call yices2
+    #[clap(long)]
+    yices2_arg: Option<String>,
 }
 
 #[derive(Subcommand)]
@@ -71,20 +77,25 @@ enum Mode {
     },
 }
 
-
 fn main() {
-
     let cli = Cli::parse();
     let exit = |(exit_code, result): (ExitCode, String)| {
         println!("{}", result);
         exit(exit_code as i32);
     };
 
+    let solver_type = match (cli.z3_arg, cli.cvc4_arg, cli.yices2_arg) {
+        (Some(arg), _, _) => SolverType::Z3(arg),
+        (_, Some(arg), _) => SolverType::CVC4(arg),
+        (_, _, Some(arg)) => SolverType::Yices2(arg),
+        (_, _, _) => SolverType::Default,
+    };
+
     // attempt to load program, and exit with exitcode and error if fails
     let program = match see::load_program(cli.path) {
-            Err(why) => exit(why),
-            Ok(program) => program,
-        };
+        Err(why) => exit(why),
+        Ok(program) => program,
+    };
 
     // if program loaded execute function corresponding to cmd and exit with the result
     match cli.mode {
@@ -94,10 +105,10 @@ fn main() {
                 simplify: cli.simplifier || cli.infer_size,
                 infer_size: cli.infer_size,
                 prune_ratio: cli.prune_ratio,
-                solver_type: cli.solver,
-                verbose: verbose
+                solver_type: solver_type,
+                verbose: verbose,
             };
-            exit(see::print_verification(&program, depth,  config))
+            exit(see::print_verification(&program, depth, &config))
         }
         Mode::Bench {
             start,
@@ -108,10 +119,10 @@ fn main() {
                 simplify: cli.simplifier || cli.infer_size,
                 infer_size: cli.infer_size,
                 prune_ratio: cli.prune_ratio,
-                solver_type: cli.solver,
-                verbose: false
+                solver_type: solver_type,
+                verbose: false,
             };
-            exit(see::bench(&program,  start, end, interval, config))
+            exit(see::bench(&program, start, end, interval, &config))
         }
     };
 }

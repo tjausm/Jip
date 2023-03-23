@@ -27,14 +27,15 @@ pub struct Scope {
 }
 
 
-#[derive(Copy, Debug, Clone, PartialEq, Eq, PartialOrd, Ord, ArgEnum)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum SolverType {
-    Z3,
-    Yices2,
-    CVC4
+    Z3(String),
+    Yices2(String),
+    CVC4(String),
+    Default
 }
 
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Config {
     pub simplify: bool,
     pub infer_size: bool,
