@@ -47,14 +47,14 @@ pub struct Config {
 #[derive(Clone)]
 pub struct Diagnostics {
     pub paths_explored: i32,
-    pub z3_invocations: i32,
+    pub z3_calls: i32,
 }
 
 impl Default for Diagnostics {
     fn default() -> Self {
         return Diagnostics {
             paths_explored: 0,
-            z3_invocations: 0,
+            z3_calls: 0,
         };
     }
 }
