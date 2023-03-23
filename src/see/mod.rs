@@ -38,19 +38,23 @@ pub fn bench(
 ) -> (ExitCode, String) {
     let end = end.unwrap_or(start) + 1;
     let depths = (start..end).step_by(step.try_into().unwrap());
-    println!("d        time");
-
-    for d in depths {
+    println!("d           time (s)    paths expl. z3 calls");
+    for depth in depths {
         let now = Instant::now();
-
+        let mut dia;
         // Code block to measure.
         {
-            match verify_program(program, d, &config) {
-                Ok(_) => (),
+            match verify_program(program, depth,  &config) {
+                Ok(d) => dia = d,
                 r => return print_result(r),
             }
         }
-        println!("{}       {:?}", d, now.elapsed());
+
+        // format duration to string of length 5
+        let dur = now.elapsed();
+        let time = format!("{:?},{:0<3}", dur.as_secs(), dur.as_millis());
+        println!("{:<12}{:<12}{:<12}{:<12}", depth, &time[0..5], dia.paths_explored, dia.z3_calls);
+        
     }
     return (ExitCode::Valid, "Benchmark done!".to_owned());
 }
@@ -74,7 +78,7 @@ fn print_result(r: Result<Diagnostics, Error>) -> (ExitCode, String) {
                 "{}\nPaths checked    {}\nZ3 invocations   {}",
                 "Program is correct".green().bold(),
                 d.paths_explored,
-                d.z3_invocations
+                d.z3_calls
             ));
             (ExitCode::Valid, msg)
         }

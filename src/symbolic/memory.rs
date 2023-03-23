@@ -205,9 +205,14 @@ impl<'a> SymMemory {
                 ()
             }
             _ => {
+<<<<<<< HEAD
                 diagnostics.z3_invocations += 1;
                 let size_of =
                     SymExpression::SizeOf(arr_name.clone(), r, Box::new(size_expr.clone()), size);
+=======
+                diagnostics.z3_calls += 1;
+                let size_of =SymExpression::SizeOf(arr_name.clone(), r, Box::new(size_expr.clone()), size);
+>>>>>>> master
                 solver.verify_array_access(pc, &size_of, &simple_index)?
             }
         };
@@ -297,7 +302,7 @@ impl<'a> SymMemory {
     }
 
     // inits 1 objects with its concrete fields as free variables and its reference fields as lazy objects
-    pub fn init_lazy_object(&mut self, r: Reference, class: Identifier) -> ReferenceValue {
+    fn init_lazy_object(&mut self, r: Reference, class: Identifier) -> ReferenceValue {
         let r = Uuid::new_v4();
         let mut fields = FxHashMap::default();
 
