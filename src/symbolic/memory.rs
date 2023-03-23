@@ -174,10 +174,11 @@ impl<'a> SymMemory {
         index: Expression,
         var: Option<SymExpression>,
     ) -> Result<SymExpression, Error> {
+
         //get mutable HashMap representing array
-        let (_, _, size_expr) = match self.stack_get(&arr_name){
+        let (r, size_expr) = match self.stack_get(&arr_name){
             Some(SymExpression::Reference(r)) => match self.heap.get(&r){
-                Some(ReferenceValue::Array((ty, arr, length))) => (ty, arr, length),
+                Some(ReferenceValue::Array((ty, arr, length))) => (r, length),
                 otherwise => panic_with_diagnostics(&format!("{:?} is not an array and can't be assigned to in assignment '{}[{:?}] := {:?}'", otherwise, arr_name, index, var), &self),
             },
             _ => panic_with_diagnostics(&format!("{} is not a reference", arr_name), &self),
@@ -187,10 +188,7 @@ impl<'a> SymMemory {
         let sym_index = SymExpression::new(self, index);
 
         //get ArrSize if it's inferred
-        let size = match self.stack_get(arr_name) {
-            Some(SymExpression::Reference(r)) => arr_sizes.get(&r),
-            _ => panic_with_diagnostics(&format!("Cannot access array {}", arr_name), &self),
-        };
+        let (size) = arr_sizes.get(&r);
 
         // always simplify index, otherwise unsimplified SE could return different results than simplified SE
         let simple_index = sym_index.clone().simplify(Some(arr_sizes));
@@ -202,20 +200,15 @@ impl<'a> SymMemory {
                 SymExpression::Literal(Literal::Integer(lit_l)),
                 _,
             ) if lit_i < lit_l => (),
-            (SymExpression::Literal(Literal::Integer(lit_i)), _, Some(ArrSize::Point(p)))
-                if lit_i < p =>
-            {
-                ()
-            }
             (
                 SymExpression::Literal(Literal::Integer(lit_i)),
                 _,
-                Some(ArrSize::Range(Boundary::Known(min), _)),
-            ) if lit_i < min => (),
-            (_, _, Some(ArrSize::Range(Boundary::None, Boundary::None))) => (),
+                Some(s),
+            ) if ArrSize::Point(*lit_i).lt(s) == Some(true) => (),
             _ => {
                 diagnostics.z3_invocations += 1;
-                solver.verify_array_access(pc, &size_expr, &simple_index)?
+                let size_of =SymExpression::SizeOf(arr_name.clone(), r, Box::new(size_expr.clone()), size);
+                solver.verify_array_access(pc, &size_of, &simple_index)?
             }
         };
 

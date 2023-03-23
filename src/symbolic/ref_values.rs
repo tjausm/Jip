@@ -3,6 +3,7 @@
 use super::expression::{SymExpression, SymType};
 use crate::{ast::*, shared::panic_with_diagnostics};
 use core::fmt;
+use std::cmp::Ordering;
 use rustc_hash::FxHashMap;
 use uuid::Uuid;
 
@@ -110,6 +111,7 @@ impl ArrSizes {
     /// if one is unknown set boundary to unknown
     /// otherwise set boundary to None
     fn narrow(&mut self, r_ranges: &ArrSizes) {
+
         for (arr, r_range) in r_ranges.0.iter() {
             if let Some(l_range) = self.0.get(arr) {
                 self.0.insert(arr.clone(), narrow_one(l_range, &r_range));
@@ -496,6 +498,100 @@ impl ArrSize {
             ArrSize::Point(n)=> Some(*n),
             ArrSize::Range(_, Boundary::Known(n)) => Some(*n),
             _ => None,
+        }
+    }
+
+    pub fn lt(&self, &other: &Self) -> Option<bool>{
+        match self.partial_cmp(&other) {
+            Some(ord) => match ord{
+                Ordering::Less => Some(true),
+                Ordering::Equal => Some(false),
+                Ordering::Greater => Some(false),
+            },
+            // trivially returns true if there are no constraints on 1 boundary
+            None => match (self, other){
+                (ArrSize::Range(Boundary::None, Boundary::None), _) => Some(true),
+                (_, ArrSize::Range(Boundary::None, Boundary::None)) => Some(true),
+                _ => None
+            },
+        }
+}
+    pub fn le(&self, &other: &Self) -> Option<bool>{
+        match self.partial_cmp(&other) {
+            Some(ord) => match ord{
+                Ordering::Less => Some(true),
+                Ordering::Equal => Some(true),
+                Ordering::Greater => Some(false),
+            },
+            // trivially returns true if there are no constraints on 1 boundary
+            None => match (self, other){
+                (ArrSize::Range(Boundary::None, Boundary::None), _) => Some(true),
+                (_, ArrSize::Range(Boundary::None, Boundary::None)) => Some(true),
+                _ => None
+            },
+        }
+}
+    pub fn gt(&self, &other: &Self) -> Option<bool>{
+        match self.partial_cmp(&other) {
+            Some(ord) => match ord{
+                Ordering::Less => Some(false),
+                Ordering::Equal => Some(false),
+                Ordering::Greater => Some(true),
+            },
+            // trivially returns true if there are no constraints on 1 boundary
+            None => match (self, other){
+                (ArrSize::Range(Boundary::None, Boundary::None), _) => Some(true),
+                (_, ArrSize::Range(Boundary::None, Boundary::None)) => Some(true),
+                _ => None
+            },
+        }
+}
+    pub fn ge(&self, &other: &Self) -> Option<bool>{
+        match self.partial_cmp(&other) {
+            Some(ord) => match ord{
+                Ordering::Less => Some(false),
+                Ordering::Equal => Some(true),
+                Ordering::Greater => Some(true),
+            },
+            // trivially returns true if there are no constraints on 1 boundary
+            None => match (self, other){
+                (ArrSize::Range(Boundary::None, Boundary::None), _) => Some(true),
+                (_, ArrSize::Range(Boundary::None, Boundary::None)) => Some(true),
+                _ => None
+            },
+        }
+}
+}
+
+impl PartialOrd for ArrSize {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        match (self, other){
+            (ArrSize::Range(Boundary::Known(min), Boundary::Known(max)),_) if min == max => ArrSize::Point(*min).partial_cmp(other),
+            (_, ArrSize::Range(Boundary::Known(min), Boundary::Known(max))) if min == max => self.partial_cmp(&ArrSize::Point(*min)),
+
+            (ArrSize::Range(_, Boundary::Known(l_max)), ArrSize::Range(Boundary::Known(r_min), _)) if l_max < r_min => Some(Ordering::Less) ,
+            (ArrSize::Range(_, Boundary::Known(l_max)), ArrSize::Range(Boundary::None, Boundary::Known(r_min))) if l_max < r_min => Some(Ordering::Less) ,
+            (ArrSize::Range(Boundary::Known(l_min), _), ArrSize::Range(_, Boundary::Known(r_max))) if l_min > r_max => Some(Ordering::Greater),
+
+            (ArrSize::Range(Boundary::Known(l_min), _), ArrSize::Point(p2)) if p2 < l_min => Some(Ordering::Greater),
+            (ArrSize::Range(_, Boundary::Known(l_max)), ArrSize::Point(p2)) if p2 > l_max => Some(Ordering::Less),
+
+            (ArrSize::Point(p1), ArrSize::Range(Boundary::Known(n), _)) if p1 < n => Some(Ordering::Less),
+            (ArrSize::Point(p1), ArrSize::Range(_, Boundary::Known(n))) if p1 > n => Some(Ordering::Greater),
+            (ArrSize::Point(p1), ArrSize::Point(p2)) => Some(p1.cmp(p2)),
+            _ => None
+        }
+    }
+
+}
+
+impl PartialEq for ArrSize {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other){
+            (ArrSize::Range(Boundary::Known(min), Boundary::Known(max)),_) if min == max => ArrSize::Point(*min).eq(other),
+            (_, ArrSize::Range(Boundary::Known(min), Boundary::Known(max))) if min == max => self.eq(&ArrSize::Point(*min)),
+            (ArrSize::Point(p1), ArrSize::Point(p2)) => p1 == p2,
+            _ => false
         }
     }
 }
