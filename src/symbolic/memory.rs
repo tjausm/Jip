@@ -8,8 +8,9 @@ use super::expression::{PathConstraints, SymExpression, SymType};
 use super::ref_values::{
     ArrSize, ArrSizes, Array,  Reference, ReferenceValue, SymRefType,
 };
+use super::state::{Fork, PathState};
 use crate::ast::*;
-use crate::shared::{panic_with_diagnostics, Diagnostics, Error, Scope, Fork};
+use crate::shared::{panic_with_diagnostics, Diagnostics, Error, Scope};
 use crate::smt_solver::Solver;
 
 /// extends SymExpression with a lazy reference type
@@ -74,7 +75,7 @@ impl<'a> SymMemory {
     }
 
     /// Iterate over frames from stack returning the first variable with given `id`
-    pub fn stack_get(&self, id: &'a Identifier) -> Fork<Option<SymExpression>, Self> {
+    pub fn stack_get(&self, id: &'a Identifier, init_state: &PathState) -> Fork<Option<SymExpression>> {
         if id == "null" {
             return Fork::No(Some(SymExpression::Reference(Uuid::nil())));
         };

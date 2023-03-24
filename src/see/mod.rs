@@ -164,7 +164,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
 
         // save copy of initial state & destruct
         let initial_state = state.clone();
-        let PathState(mut sym_memory, mut pc, mut arr_sizes, d, curr_node) = state;
+        let (mut sym_memory, mut pc, mut arr_sizes, d, curr_node) = state;
 
         if d == 0 {
             continue;
@@ -300,10 +300,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                         Lhs::Identifier(id) => {
                             
                             // possibly fork
-                            let val = match sym_memory.stack_get(id) {
-                                crate::shared::Fork::No(val) => val,
-                                crate::shared::Fork::Yes(val, new_state) => todo!("Fork that shit"),
-                            };
+                            let val = sym_memory.stack_get(id, &initial_state).straighten(&mut q);
 
                             match val {
                             Some(SymExpression::Reference(r)) => {
@@ -348,7 +345,10 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                         // get reference r, init object, and insert into heap under reference
                         match lhs {
                             Lhs::Identifier(id) => {
-                                match sym_memory.stack_get( id) {
+
+                                let expr = sym_memory.stack_get( id, &initial_state).straighten(&mut q);
+
+                                match expr {
                                     Some(SymExpression::Reference(r)) => {
                                         // make an empty object and insert into heap
                                         let obj = sym_memory.init_object(r, from_class.clone());
@@ -390,7 +390,9 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                     }
                     // lift retval 1 scope up
                     Action::LiftRetval => {
-                        match sym_memory.stack_get(retval_id) {
+                        let expr = sym_memory.stack_get(retval_id, &initial_state).straighten(&mut q);
+
+                        match expr {
                             Some(retval) => sym_memory.stack_insert_below(retval_id, retval),
                             None => panic_with_diagnostics(
                                 "Can't lift retval to a higher scope",
