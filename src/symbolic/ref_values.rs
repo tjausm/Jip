@@ -39,14 +39,16 @@ pub enum SymRefType {
 pub enum ReferenceValue {
     Object(Object),
     Array(Array),
-    LazyObject(Identifier),
 }
+
+pub type IsLazy = bool;
 
 /// Consists of type, a mapping from expression to symbolic expression, expression representing size and flag to indicate that we should lazily initialize objects from this array
 pub type Array = (
     SymType,
     FxHashMap<SymExpression, SymExpression>,
     SymExpression,
+    IsLazy
 );
 
 #[derive(Clone, Copy)]

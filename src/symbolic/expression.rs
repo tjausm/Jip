@@ -523,7 +523,7 @@ impl SymExpression {
 /// ```
 fn destruct_forall<'a>(
     arr_name: Identifier,
-    (sym_ty, arr, size_expr): &Array,
+    (sym_ty, arr, size_expr, _): &Array,
     index: &Identifier,
     value: &Identifier,
     inner_expr: &Expression,

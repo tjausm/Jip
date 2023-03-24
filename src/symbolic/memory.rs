@@ -177,7 +177,7 @@ impl<'a> SymMemory {
         //get mutable HashMap representing array
         let (r, size_expr) = match self.stack_get(&arr_name){
             Some(SymExpression::Reference(r)) => match self.heap.get(&r){
-                Some(ReferenceValue::Array((_, _, length))) => (r, length),
+                Some(ReferenceValue::Array((_, _, length, _))) => (r, length),
                 otherwise => panic_with_diagnostics(&format!("{:?} is not an array and can't be assigned to in assignment '{}[{:?}] := {:?}'", otherwise, arr_name, index, var), &self),
             },
             _ => panic_with_diagnostics(&format!("{} is not a reference", arr_name), &self),
@@ -215,7 +215,7 @@ impl<'a> SymMemory {
         //get mutable HashMap representing array
         let (ty, arr) = match self.stack_get(&arr_name){
             Some(SymExpression::Reference(r)) => match self.heap.get_mut(&r){
-                Some(ReferenceValue::Array((ty, arr, _))) => (ty, arr),
+                Some(ReferenceValue::Array((ty, arr, _, _))) => (ty, arr),
                 otherwise => panic_with_diagnostics(&format!("{:?} is not an array and can't be assigned to in assignment '{}[{:?}] := {:?}'", otherwise, arr_name, sym_index, var), &self),
             },
             _ => panic_with_diagnostics(&format!("{} is not a reference", arr_name), &self),
@@ -272,7 +272,7 @@ impl<'a> SymMemory {
     pub fn heap_get_arr_length(&self, arr_name: &Identifier) -> SymExpression {
         match self.stack_get(&arr_name){
         Some(SymExpression::Reference(r)) => match self.heap.get(&r){
-            Some(ReferenceValue::Array((_, _, length))) => length.clone(),
+            Some(ReferenceValue::Array((_, _, length, _))) => length.clone(),
             otherwise => panic_with_diagnostics(&format!("Can't return length of {} since the value it references to ({:?}) is not an array", arr_name, otherwise), &self),
         },
         _ => panic_with_diagnostics(&format!("{} is not a reference", arr_name), &self),
@@ -340,8 +340,8 @@ impl<'a> SymMemory {
     }
 
     //todo: how to initialize correctly
-    pub fn init_array(&mut self, ty: SymType, size_expr: SymExpression) -> ReferenceValue {
-        ReferenceValue::Array((ty, FxHashMap::default(), size_expr))
+    pub fn init_array(&mut self, ty: SymType, size_expr: SymExpression, is_lazy: bool) -> ReferenceValue {
+        ReferenceValue::Array((ty, FxHashMap::default(), size_expr, is_lazy))
     }
 }
 
@@ -356,7 +356,7 @@ impl fmt::Debug for ReferenceValue {
                 }
                 write!(f, "{}", formated_obj)
             }
-            ReferenceValue::Array((ty, entries, len)) => {
+            ReferenceValue::Array((ty, entries, len, _)) => {
                 let mut formated_obj = format!("{:?}[] with length {:?}", ty, len);
                 for (index, value) in entries {
                     formated_obj
@@ -364,7 +364,6 @@ impl fmt::Debug for ReferenceValue {
                 }
                 write!(f, "{}", formated_obj)
             }
-            ReferenceValue::LazyObject(class_name) => write!(f, "Uninitialized {}", class_name),
         }
     }
 }

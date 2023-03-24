@@ -16,7 +16,7 @@ use crate::shared::{panic_with_diagnostics, Depth, Diagnostics, Error};
 use crate::smt_solver::Solver;
 use crate::symbolic::expression::{PathConstraints, SymExpression, SymType};
 use crate::symbolic::memory::SymMemory;
-use crate::symbolic::ref_values::{ArrSizes, ReferenceValue, SymRefType};
+use crate::symbolic::ref_values::{ArrSizes, ReferenceValue, SymRefType, LazyReference};
 
 use colored::Colorize;
 use petgraph::stable_graph::NodeIndex;
@@ -192,7 +192,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                             let sym_ty = match &**ty {
                                 Type::Int => SymType::Int,
                                 Type::Bool => SymType::Bool,
-                                Type::Class(id) => SymType::Ref(SymRefType::LazyObject(id.clone())),
+                                Type::Class(id) => SymType::Ref(SymRefType::Object(id.clone())),
                                 Type::Array(_) => {
                                     todo!("2+ dimensional arrays are not yet supported")
                                 }
@@ -201,15 +201,13 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                                     &sym_memory,
                                 ),
                             };
-                            let arr = sym_memory.init_array(sym_ty.clone(), size);
+                            let arr = sym_memory.init_array(sym_ty.clone(), size, true);
                             let r = sym_memory.heap_insert(None, arr);
                             sym_memory.stack_insert(id.clone(), SymExpression::Reference(r));
                         }
                         (Type::Class(class_name), id) => {
-                            // generate reference and insert lazy object into heap & stack
-                            let r = sym_memory
-                                .heap_insert(None, ReferenceValue::LazyObject(class_name.clone()));
-                            sym_memory.stack_insert(id.clone(), SymExpression::Reference(r));
+                            let lr = LazyReference::new(Uuid::new_v4(), class_name.clone());
+                            sym_memory.stack_insert(id.clone(), SymExpression::LazyReference(lr));
                         }
                         (ty, id) => panic_with_diagnostics(
                             &format!("Can't call main with parameter {} of type {:?}", id, ty),

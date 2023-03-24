@@ -32,7 +32,7 @@ pub fn parse_rhs<'a, 'b>(
                 }
             };
             let size_expr = SymExpression::new(&sym_memory, len.clone());
-            let arr = sym_memory.init_array(sym_ty, size_expr);
+            let arr = sym_memory.init_array(sym_ty, size_expr, false);
             let r = sym_memory.heap_insert(None, arr);
             Ok(SymExpression::Reference(r))
         }
