@@ -7,7 +7,7 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use super::ref_values::{ArrSize, ArrSizes, Array, Reference, SymRefType};
+use super::ref_values::{ArrSize, ArrSizes, Array, Reference, SymRefType, LazyReference};
 use crate::{ast::*, shared::panic_with_diagnostics, symbolic::memory::SymMemory};
 
 #[derive(Clone)]
@@ -105,7 +105,7 @@ pub enum SymExpression {
     FreeVariable(SymType, Identifier),
     SizeOf(Identifier, Reference, Box<SymExpression>, Option<ArrSize>),
     Reference(Reference),
-    LazyReference(Reference, Identifier),
+    LazyReference(LazyReference),
     Uninitialized,
 }
 
@@ -737,6 +737,7 @@ impl fmt::Debug for SymExpression {
                 formated.push_str(&r.clone().to_string()[0..4]);
                 write!(f, "Ref({})", formated)
             }
+            SymExpression::LazyReference(lr) => write!(f, "{:?}", lr),
             SymExpression::Uninitialized => write!(f, "Unitialized"),
         }
     }

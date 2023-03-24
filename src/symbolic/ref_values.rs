@@ -1,13 +1,25 @@
 //! Symbolic model representing the values on the heap while symbolically executing a program
 //!
-use super::expression::{SymExpression, SymType};
-use crate::{ast::*, shared::panic_with_diagnostics};
+use super::{expression::{SymExpression, SymType, PathConstraint}, memory::SymMemory};
+use crate::{ast::*, shared::{panic_with_diagnostics, Error}};
 use core::fmt;
 use rustc_hash::FxHashMap;
 use std::cmp::Ordering;
 use uuid::Uuid;
 
 pub type Reference = Uuid;
+
+#[derive(Clone)]
+pub struct LazyReference(Reference, Identifier);
+
+impl LazyReference {
+    pub fn initialize(sym_memory: &mut SymMemory, pc: PathConstraint) -> Result<Reference, Error> {
+        todo!("");
+    }
+    pub fn release(sym_memory: &mut SymMemory, pc: PathConstraint) -> Result<Reference, Error> {
+        todo!("");
+    }
+}
 
 /// Consists of `identifier` (= classname) and a hashmap describing it's fields
 pub type Object = (Identifier, FxHashMap<Identifier, SymExpression>);
@@ -527,6 +539,13 @@ impl PartialEq for ArrSize {
     }
 }
 
+impl fmt::Debug for LazyReference {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut formated = "".to_string();
+        formated.push_str(&self.0.clone().to_string()[0..4]);
+        write!(f, "LazyRef({} | null)", formated)
+    }
+}
 impl fmt::Debug for ArrSizes {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut res = "Ranges:\n".to_string();

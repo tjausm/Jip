@@ -17,9 +17,9 @@ use crate::smt_solver::Solver;
 use crate::symbolic::expression::{PathConstraints, SymExpression, SymType};
 use crate::symbolic::memory::SymMemory;
 use crate::symbolic::ref_values::{ArrSizes, ReferenceValue, SymRefType};
-use crate::symbolic::state::PathState;
 
 use colored::Colorize;
+use petgraph::stable_graph::NodeIndex;
 use petgraph::visit::EdgeRef;
 use uuid::Uuid;
 
@@ -154,7 +154,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
     let (start_node, cfg) = generate_cfg(prog.clone());
 
     //init our bfs through the cfg
-    let mut q: VecDeque<PathState> = VecDeque::new();
+    let mut q: VecDeque<(SymMemory, PathConstraints, ArrSizes, Depth, NodeIndex)> = VecDeque::new();
     q.push_back((
         SymMemory::new(prog.clone()),
         PathConstraints::default(),
@@ -164,11 +164,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
     ));
 
     // enque all connected nodes, till d=0 or we reach end of cfg
-    'q_states: while let Some(state) = q.pop_front() {
-        // save copy of initial state & destruct
-        let init_state = state.clone();
-        let (mut sym_memory, mut pc, mut arr_sizes, d, curr_node) = state;
-
+    'q_states: while let Some((mut sym_memory, mut pc, mut arr_sizes, d, curr_node)) = q.pop_front() {
         if d == 0 {
             continue;
         }
@@ -328,8 +324,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                         Lhs::Identifier(id) => {
                             // possibly fork
                             let val = sym_memory
-                                .stack_get_forkable(id, &init_state)
-                                .straighten(&mut q);
+                                .stack_get(id);
 
                             match val {
                                 Some(SymExpression::Reference(r)) => sym_memory
