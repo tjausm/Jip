@@ -32,7 +32,6 @@ pub type Object = (Identifier, FxHashMap<Identifier, SymExpression>);
 pub enum SymRefType {
     Array(Box<SymType>),
     Object(Identifier),
-    LazyObject(Identifier),
 }
 
 #[derive(Clone)]

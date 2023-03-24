@@ -5,7 +5,9 @@ use std::fmt;
 use uuid::Uuid;
 
 use super::expression::{PathConstraints, SymExpression, SymType};
-use super::ref_values::{ArrSize, ArrSizes, Array, Reference, ReferenceValue, SymRefType, LazyReference};
+use super::ref_values::{
+    ArrSize, ArrSizes, Array, LazyReference, Reference, ReferenceValue, SymRefType,
+};
 use crate::ast::*;
 use crate::shared::{panic_with_diagnostics, Diagnostics, Error, Scope};
 use crate::smt_solver::Solver;
@@ -110,7 +112,6 @@ impl<'a> SymMemory {
         field_name: &'a String,
         var: Option<SymExpression>,
     ) -> Result<SymExpression, Error> {
-
         let r = match self.stack_get(obj_name) {
             Some(SymExpression::LazyReference(lr)) => lr.initialize(self, todo!(), todo!())?,
             Some(SymExpression::Reference(r)) => r,
@@ -118,36 +119,33 @@ impl<'a> SymMemory {
         };
 
         match self.heap.get_mut(&r) {
-                Some(ReferenceValue::Object((_, fields))) => {
-                    let expr = match fields.get(field_name) {
-                        Some(field) => field,
-                        None => panic_with_diagnostics(
-                            &format!("Field {} does not exist on {}", field_name, obj_name),
-                            &self,
-                        ),
-                    };
-                    match var {
-                        Some(var) => {
-                            fields.insert(field_name.clone(), var.clone());
-                            Ok(var)
-                        }
-                        None => Ok(expr.clone()),
-                    }
-                }
-                otherwise => panic_with_diagnostics(
-                    &format!(
-                        "{:?} can't be assigned in assignment '{}.{} := {:?}'",
-                        otherwise, obj_name, field_name, var
+            Some(ReferenceValue::Object((_, fields))) => {
+                let expr = match fields.get(field_name) {
+                    Some(field) => field,
+                    None => panic_with_diagnostics(
+                        &format!("Field {} does not exist on {}", field_name, obj_name),
+                        &self,
                     ),
-                    &self,
-                ),
+                };
+                match var {
+                    Some(var) => {
+                        fields.insert(field_name.clone(), var.clone());
+                        Ok(var)
+                    }
+                    None => Ok(expr.clone()),
+                }
             }
-
+            otherwise => panic_with_diagnostics(
+                &format!(
+                    "Can't get value of '{}.{}' because {:?} is not an object'",
+                    obj_name, field_name, otherwise
+                ),
+                &self,
+            ),
         }
-    
+    }
 
     pub fn heap_get_array(&self, arr_name: &Identifier) -> &Array {
-        
         match self.stack_get(arr_name) {
             Some(SymExpression::Reference(r)) => match self.heap.get(&r) {
                 Some(ReferenceValue::Array(arr)) => arr,
@@ -175,9 +173,9 @@ impl<'a> SymMemory {
         var: Option<SymExpression>,
     ) -> Result<SymExpression, Error> {
         //get mutable HashMap representing array
-        let (r, size_expr) = match self.stack_get(&arr_name){
+        let (r, size_expr, is_lazy) = match self.stack_get(&arr_name){
             Some(SymExpression::Reference(r)) => match self.heap.get(&r){
-                Some(ReferenceValue::Array((_, _, length, _))) => (r, length),
+                Some(ReferenceValue::Array((_, _, length, is_lazy))) => (r, length, *is_lazy),
                 otherwise => panic_with_diagnostics(&format!("{:?} is not an array and can't be assigned to in assignment '{}[{:?}] := {:?}'", otherwise, arr_name, index, var), &self),
             },
             _ => panic_with_diagnostics(&format!("{} is not a reference", arr_name), &self),
@@ -221,6 +219,7 @@ impl<'a> SymMemory {
             _ => panic_with_diagnostics(&format!("{} is not a reference", arr_name), &self),
         };
 
+        /// if we insert var or var is already in arr then return
         if let Some(var) = var {
             arr.insert(simple_index, var.clone());
             return Ok(var);
@@ -229,36 +228,40 @@ impl<'a> SymMemory {
             return Ok(v.clone());
         }
 
-        match ty {
-            SymType::Ref(ref_type) => match ref_type {
-                SymRefType::Object(class) => {
-                    // generate and insert reference
-                    let r = Uuid::new_v4();
-                    let sym_r = SymExpression::Reference(r);
-                    arr.insert(simple_index, sym_r.clone());
+        // otherwise generate new
+        match (is_lazy, &ty) {
+            (false, SymType::Ref(SymRefType::Object(class))) => {
+                // generate and insert reference
+                let r = Uuid::new_v4();
+                let sym_r = SymExpression::Reference(r);
+                arr.insert(simple_index, sym_r.clone());
 
-                    // instantiate object and insert under reference afterwards (to please borrowchecker)
-                    let class = class.clone();
-                    let obj = self.init_object(r, class);
-                    self.heap_insert(Some(r), obj);
+                // instantiate object and insert under reference afterwards (to please borrowchecker)
+                let class = class.clone();
+                let obj = self.init_object(r, class);
+                self.heap_insert(Some(r), obj);
 
-                    Ok(sym_r)
-                }
-                SymRefType::LazyObject(class) => {
-                    // generate and insert reference
-                    let r = Uuid::new_v4();
-                    let sym_r = SymExpression::Reference(r);
-                    arr.insert(simple_index, sym_r.clone());
+                Ok(sym_r)
+            }
+            // generate and return lazy reference
+            (true, SymType::Ref(SymRefType::Object(class))) => {
+                let lr = LazyReference::new(Uuid::new_v4(), class.clone());
+                Ok(SymExpression::LazyReference(lr))
+            }
+            (_, SymType::Ref(SymRefType::Array(_))) => {
+                todo!("2+ dimensional arrays are not supported")
+            }
 
-                    // instantiate lazy object and insert under reference afterwards (to please borrowchecker)
-                    let class = class.clone();
-                    let obj = self.init_lazy_object(r, class.clone());
-                    self.heap_insert(Some(r), obj);
-
-                    Ok(sym_r)
-                }
-                SymRefType::Array(_) => todo!("2+ dimensional arrays are not supported"),
-            },
+            (false, SymType::Int) => {
+                let lit = SymExpression::Literal(Literal::Integer(0));
+                arr.insert(simple_index, lit.clone());
+                Ok(lit)
+            }
+            (false, SymType::Bool) => {
+                let lit = SymExpression::Literal(Literal::Boolean(false));
+                arr.insert(simple_index, lit.clone());
+                Ok(lit)
+            }
             _ => {
                 let fv_id = format!("|{}[{:?}]|", arr_name.clone(), simple_index);
                 let fv = SymExpression::FreeVariable(ty.clone(), fv_id);
@@ -324,7 +327,10 @@ impl<'a> SymMemory {
                     }
                     Type::Class(class) => {
                         // either make lazy object or uninitialized
-                        let lazy_ref = SymExpression::LazyReference(LazyReference::new(Uuid::new_v4(), class.clone()));
+                        let lazy_ref = SymExpression::LazyReference(LazyReference::new(
+                            Uuid::new_v4(),
+                            class.clone(),
+                        ));
                         fields.insert(field.clone(), lazy_ref);
                     }
                     Type::Void => panic_with_diagnostics(
@@ -340,7 +346,12 @@ impl<'a> SymMemory {
     }
 
     //todo: how to initialize correctly
-    pub fn init_array(&mut self, ty: SymType, size_expr: SymExpression, is_lazy: bool) -> ReferenceValue {
+    pub fn init_array(
+        &mut self,
+        ty: SymType,
+        size_expr: SymExpression,
+        is_lazy: bool,
+    ) -> ReferenceValue {
         ReferenceValue::Array((ty, FxHashMap::default(), size_expr, is_lazy))
     }
 }
