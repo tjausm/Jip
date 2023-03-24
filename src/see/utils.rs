@@ -5,6 +5,7 @@ use crate::smt_solver::Solver;
 use crate::symbolic::expression::{PathConstraints, SymExpression, SymType};
 use crate::symbolic::memory::SymMemory;
 use crate::symbolic::ref_values::{ArrSizes, SymRefType};
+use crate::symbolic::state::Fork;
 
 /// returns the symbolic expression rhs refers to
 pub fn parse_rhs<'a, 'b>(
@@ -67,7 +68,7 @@ pub fn lhs_from_rhs<'a>(
 ) -> Result<(), Error> {
     let var = parse_rhs(sym_memory, pc, arr_sizes, solver, diagnostics, rhs)?;
     match lhs {
-        Lhs::Identifier(id) => sym_memory.stack_insert(id, var),
+        Lhs::Identifier(id) => sym_memory.stack_insert(id.to_string(), var),
         Lhs::AccessField(obj_name, field_name) => {
             sym_memory.heap_access_object(obj_name, field_name, Some(var));
         }
@@ -84,69 +85,6 @@ pub fn lhs_from_rhs<'a>(
         }
     };
     Ok(())
-}
-
-/// evaluates the parameters & arguments to a mapping id -> variable that can be added to a function scope
-pub fn params_to_vars<'ctx>(
-    sym_memory: &mut SymMemory,
-    params: &'ctx Parameters,
-    args: &'ctx Arguments,
-) -> Vec<(&'ctx String, SymExpression)> {
-    let mut params_iter = params.iter();
-    let mut args_iter = args.iter();
-    let mut variables = vec![];
-
-    let err = |ty, arg_id, expr| {
-        panic_with_diagnostics(
-            &format!(
-                "Can't assign argument '{} {}' value '{:?}'",
-                ty, arg_id, expr
-            ),
-            &sym_memory,
-        )
-    };
-
-    loop {
-        match (params_iter.next(), args_iter.next()) {
-            (Some((Type::Array(ty), arg_id)), Some(expr)) => match expr {
-                Expression::Identifier(param_id) => match sym_memory.stack_get(&param_id) {
-                    Some(SymExpression::Reference(r)) => {
-                        variables.push((arg_id, SymExpression::Reference(r)))
-                    }
-                    _ => return err(&format!("{:?}[]", ty), arg_id, expr),
-                },
-                _ => return err(&format!("{:?}[]", ty), arg_id, expr),
-            },
-            (Some((Type::Class(class), arg_id)), Some(expr)) => match expr {
-                Expression::Identifier(param_id) => match sym_memory.stack_get(&param_id) {
-                    Some(SymExpression::Reference(r)) => {
-                        variables.push((arg_id, SymExpression::Reference(r)))
-                    }
-                    _ => return err(&class, arg_id, expr),
-                },
-                _ => return err(&class, arg_id, expr),
-            },
-            (Some((_, arg_id)), Some(expr)) => {
-                variables.push((arg_id, SymExpression::new(&sym_memory, expr.clone())));
-            }
-            (Some((_, param)), None) => panic_with_diagnostics(
-                &format!(
-                    "Missing an argument for parameter {:?} in a method call",
-                    param
-                ),
-                &sym_memory,
-            ),
-            (None, Some(expr)) => panic_with_diagnostics(
-                &format!(
-                    "Expression {:?} has no parameter it can be assigned to in a method call",
-                    expr
-                ),
-                &sym_memory,
-            ),
-            (None, None) => break,
-        }
-    }
-    return variables;
 }
 
 /// handles the assertion in the SEE (used in `assert` and `require` statements)

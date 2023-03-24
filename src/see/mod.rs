@@ -12,12 +12,12 @@ use crate::cfg::{generate_cfg, generate_dot_cfg};
 use crate::see::utils::*;
 use crate::shared::Config;
 use crate::shared::ExitCode;
-use crate::shared::{panic_with_diagnostics, Diagnostics, Error, Depth};
+use crate::shared::{panic_with_diagnostics, Depth, Diagnostics, Error};
 use crate::smt_solver::Solver;
 use crate::symbolic::expression::{PathConstraints, SymExpression, SymType};
 use crate::symbolic::memory::SymMemory;
 use crate::symbolic::ref_values::{ArrSizes, ReferenceValue, SymRefType};
-use crate::symbolic::state::{PathState};
+use crate::symbolic::state::PathState;
 
 use colored::Colorize;
 use petgraph::visit::EdgeRef;
@@ -42,7 +42,7 @@ pub fn bench(
         let mut dia;
         // Code block to measure.
         {
-            match verify_program(program, depth,  &config) {
+            match verify_program(program, depth, &config) {
                 Ok(d) => dia = d,
                 r => return print_result(r),
             }
@@ -51,8 +51,13 @@ pub fn bench(
         // format duration to string of length 5
         let dur = now.elapsed();
         let time = format!("{:?},{:0<3}", dur.as_secs(), dur.as_millis());
-        println!("{:<12}{:<12}{:<12}{:<12}", depth, &time[0..5], dia.paths_explored, dia.z3_calls);
-        
+        println!(
+            "{:<12}{:<12}{:<12}{:<12}",
+            depth,
+            &time[0..5],
+            dia.paths_explored,
+            dia.z3_calls
+        );
     }
     return (ExitCode::Valid, "Benchmark done!".to_owned());
 }
@@ -131,7 +136,6 @@ fn print_debug(node: &Node, sym_memory: &SymMemory, pc: &PathConstraints, arr_si
     }
 }
 
-
 fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagnostics, Error> {
     let prune_coefficient = f64::from(config.prune_ratio) / f64::from(i8::MAX);
     let prune_depth = (f64::from(d) - f64::from(d) * prune_coefficient) as i32;
@@ -161,9 +165,8 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
 
     // enque all connected nodes, till d=0 or we reach end of cfg
     'q_states: while let Some(state) = q.pop_front() {
-
         // save copy of initial state & destruct
-        let initial_state = state.clone();
+        let init_state = state.clone();
         let (mut sym_memory, mut pc, mut arr_sizes, d, curr_node) = state;
 
         if d == 0 {
@@ -223,9 +226,14 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
             Node::Statement(stmt) => {
                 match stmt {
                     Statement::Declaration((ty, id)) => match ty {
-                        Type::Int => sym_memory.stack_insert(id.clone(), SymExpression::Uninitialized),
-                        Type::Bool => sym_memory.stack_insert(id.clone(), SymExpression::Uninitialized),
-                        _ => sym_memory.stack_insert(id.clone(), SymExpression::Reference(Uuid::new_v4())),
+                        Type::Int => {
+                            sym_memory.stack_insert(id.clone(), SymExpression::Uninitialized)
+                        }
+                        Type::Bool => {
+                            sym_memory.stack_insert(id.clone(), SymExpression::Uninitialized)
+                        }
+                        _ => sym_memory
+                            .stack_insert(id.clone(), SymExpression::Reference(Uuid::new_v4())),
                     },
                     Statement::Assume(assumption) => {
                         if !assume(
@@ -268,8 +276,10 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                         };
 
                         // add return value to stack
-                        sym_memory
-                            .stack_insert(retval_id.clone(), SymExpression::new(&sym_memory, expr.clone()));
+                        sym_memory.stack_insert(
+                            retval_id.clone(),
+                            SymExpression::new(&sym_memory, expr.clone()),
+                        );
                     }
                     _ => (),
                 }
@@ -277,7 +287,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
             Node::End => {
                 diagnostics.paths_explored = diagnostics.paths_explored + 1;
                 continue 'q_states;
-            },
+            }
             _ => (),
         }
 
@@ -290,32 +300,54 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                 match action {
                     Action::EnterScope { to: scope } => sym_memory.stack_push(scope.clone()),
                     Action::AssignArgs { params, args } => {
-                        let variables = params_to_vars(&mut sym_memory, &params, &args);
-
-                        for (id, var) in variables {
-                            sym_memory.stack_insert(id.to_string(), var);
+                        loop {
+                            match (params.into_iter().next(), args.into_iter().next()) {
+                                (Some((_, arg_id)), Some(expr)) => {
+                                    let sym_expr = SymExpression::new(&sym_memory, expr.clone());
+                                    sym_memory.stack_insert(arg_id.clone(), sym_expr);
+                                },
+                                (Some((_, param)), None) => panic_with_diagnostics(
+                                    &format!(
+                                        "Missing an argument for parameter {:?} in a method call",
+                                        param
+                                    ),
+                                    &sym_memory,
+                                ),
+                                (None, Some(expr)) => panic_with_diagnostics(
+                                    &format!(
+                                        "Expression {:?} has no parameter it can be assigned to in a method call",
+                                        expr
+                                    ),
+                                    &sym_memory,
+                                ),
+                                (None, None) => break,
+                            }
                         }
                     }
                     Action::DeclareThis { class, obj } => match obj {
                         Lhs::Identifier(id) => {
-                            
                             // possibly fork
-                            let val = sym_memory.stack_get(id, &initial_state).straighten(&mut q);
+                            let val = sym_memory
+                                .stack_get_forkable(id, &init_state)
+                                .straighten(&mut q);
 
                             match val {
-                            Some(SymExpression::Reference(r)) => {
-                                sym_memory.stack_insert(this_id.clone(), SymExpression::Reference(r))
-                            }
+                                Some(SymExpression::Reference(r)) => sym_memory
+                                    .stack_insert(this_id.clone(), SymExpression::Reference(r)),
 
-                            Some(ty) => panic_with_diagnostics(
-                                &format!("{} is not of type {} but of type {:?}", id, class, ty),
-                                &sym_memory,
-                            ),
-                            None => panic_with_diagnostics(
-                                &format!("Variable {} is undeclared", id),
-                                &sym_memory,
-                            ),
-                        }},
+                                Some(ty) => panic_with_diagnostics(
+                                    &format!(
+                                        "{} is not of type {} but of type {:?}",
+                                        id, class, ty
+                                    ),
+                                    &sym_memory,
+                                ),
+                                None => panic_with_diagnostics(
+                                    &format!("Variable {} is undeclared", id),
+                                    &sym_memory,
+                                ),
+                            }
+                        }
                         Lhs::AccessField(obj, field) => {
                             match sym_memory.heap_access_object(obj, field, None) {
                                 SymExpression::Reference(r) => sym_memory.stack_insert(this_id.to_string(), SymExpression::Reference(r)),
@@ -345,8 +377,9 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                         // get reference r, init object, and insert into heap under reference
                         match lhs {
                             Lhs::Identifier(id) => {
-
-                                let expr = sym_memory.stack_get( id, &initial_state).straighten(&mut q);
+                                let expr = sym_memory
+                                    .stack_get_forkable(id, &init_state)
+                                    .straighten(&mut q);
 
                                 match expr {
                                     Some(SymExpression::Reference(r)) => {
@@ -390,7 +423,9 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                     }
                     // lift retval 1 scope up
                     Action::LiftRetval => {
-                        let expr = sym_memory.stack_get(retval_id, &initial_state).straighten(&mut q);
+                        let expr = sym_memory
+                            .stack_get_forkable(retval_id, &init_state)
+                            .straighten(&mut q);
 
                         match expr {
                             Some(retval) => sym_memory.stack_insert_below(retval_id, retval),

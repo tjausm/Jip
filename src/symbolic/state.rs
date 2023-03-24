@@ -25,4 +25,13 @@ impl<Value> Fork<Value> {
             },
         }
     }
+
+    pub fn map<F, A>(self, f: F) -> Fork<A>
+        where F : Fn(Value) -> A
+        {
+            match self {
+                Fork::No(v) => Fork::No(f(v)),
+                Fork::Yes(v, s) => Fork::Yes(f(v), s),
+            }
+        } 
 }

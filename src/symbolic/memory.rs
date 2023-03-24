@@ -5,26 +5,16 @@ use std::fmt;
 use uuid::Uuid;
 
 use super::expression::{PathConstraints, SymExpression, SymType};
-use super::ref_values::{
-    ArrSize, ArrSizes, Array,  Reference, ReferenceValue, SymRefType,
-};
+use super::ref_values::{ArrSize, ArrSizes, Array, Reference, ReferenceValue, SymRefType};
 use super::state::{Fork, PathState};
 use crate::ast::*;
 use crate::shared::{panic_with_diagnostics, Diagnostics, Error, Scope};
 use crate::smt_solver::Solver;
 
-/// extends SymExpression with a lazy reference type
-#[derive(Debug, Clone)]
-enum StackVal {
-    Expr(SymExpression),
-    /// identifier of the class that lazy reference should initialize
-    LazyReference(Identifier)
-}
-
 #[derive(Debug, Clone)]
 struct Frame {
     pub scope: Scope,
-    pub env: FxHashMap<Identifier, StackVal>,
+    pub env: FxHashMap<Identifier, SymExpression>,
 }
 
 type SymStack = Vec<Frame>;
@@ -52,15 +42,8 @@ impl<'a> SymMemory {
     /// Insert mapping `Identifier |-> SymbolicExpression` in top most frame of stack
     pub fn stack_insert(&mut self, id: Identifier, sym_expr: SymExpression) -> () {
         if let Some(s) = self.stack.last_mut() {
-            s.env.insert(id.clone(), StackVal::Expr(sym_expr));
+            s.env.insert(id.clone(), sym_expr);
         }
-    }
-
-    /// Insert mapping `Identifier |-> LazyReference(class)` in top most frame of stack. Retreiving this ref will fork state
-    pub fn stack_insert_lazy(&mut self, id: Identifier, class_name: Identifier){
-        if let Some(s) = self.stack.last_mut() {
-            s.env.insert(id.clone(), StackVal::LazyReference(class_name));
-        }   
     }
 
     /// Insert mapping `Identifier |-> SymbolicExpression` in frame below top most frame of stack
@@ -68,24 +51,22 @@ impl<'a> SymMemory {
         let below_index = self.stack.len() - 2;
         match self.stack.get_mut(below_index) {
             Some(frame) => {
-                frame.env.insert(id.clone(), StackVal::Expr(sym_expr));
+                frame.env.insert(id.clone(), sym_expr);
             }
             _ => (),
         }
     }
 
     /// Iterate over frames from stack returning the first variable with given `id`
-    pub fn stack_get(&self, id: &'a Identifier, init_state: &PathState) -> Fork<Option<SymExpression>> {
+    pub fn stack_get(&self, id: &'a Identifier) -> Option<SymExpression> {
         if id == "null" {
-            return Fork::No(Some(SymExpression::Reference(Uuid::nil())));
+            return Some(SymExpression::Reference(Uuid::nil()));
         };
 
         for s in self.stack.iter().rev() {
             match s.env.get(id) {
-                Some(StackVal::LazyReference(class)) => {
-                    todo!("Forken!")
-                },
-                Some(StackVal::Expr(var)) => return Fork::No(Some(var.clone())),
+                Some(var) => return Some(var.clone()),
+
                 None => (),
             }
         }
@@ -101,6 +82,24 @@ impl<'a> SymMemory {
     }
     pub fn stack_pop(&mut self) -> () {
         self.stack.pop();
+    }
+
+    // assigns the `from` value to the `to` value on the top most frame of the stack
+    pub fn stack_assign(&mut self, from: &Identifier, to: Identifier) -> (){
+        let mut from_val;
+        for s in self.stack.iter().rev() {
+            match s.env.get(from) {
+                Some(v) => {
+                    v = v;
+                    break
+                },
+                _ => ()
+            }
+        panic_with_diagnostics(&format!("Couldn't assign value of {} to {}", from, to), &self);
+        }
+        if let Some(s) = self.stack.last_mut() {
+            s.env.insert(to, from_val);
+        };
     }
 
     /// Returns scope indexed from the top of the stack `get_scope(0) == top_scope`
@@ -225,7 +224,8 @@ impl<'a> SymMemory {
             }
             _ => {
                 diagnostics.z3_calls += 1;
-                let size_of =SymExpression::SizeOf(arr_name.clone(), r, Box::new(size_expr.clone()), size);
+                let size_of =
+                    SymExpression::SizeOf(arr_name.clone(), r, Box::new(size_expr.clone()), size);
                 solver.verify_array_access(pc, &size_of, &simple_index)?
             }
         };

@@ -105,6 +105,7 @@ pub enum SymExpression {
     FreeVariable(SymType, Identifier),
     SizeOf(Identifier, Reference, Box<SymExpression>, Option<ArrSize>),
     Reference(Reference),
+    LazyReference(Reference, Identifier),
     Uninitialized,
 }
 
@@ -539,8 +540,8 @@ fn destruct_forall<'a>(
         // we insert index and value substitutions into stack
         // and build a new inner_expression with said substitutions
         let mut extended_memory = sym_memory.clone();
-        extended_memory.stack_insert(&index, i.clone());
-        extended_memory.stack_insert(&value, v.clone());
+        extended_memory.stack_insert(index.clone(), i.clone());
+        extended_memory.stack_insert(value.clone(), v.clone());
 
         c = SymExpression::And(
             Box::new(c),
@@ -575,11 +576,11 @@ fn destruct_forall<'a>(
     // build inner expression with index and value as freevars
     let mut extended_memory = sym_memory.clone();
     extended_memory.stack_insert(
-        &index,
+        index.clone(),
         SymExpression::FreeVariable(SymType::Int, index.clone()),
     );
     extended_memory.stack_insert(
-        &value,
+        value.clone(),
         SymExpression::FreeVariable(sym_ty.clone(), value.clone()),
     );
     let inner_expr = SymExpression::new(&extended_memory, inner_expr.clone());
