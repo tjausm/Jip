@@ -373,12 +373,17 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                         match lhs {
                             Lhs::Identifier(id) => {
                                 let expr = sym_memory
-                                    .stack_get_forkable(id, &init_state)
-                                    .straighten(&mut q);
+                                    .stack_get(id);
 
                                 match expr {
                                     Some(SymExpression::Reference(r)) => {
                                         // make an empty object and insert into heap
+                                        let obj = sym_memory.init_object(r, from_class.clone());
+                                        sym_memory.heap_insert(Some(r), obj);
+                                    },
+                                    Some(SymExpression::LazyReference(lr)) => {
+                                        // release lazy reference and initialize object
+                                        let r = lr.release(&mut sym_memory,&pc, &solver)?;
                                         let obj = sym_memory.init_object(r, from_class.clone());
                                         sym_memory.heap_insert(Some(r), obj);
                                     },
@@ -419,8 +424,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                     // lift retval 1 scope up
                     Action::LiftRetval => {
                         let expr = sym_memory
-                            .stack_get_forkable(retval_id, &init_state)
-                            .straighten(&mut q);
+                            .stack_get(retval_id);
 
                         match expr {
                             Some(retval) => sym_memory.stack_insert_below(retval_id, retval),

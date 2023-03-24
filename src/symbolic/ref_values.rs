@@ -1,7 +1,7 @@
 //! Symbolic model representing the values on the heap while symbolically executing a program
 //!
-use super::{expression::{SymExpression, SymType, PathConstraint}, memory::SymMemory};
-use crate::{ast::*, shared::{panic_with_diagnostics, Error}};
+use super::{expression::{SymExpression, SymType, PathConstraints}, memory::SymMemory};
+use crate::{ast::*, shared::{panic_with_diagnostics, Error}, smt_solver::Solver};
 use core::fmt;
 use rustc_hash::FxHashMap;
 use std::cmp::Ordering;
@@ -13,10 +13,10 @@ pub type Reference = Uuid;
 pub struct LazyReference(Reference, Identifier);
 
 impl LazyReference {
-    pub fn initialize(sym_memory: &mut SymMemory, pc: PathConstraint) -> Result<Reference, Error> {
+    pub fn initialize(&self, sym_memory: &mut SymMemory, pc: &PathConstraints, solver: &Solver) -> Result<Reference, Error> {
         todo!("");
     }
-    pub fn release(sym_memory: &mut SymMemory, pc: PathConstraint) -> Result<Reference, Error> {
+    pub fn release(&self, sym_memory: &mut SymMemory, pc: &PathConstraints, solver: &Solver) -> Result<Reference, Error> {
         todo!("");
     }
 }

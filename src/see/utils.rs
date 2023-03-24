@@ -5,7 +5,6 @@ use crate::smt_solver::Solver;
 use crate::symbolic::expression::{PathConstraints, SymExpression, SymType};
 use crate::symbolic::memory::SymMemory;
 use crate::symbolic::ref_values::{ArrSizes, SymRefType};
-use crate::symbolic::state::Fork;
 
 /// returns the symbolic expression rhs refers to
 pub fn parse_rhs<'a, 'b>(
