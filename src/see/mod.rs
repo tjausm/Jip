@@ -4,24 +4,22 @@
 
 lalrpop_mod!(#[allow(dead_code)] pub parser); // synthesized by LALRPOP and pass allow(dead_code) to avoid warning of mods only used in unit tests
 
-pub(crate) mod types;
 mod utils;
 
 use crate::ast::*;
 use crate::cfg::types::{Action, Node};
 use crate::cfg::{generate_cfg, generate_dot_cfg};
-use crate::see::types::*;
 use crate::see::utils::*;
 use crate::shared::Config;
 use crate::shared::ExitCode;
-use crate::shared::{panic_with_diagnostics, Diagnostics, Error};
+use crate::shared::{panic_with_diagnostics, Diagnostics, Error, Depth};
 use crate::smt_solver::Solver;
 use crate::symbolic::expression::{PathConstraints, SymExpression, SymType};
 use crate::symbolic::memory::SymMemory;
 use crate::symbolic::ref_values::{ArrSizes, ReferenceValue, SymRefType};
+use crate::symbolic::state::{PathState};
 
 use colored::Colorize;
-use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
 use uuid::Uuid;
 
@@ -133,6 +131,7 @@ fn print_debug(node: &Node, sym_memory: &SymMemory, pc: &PathConstraints, arr_si
     }
 }
 
+
 fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagnostics, Error> {
     let prune_coefficient = f64::from(config.prune_ratio) / f64::from(i8::MAX);
     let prune_depth = (f64::from(d) - f64::from(d) * prune_coefficient) as i32;
@@ -151,7 +150,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
     let (start_node, cfg) = generate_cfg(prog.clone());
 
     //init our bfs through the cfg
-    let mut q: VecDeque<(SymMemory, PathConstraints, ArrSizes, Depth, NodeIndex)> = VecDeque::new();
+    let mut q: VecDeque<PathState> = VecDeque::new();
     q.push_back((
         SymMemory::new(prog.clone()),
         PathConstraints::default(),
@@ -160,11 +159,13 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
         start_node,
     ));
 
-    // Assert -> build & verify z3 formula, return error if disproven
-    // Assume -> build & verify z3 formula, stop evaluating pad if disproven
-    // assignment -> evaluate rhs and update env
-    // then we enque all connected nodes, till d=0 or we reach end of cfg
-    'q_states: while let Some((mut sym_memory, mut pc, mut arr_sizes, d, curr_node)) = q.pop_front() {
+    // enque all connected nodes, till d=0 or we reach end of cfg
+    'q_states: while let Some(state) = q.pop_front() {
+
+        // save copy of initial state & destruct
+        let initial_state = state.clone();
+        let PathState(mut sym_memory, mut pc, mut arr_sizes, d, curr_node) = state;
+
         if d == 0 {
             continue;
         }
@@ -179,11 +180,11 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                 for parameter in parameters {
                     match parameter {
                         (Type::Int, id) => sym_memory.stack_insert(
-                            id,
+                            id.clone(),
                             SymExpression::FreeVariable(SymType::Int, id.clone()),
                         ),
                         (Type::Bool, id) => sym_memory.stack_insert(
-                            id,
+                            id.clone(),
                             SymExpression::FreeVariable(SymType::Bool, id.clone()),
                         ),
                         (Type::Array(ty), id) => {
@@ -203,13 +204,13 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                             };
                             let arr = sym_memory.init_array(sym_ty.clone(), size);
                             let r = sym_memory.heap_insert(None, arr);
-                            sym_memory.stack_insert(id, SymExpression::Reference(r));
+                            sym_memory.stack_insert(id.clone(), SymExpression::Reference(r));
                         }
                         (Type::Class(class_name), id) => {
                             // generate reference and insert lazy object into heap & stack
                             let r = sym_memory
                                 .heap_insert(None, ReferenceValue::LazyObject(class_name.clone()));
-                            sym_memory.stack_insert(id, SymExpression::Reference(r));
+                            sym_memory.stack_insert(id.clone(), SymExpression::Reference(r));
                         }
                         (ty, id) => panic_with_diagnostics(
                             &format!("Can't call main with parameter {} of type {:?}", id, ty),
@@ -222,9 +223,9 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
             Node::Statement(stmt) => {
                 match stmt {
                     Statement::Declaration((ty, id)) => match ty {
-                        Type::Int => sym_memory.stack_insert(&id, SymExpression::Uninitialized),
-                        Type::Bool => sym_memory.stack_insert(&id, SymExpression::Uninitialized),
-                        _ => sym_memory.stack_insert(&id, SymExpression::Reference(Uuid::new_v4())),
+                        Type::Int => sym_memory.stack_insert(id.clone(), SymExpression::Uninitialized),
+                        Type::Bool => sym_memory.stack_insert(id.clone(), SymExpression::Uninitialized),
+                        _ => sym_memory.stack_insert(id.clone(), SymExpression::Reference(Uuid::new_v4())),
                     },
                     Statement::Assume(assumption) => {
                         if !assume(
@@ -268,7 +269,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
 
                         // add return value to stack
                         sym_memory
-                            .stack_insert(retval_id, SymExpression::new(&sym_memory, expr.clone()));
+                            .stack_insert(retval_id.clone(), SymExpression::new(&sym_memory, expr.clone()));
                     }
                     _ => (),
                 }
@@ -292,13 +293,21 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                         let variables = params_to_vars(&mut sym_memory, &params, &args);
 
                         for (id, var) in variables {
-                            sym_memory.stack_insert(id, var);
+                            sym_memory.stack_insert(id.to_string(), var);
                         }
                     }
                     Action::DeclareThis { class, obj } => match obj {
-                        Lhs::Identifier(id) => match sym_memory.stack_get(id) {
+                        Lhs::Identifier(id) => {
+                            
+                            // possibly fork
+                            let val = match sym_memory.stack_get(id) {
+                                crate::shared::Fork::No(val) => val,
+                                crate::shared::Fork::Yes(val, new_state) => todo!("Fork that shit"),
+                            };
+
+                            match val {
                             Some(SymExpression::Reference(r)) => {
-                                sym_memory.stack_insert(this_id, SymExpression::Reference(r))
+                                sym_memory.stack_insert(this_id.clone(), SymExpression::Reference(r))
                             }
 
                             Some(ty) => panic_with_diagnostics(
@@ -309,10 +318,10 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                                 &format!("Variable {} is undeclared", id),
                                 &sym_memory,
                             ),
-                        },
+                        }},
                         Lhs::AccessField(obj, field) => {
                             match sym_memory.heap_access_object(obj, field, None) {
-                                SymExpression::Reference(r) => sym_memory.stack_insert(this_id, SymExpression::Reference(r)),
+                                SymExpression::Reference(r) => sym_memory.stack_insert(this_id.to_string(), SymExpression::Reference(r)),
                                 _ => panic_with_diagnostics(&format!("Can't assign '{} this' because there is no reference at {}.{}", class, obj, field), &sym_memory),
                             };
                         }
@@ -327,7 +336,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                                 None,
                             )?;
                             match expr {
-                                    SymExpression::Reference(r) => sym_memory.stack_insert(this_id, SymExpression::Reference(r)),
+                                    SymExpression::Reference(r) => sym_memory.stack_insert(this_id.to_string(), SymExpression::Reference(r)),
                                     _ => panic_with_diagnostics(&format!("Can't assign '{} this' because there is no reference at {}[{:?}]", class, arr_name, index), &sym_memory),
                                 };
                         }

@@ -13,6 +13,8 @@ pub enum ExitCode {
     Error = 2,
 }
 
+pub type Depth = i32;
+
 #[derive(Debug, Clone)]
 pub enum Error {
     Verification(String),
@@ -47,6 +49,7 @@ pub struct Diagnostics {
     pub paths_explored: i32,
     pub z3_calls: i32,
 }
+
 
 impl Default for Diagnostics {
     fn default() -> Self {

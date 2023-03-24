@@ -5,8 +5,7 @@
 extern crate lalrpop_util;
 
 use clap::{Parser, Subcommand};
-use see::types::Depth;
-use shared::{Config, ExitCode, SolverType};
+use shared::{Config, ExitCode, SolverType, Depth};
 use std::process::exit;
 
 // module declarations

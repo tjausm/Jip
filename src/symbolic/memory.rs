@@ -9,13 +9,21 @@ use super::ref_values::{
     ArrSize, ArrSizes, Array,  Reference, ReferenceValue, SymRefType,
 };
 use crate::ast::*;
-use crate::shared::{panic_with_diagnostics, Diagnostics, Error, Scope};
+use crate::shared::{panic_with_diagnostics, Diagnostics, Error, Scope, Fork};
 use crate::smt_solver::Solver;
+
+/// extends SymExpression with a lazy reference type
+#[derive(Debug, Clone)]
+enum StackVal {
+    Expr(SymExpression),
+    /// identifier of the class that lazy reference should initialize
+    LazyReference(Identifier)
+}
 
 #[derive(Debug, Clone)]
 struct Frame {
     pub scope: Scope,
-    pub env: FxHashMap<Identifier, SymExpression>,
+    pub env: FxHashMap<Identifier, StackVal>,
 }
 
 type SymStack = Vec<Frame>;
@@ -41,10 +49,17 @@ impl<'a> SymMemory {
         }
     }
     /// Insert mapping `Identifier |-> SymbolicExpression` in top most frame of stack
-    pub fn stack_insert(&mut self, id: &'a Identifier, sym_expr: SymExpression) -> () {
+    pub fn stack_insert(&mut self, id: Identifier, sym_expr: SymExpression) -> () {
         if let Some(s) = self.stack.last_mut() {
-            s.env.insert(id.clone(), sym_expr);
+            s.env.insert(id.clone(), StackVal::Expr(sym_expr));
         }
+    }
+
+    /// Insert mapping `Identifier |-> LazyReference(class)` in top most frame of stack. Retreiving this ref will fork state
+    pub fn stack_insert_lazy(&mut self, id: Identifier, class_name: Identifier){
+        if let Some(s) = self.stack.last_mut() {
+            s.env.insert(id.clone(), StackVal::LazyReference(class_name));
+        }   
     }
 
     /// Insert mapping `Identifier |-> SymbolicExpression` in frame below top most frame of stack
@@ -52,21 +67,24 @@ impl<'a> SymMemory {
         let below_index = self.stack.len() - 2;
         match self.stack.get_mut(below_index) {
             Some(frame) => {
-                frame.env.insert(id.clone(), sym_expr);
+                frame.env.insert(id.clone(), StackVal::Expr(sym_expr));
             }
             _ => (),
         }
     }
 
     /// Iterate over frames from stack returning the first variable with given `id`
-    pub fn stack_get(&self, id: &'a Identifier) -> Option<SymExpression> {
+    pub fn stack_get(&self, id: &'a Identifier) -> Fork<Option<SymExpression>, Self> {
         if id == "null" {
-            return Some(SymExpression::Reference(Uuid::nil()));
+            return Fork::No(Some(SymExpression::Reference(Uuid::nil())));
         };
 
         for s in self.stack.iter().rev() {
             match s.env.get(id) {
-                Some(var) => return Some(var.clone()),
+                Some(StackVal::LazyReference(class)) => {
+                    todo!("Forken!")
+                },
+                Some(StackVal::Expr(var)) => return Fork::No(Some(var.clone())),
                 None => (),
             }
         }
