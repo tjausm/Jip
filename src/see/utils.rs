@@ -17,7 +17,7 @@ pub fn parse_rhs<'a, 'b>(
 ) -> Result<SymExpression, Error> {
     match rhs {
         Rhs::AccessField(obj_name, field_name) => Ok(sym_memory
-            .heap_access_object(obj_name, field_name, None)
+            .heap_access_object(obj_name, field_name, None)?
             .clone()),
 
         // generate reference, build arrayname from said reference, insert array into heap and return reference

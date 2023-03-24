@@ -13,6 +13,10 @@ pub type Reference = Uuid;
 pub struct LazyReference(Reference, Identifier);
 
 impl LazyReference {
+    pub fn new(r: Reference, id: Identifier) -> Self{
+        LazyReference(r, id)
+    }
+
     pub fn initialize(&self, sym_memory: &mut SymMemory, pc: &PathConstraints, solver: &Solver) -> Result<Reference, Error> {
         todo!("");
     }

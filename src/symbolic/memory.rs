@@ -5,7 +5,7 @@ use std::fmt;
 use uuid::Uuid;
 
 use super::expression::{PathConstraints, SymExpression, SymType};
-use super::ref_values::{ArrSize, ArrSizes, Array, Reference, ReferenceValue, SymRefType};
+use super::ref_values::{ArrSize, ArrSizes, Array, Reference, ReferenceValue, SymRefType, LazyReference};
 use crate::ast::*;
 use crate::shared::{panic_with_diagnostics, Diagnostics, Error, Scope};
 use crate::smt_solver::Solver;
@@ -83,24 +83,6 @@ impl<'a> SymMemory {
         self.stack.pop();
     }
 
-    // assigns the `from` value to the `to` value on the top most frame of the stack
-    pub fn stack_assign(&mut self, from: &Identifier, to: Identifier) -> (){
-        let mut from_val;
-        for s in self.stack.iter().rev() {
-            match s.env.get(from) {
-                Some(v) => {
-                    v = v;
-                    break
-                },
-                _ => ()
-            }
-        panic_with_diagnostics(&format!("Couldn't assign value of {} to {}", from, to), &self);
-        }
-        if let Some(s) = self.stack.last_mut() {
-            s.env.insert(to, from_val);
-        };
-    }
-
     /// Returns scope indexed from the top of the stack `get_scope(0) == top_scope`
     pub fn get_scope(&self, index: usize) -> &Scope {
         let position = self.stack.len() - (1 + index);
@@ -127,9 +109,15 @@ impl<'a> SymMemory {
         obj_name: &String,
         field_name: &'a String,
         var: Option<SymExpression>,
-    ) -> SymExpression {
-        match self.stack_get(obj_name) {
-            Some(SymExpression::Reference(r)) => match self.heap.get_mut(&r) {
+    ) -> Result<SymExpression, Error> {
+
+        let r = match self.stack_get(obj_name) {
+            Some(SymExpression::LazyReference(lr)) => lr.initialize(self, todo!(), todo!())?,
+            Some(SymExpression::Reference(r)) => r,
+            _ => panic_with_diagnostics(&format!("{} is not a reference", obj_name), &self),
+        };
+
+        match self.heap.get_mut(&r) {
                 Some(ReferenceValue::Object((_, fields))) => {
                     let expr = match fields.get(field_name) {
                         Some(field) => field,
@@ -141,16 +129,10 @@ impl<'a> SymMemory {
                     match var {
                         Some(var) => {
                             fields.insert(field_name.clone(), var.clone());
-                            var
+                            Ok(var)
                         }
-                        None => expr.clone(),
+                        None => Ok(expr.clone()),
                     }
-                }
-                Some(ReferenceValue::LazyObject(class)) => {
-                    let class = class.clone();
-                    let new_obj = self.init_lazy_object(r, class.clone());
-                    self.heap_insert(Some(r), new_obj);
-                    self.heap_access_object(obj_name, field_name, var)
                 }
                 otherwise => panic_with_diagnostics(
                     &format!(
@@ -159,12 +141,13 @@ impl<'a> SymMemory {
                     ),
                     &self,
                 ),
-            },
-            _ => panic_with_diagnostics(&format!("{} is not a reference", obj_name), &self),
+            }
+
         }
-    }
+    
 
     pub fn heap_get_array(&self, arr_name: &Identifier) -> &Array {
+        
         match self.stack_get(arr_name) {
             Some(SymExpression::Reference(r)) => match self.heap.get(&r) {
                 Some(ReferenceValue::Array(arr)) => arr,
@@ -313,7 +296,7 @@ impl<'a> SymMemory {
         ReferenceValue::Object((class, fields))
     }
 
-    // inits 1 objects with its concrete fields as free variables and its reference fields as lazy objects
+    // inits 1 objects with its concrete fields as free variables and its reference fields as lazy references
     fn init_lazy_object(&mut self, r: Reference, class: Identifier) -> ReferenceValue {
         let r = Uuid::new_v4();
         let mut fields = FxHashMap::default();
@@ -341,10 +324,8 @@ impl<'a> SymMemory {
                     }
                     Type::Class(class) => {
                         // either make lazy object or uninitialized
-                        let obj = SymExpression::Reference(
-                            self.heap_insert(None, ReferenceValue::LazyObject(class.clone())),
-                        );
-                        fields.insert(field.clone(), obj);
+                        let lazy_ref = SymExpression::LazyReference(LazyReference::new(Uuid::new_v4(), class.clone()));
+                        fields.insert(field.clone(), lazy_ref);
                     }
                     Type::Void => panic_with_diagnostics(
                         &format!("Type of {}.{} can't be void", class, field),

@@ -344,7 +344,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                             }
                         }
                         Lhs::AccessField(obj, field) => {
-                            match sym_memory.heap_access_object(obj, field, None) {
+                            match sym_memory.heap_access_object(obj, field, None)? {
                                 SymExpression::Reference(r) => sym_memory.stack_insert(this_id.to_string(), SymExpression::Reference(r)),
                                 _ => panic_with_diagnostics(&format!("Can't assign '{} this' because there is no reference at {}.{}", class, obj, field), &sym_memory),
                             };
@@ -391,7 +391,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                                 };
                             }
                             Lhs::AccessField(obj, field) => {
-                                match sym_memory.heap_access_object(obj, field, None) {
+                                match sym_memory.heap_access_object(obj, field, None)? {
                                     SymExpression::Reference(r) => {
                                         // make an empty object and insert into heap
                                         let obj = sym_memory.init_object(r, from_class.clone());
