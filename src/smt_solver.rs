@@ -46,8 +46,8 @@ pub struct Solver {
 impl Solver {
     /// Creates a new solver using the configured backend.
     /// For both Yices and Cvc we pas a set of flags to make them work with the rust interface
-    pub fn new(solver_type: &SolverType) -> Solver {
-        let conf = match solver_type {
+    pub fn new(config: &Config) -> Solver {
+        let conf = match config.solver_type {
             SolverType::Z3(arg) => SmtConf::z3(arg),
             SolverType::Yices2(arg) => {
                 let mut conf = SmtConf::yices_2(arg);
@@ -68,7 +68,7 @@ impl Solver {
         solver.set_option(":print-success", "false").unwrap(); //turn off automatic succes printing in yices2
         solver.produce_models().unwrap();
         solver.set_logic(rsmt2::Logic::QF_NIA).unwrap(); //set logic to quantifier free non-linear arithmetics
-        Solver { s: solver }
+        Solver { s: solver, config: config.clone() }
     }
 
     /// Combine pathconstraints to assert `pc ==> length > index` == always true

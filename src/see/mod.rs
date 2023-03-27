@@ -144,7 +144,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
     let mut diagnostics = Diagnostics::default();
 
     //init solver
-    let mut solver = Solver::new(&config.solver_type);
+    let mut solver = Solver::new(&config);
 
     // init retval and this such that it outlives env
     let retval_id = &"retval".to_string();
