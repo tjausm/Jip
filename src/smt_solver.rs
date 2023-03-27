@@ -1,7 +1,7 @@
 //! Encode expressions into the smt-lib format to test satisfiability using the chosen backend
 
 use crate::ast::*;
-use crate::shared::{panic_with_diagnostics, Error, SolverType};
+use crate::shared::{panic_with_diagnostics, Error, SolverType, Config};
 use crate::symbolic::expression::{PathConstraints, SymExpression, SymType};
 use crate::symbolic::ref_values::{ArrSize, Boundary};
 use rsmt2::print::ModelParser;
@@ -40,6 +40,7 @@ impl<'a> ModelParser<String, String, String, &'a str> for Parser {
 
 pub struct Solver {
     s: rsmt2::Solver<Parser>,
+    pub config: Config
 }
 
 impl Solver {
