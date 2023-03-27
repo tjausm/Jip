@@ -7,7 +7,7 @@ class Main {
 
         // now x should initialize because it's not null
         assume x != null;
-        int x := x.value; 
+        int g := x.value; 
 
     }
 }
