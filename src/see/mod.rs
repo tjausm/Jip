@@ -294,8 +294,10 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                 match action {
                     Action::EnterScope { to: scope } => sym_memory.stack_push(scope.clone()),
                     Action::AssignArgs { params, args } => {
+                        let mut params_iter = params.iter();
+                        let mut args_iter = args.iter();
                         loop {
-                            match (params.into_iter().next(), args.into_iter().next()) {
+                            match (params_iter.next(), args_iter.next()) {
                                 (Some((_, arg_id)), Some(expr)) => {
                                     let sym_expr = SymExpression::new(&sym_memory, expr.clone());
                                     sym_memory.stack_insert(arg_id.clone(), sym_expr);
