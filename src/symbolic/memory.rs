@@ -108,12 +108,23 @@ impl<'a> SymMemory {
     /// Possibly update with passed `var` and return current symbolic value of the object's field
     pub fn heap_access_object(
         &mut self,
+        pc: &PathConstraints,
+        arr_sizes: &ArrSizes,
+        solver: &Solver,
+        diagnostics: &mut Diagnostics,
         obj_name: &String,
         field_name: &'a String,
         var: Option<SymExpression>,
-    ) -> Result<SymExpression, Error> {
+    ) -> Result<Option<SymExpression>, Error> {
         let r = match self.stack_get(obj_name) {
-            Some(SymExpression::LazyReference(lr)) => lr.initialize(self, todo!(), todo!())?,
+            Some(SymExpression::LazyReference(lr)) =>
+            // if path is infeasible return nothing otherwise initialize obj and return ref
+            {
+                match lr.initialize(diagnostics, solver, self, pc, arr_sizes)? {
+                    Some(r) => r,
+                    _ => return Ok(None),
+                }
+            }
             Some(SymExpression::Reference(r)) => r,
             _ => panic_with_diagnostics(&format!("{} is not a reference", obj_name), &self),
         };
@@ -130,9 +141,9 @@ impl<'a> SymMemory {
                 match var {
                     Some(var) => {
                         fields.insert(field_name.clone(), var.clone());
-                        Ok(var)
+                        Ok(Some(var))
                     }
-                    None => Ok(expr.clone()),
+                    None => Ok(Some(expr.clone())),
                 }
             }
             otherwise => panic_with_diagnostics(
@@ -219,7 +230,7 @@ impl<'a> SymMemory {
             _ => panic_with_diagnostics(&format!("{} is not a reference", arr_name), &self),
         };
 
-        /// if we insert var or var is already in arr then return
+        // if we insert var or var is already in arr then return
         if let Some(var) = var {
             arr.insert(simple_index, var.clone());
             return Ok(var);
@@ -238,7 +249,7 @@ impl<'a> SymMemory {
 
                 // instantiate object and insert under reference afterwards (to please borrowchecker)
                 let class = class.clone();
-                let obj = self.init_object(r, class);
+                let obj = self.init_object(class);
                 self.heap_insert(Some(r), obj);
 
                 Ok(sym_r)
@@ -283,7 +294,7 @@ impl<'a> SymMemory {
     }
 
     // inits an object with al it's fields uninitialised
-    pub fn init_object(&mut self, r: Reference, class: Identifier) -> ReferenceValue {
+    pub fn init_object(&mut self, class: Identifier) -> ReferenceValue {
         let mut fields = FxHashMap::default();
 
         let members = self.prog.get_class(&class).1.clone();

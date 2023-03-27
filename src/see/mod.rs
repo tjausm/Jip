@@ -341,10 +341,11 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                                 ),
                             }
                         }
-                        Lhs::AccessField(obj, field) => {
-                            match sym_memory.heap_access_object(obj, field, None)? {
-                                SymExpression::Reference(r) => sym_memory.stack_insert(this_id.to_string(), SymExpression::Reference(r)),
-                                _ => panic_with_diagnostics(&format!("Can't assign '{} this' because there is no reference at {}.{}", class, obj, field), &sym_memory),
+                        Lhs::AccessField(obj_name, field) => {
+                            match sym_memory.heap_access_object(&pc, &arr_sizes, &solver, &mut diagnostics, obj_name, field, None)? {
+                                Some(SymExpression::Reference(r)) => sym_memory.stack_insert(this_id.to_string(), SymExpression::Reference(r)),
+                                None => continue 'q_edges,                
+                                _ => panic_with_diagnostics(&format!("Can't access field {}.{}", obj_name, field), &sym_memory),
                             };
                         }
                         Lhs::AccessArray(arr_name, index) => {
@@ -373,26 +374,30 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                                 match sym_memory.stack_get(id) {
                                     Some(SymExpression::Reference(r)) => {
                                         // make an empty object and insert into heap
-                                        let obj = sym_memory.init_object(r, from_class.clone());
+                                        let obj = sym_memory.init_object(from_class.clone());
                                         sym_memory.heap_insert(Some(r), obj);
                                     },
                                     Some(SymExpression::LazyReference(lr)) => {
                                         // release lazy reference and initialize object
-                                        let r = lr.release(&mut sym_memory,&pc, &solver)?;
-                                        let obj = sym_memory.init_object(r, from_class.clone());
+                                        let r = match lr.release(&mut diagnostics,&solver,  &mut sym_memory, &pc, &arr_sizes)? {
+                                            Some(r) => r,
+                                            _ => continue 'q_edges
+                                        };
+                                        let obj = sym_memory.init_object(from_class.clone());
                                         sym_memory.heap_insert(Some(r), obj);
                                     },
                                     _ => panic_with_diagnostics(&format!("Can't initialize '{} {}' because it has not been declared yet", from_class, id), &sym_memory),
                                 },
                             
-                            Lhs::AccessField(obj, field) => {
-                                match sym_memory.heap_access_object(obj, field, None)? {
-                                    SymExpression::Reference(r) => {
+                            Lhs::AccessField(obj_name, field) => {
+                                match sym_memory.heap_access_object(&pc, &arr_sizes, &solver, &mut diagnostics, obj_name, field, None)? {
+                                    Some(SymExpression::Reference(r)) => {
                                         // make an empty object and insert into heap
-                                        let obj = sym_memory.init_object(r, from_class.clone());
+                                        let obj = sym_memory.init_object( from_class.clone());
                                         sym_memory.heap_insert(Some(r), obj);
                                     },
-                                    _ => panic_with_diagnostics(&format!("Can't initialize '{}' because there is no reference at {}.{}", from_class, obj, field), &sym_memory),
+                                    None => continue 'q_edges,
+                                    _ => panic_with_diagnostics(&format!("Can't initialize '{}' because there is no reference at {}.{}", from_class, obj_name, field), &sym_memory),
                                 };
                             }
                             Lhs::AccessArray(arr_name, index) => {
@@ -408,7 +413,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                                 match expr {
                                     SymExpression::Reference(r) => {
                                         // make an empty object and insert into heap
-                                        let obj = sym_memory.init_object(r, from_class.clone());
+                                        let obj = sym_memory.init_object(from_class.clone());
                                         sym_memory.heap_insert(Some(r), obj);
                                     },
                                     _ => panic_with_diagnostics(&format!("Can't initialize '{}' because there is no reference at {}[{:?}]", from_class, arr_name, index), &sym_memory),
