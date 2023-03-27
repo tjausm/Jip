@@ -6,15 +6,14 @@ use super::{
 };
 use crate::{
     ast::*,
-    shared::{panic_with_diagnostics, Diagnostics, Error},
+    shared::{panic_with_diagnostics, Diagnostics, Error, RefCounter},
     smt_solver::Solver,
 };
 use core::fmt;
 use rustc_hash::FxHashMap;
 use std::cmp::Ordering;
-use uuid::Uuid;
 
-pub type Reference = Uuid;
+pub type Reference = i32;
 
 #[derive(Clone)]
 pub struct LazyReference {
@@ -53,7 +52,7 @@ impl LazyReference {
         // if it's feasible we check if ref is never null
         let ref_is_null = SymExpression::EQ(
             Box::new(SymExpression::LazyReference(self.clone())),
-            Box::new(SymExpression::Reference(Uuid::nil())),
+            Box::new(SymExpression::Reference(RefCounter::null())),
         );
         let mut pc_null_check = SymExpression::And(Box::new(pc), Box::new(ref_is_null));
 
@@ -623,16 +622,14 @@ impl PartialEq for ArrSize {
 
 impl fmt::Debug for LazyReference {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut formated = "".to_string();
-        formated.push_str(&self.r.clone().to_string()[0..4]);
-        write!(f, "LazyRef({} | null)", formated)
+        write!(f, "LazyRef({} || null)", self.r)
     }
 }
 impl fmt::Debug for ArrSizes {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut res = "Ranges:\n".to_string();
         for (arr, range) in self.0.iter() {
-            res.push_str(&format!("    #{} -> {:?}\n", &arr.to_string()[0..4], range));
+            res.push_str(&format!("    #{} -> {:?}\n", arr, range));
         }
         write!(f, "{}", res)
     }

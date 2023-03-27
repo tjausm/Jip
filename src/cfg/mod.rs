@@ -13,7 +13,6 @@ use petgraph::dot::Dot;
 use petgraph::graph::{Graph, NodeIndex};
 use rustc_hash::FxHashMap;
 use std::collections::VecDeque;
-use uuid::Uuid;
 
 /// Transform node to unannotated start
 fn to_start(node: NodeIndex) -> Start {

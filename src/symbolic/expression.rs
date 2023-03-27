@@ -7,7 +7,7 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use super::ref_values::{ArrSize, ArrSizes, Array, Reference, SymRefType, LazyReference};
+use super::ref_values::{ArrSize, ArrSizes, Array, LazyReference, Reference, SymRefType};
 use crate::{ast::*, shared::panic_with_diagnostics, symbolic::memory::SymMemory};
 
 #[derive(Clone)]
@@ -725,19 +725,13 @@ impl fmt::Debug for SymExpression {
             SymExpression::Literal(Literal::Integer(val)) => write!(f, "{:?}", val),
             SymExpression::FreeVariable(_, fv) => write!(f, "{}", fv),
             SymExpression::SizeOf(_, r, _, s) => {
-                let mut formated = "".to_string();
-                formated.push_str(&r.clone().to_string()[0..4]);
                 if let Some(size) = s {
-                    write!(f, "(#{} -> {:?})", formated, size)
+                    write!(f, "(#{} -> {:?})", r, size)
                 } else {
-                    write!(f, "#{}", formated)
+                    write!(f, "#{}", r)
                 }
             }
-            SymExpression::Reference(r) => {
-                let mut formated = "".to_string();
-                formated.push_str(&r.clone().to_string()[0..4]);
-                write!(f, "Ref({})", formated)
-            }
+            SymExpression::Reference(r) => write!(f, "Ref({})", r),
             SymExpression::LazyReference(lr) => write!(f, "{:?}", lr),
             SymExpression::Uninitialized => write!(f, "Unitialized"),
         }

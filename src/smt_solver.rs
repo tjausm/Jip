@@ -2,13 +2,12 @@
 
 
 use crate::ast::Literal;
-use crate::shared::{panic_with_diagnostics, Error, SolverType, Config};
+use crate::shared::{panic_with_diagnostics, Error, SolverType, Config, RefCounter};
 use crate::symbolic::expression::{PathConstraints, SymExpression, SymType};
 use crate::symbolic::ref_values::{ArrSize, Boundary, LazyReference, SymRefType};
 use rsmt2::print::ModelParser;
 use rsmt2::{self, SmtConf, SmtRes};
 use rustc_hash::FxHashSet;
-use uuid::Uuid;
 
 type Formula = String;
 type Declarations = FxHashSet<(SymType, String)>;
@@ -341,8 +340,8 @@ fn expr_to_str<'a>(
             let mut fv = FxHashSet::default();
 
             let (r, class) = lr.get();
-            let r_value = format!("{}", r.as_u64_pair().0);
-            let null = format!("{}", Uuid::nil().as_u64_pair().0);
+            let r_value = format!("{}", r);
+            let null = format!("{}", RefCounter::null());
             let r_name = format!("|lazyRef({})|", r_value);
             
             fv.insert((SymType::Ref(SymRefType::Object(class.clone())), r_name.clone()));
@@ -351,7 +350,7 @@ fn expr_to_str<'a>(
             (r_name, fv, a)
         },
         SymExpression::Reference(r) => (
-            format!("{}", r.as_u64_pair().0),
+            format!("{}", r),
             FxHashSet::default(),
             FxHashSet::default(),
         ),

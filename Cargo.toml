@@ -21,14 +21,6 @@ colored = "2.0.0" # pretty prenting in terminal
 rsmt2 = "0.16.2"
 global_counter = "0.2.2" # reference generation
 
-[dependencies.uuid]
-version = "1.2.1"
-features = [
-    "v4",                # Generates random UUIDs
-    "fast-rng",          # Use a faster (but still sufficiently random) RNG
-    "macro-diagnostics", # Enable better diagnostics for compile-time UUIDs
-]
-
 [profile.release]
 debug=true # only turn on for profiling
 lto = true

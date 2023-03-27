@@ -4,7 +4,6 @@
 use std::fmt::Debug;
 use std::panic;
 use std::process::exit;
-use uuid::Uuid;
 /// Indicates if program is valid, counterexample was found or other error occured
 pub enum ExitCode {
     Valid = 0,
@@ -61,9 +60,9 @@ impl Default for Diagnostics {
     }
 }
 
-global_counter!(SCOPE_COUNTER, i32, 0);
-global_counter!(REF_COUNTER, i32, 0);
 
+global_counter!(REF_COUNTER, i32, 1);
+global_counter!(SCOPE_COUNTER, i32, 1);
  pub struct ScopeCounter;
 
  impl ScopeCounter {
@@ -82,6 +81,10 @@ global_counter!(REF_COUNTER, i32, 0);
          let i = SCOPE_COUNTER.get_cloned();
          SCOPE_COUNTER.inc();
          i
+     }
+    /// returns null reference
+     pub fn null() -> i32 {
+         0
      }
  }
 
