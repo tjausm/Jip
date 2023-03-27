@@ -58,9 +58,10 @@ enum Mode {
         #[clap(default_value_t = 40)]
         depth: Depth,
 
-        /// Report diagnostic information after succesful program verification
+        /// Report detailed information about proceedings of SEE
         #[clap(short, long)]
         verbose: bool,
+
     },
     /// Print cfg in Dot format
     PrintCFG,

@@ -3,7 +3,9 @@
 // and therefore it is correct i.e. non-terminating member function will never reach assertion
 class Main {
     
-    static void main(Node p, int N){
+    static void main(Node p, int N)
+    requires (p != null)
+    {
         p.fill(1, N); // fill linkedlist with values of one up to N
         bool mem := p.member(2, N);
         

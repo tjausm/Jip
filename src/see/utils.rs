@@ -196,7 +196,7 @@ pub fn assume(
         // if z3 confirms it is unsatisfiable, we must return false again
         (true, _) => {
             diagnostics.z3_calls = diagnostics.z3_calls + 1;
-            !solver.expression_unsatisfiable(&constraints)
+            !solver.expression_unsatisfiable(&constraints).is_ok()
         }
         // if either not proved or z3 is turned off we just return true and go on
         (false, _) => true,

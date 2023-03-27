@@ -46,21 +46,21 @@ impl LazyReference {
         }
 
         diagnostics.z3_calls += 1;
-        if solver.expression_unsatisfiable(&pc) {
+        if solver.expression_unsatisfiable(&pc).is_ok() {
             return Ok(false);
         }
 
         // if it's feasible we check if ref is never null
-        let ref_is_null = SymExpression::NE(
+        let ref_is_null = SymExpression::EQ(
             Box::new(SymExpression::LazyReference(self.clone())),
             Box::new(SymExpression::Reference(Uuid::nil())),
         );
         let mut pc_null_check = SymExpression::And(Box::new(pc), Box::new(ref_is_null));
 
         diagnostics.z3_calls += 1;
-        match solver.verify_constraints(pc_null_check) {
+        match solver.expression_unsatisfiable(&pc_null_check) {
             Ok(_) => Ok(true),
-            Err(e) => Err(e),
+            Err(model) => Err(Error::Verification(format!("A reference could possibly be null:\n{}", model))),
         }
     }
 

@@ -327,8 +327,10 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                                 .stack_get(id);
 
                             match val {
-                                Some(SymExpression::Reference(r)) => sym_memory
-                                    .stack_insert(this_id.clone(), SymExpression::Reference(r)),
+                                Some(SymExpression::Reference(_)) => sym_memory
+                                    .stack_insert(this_id.clone(), val.unwrap()),
+                                Some(SymExpression::LazyReference(_)) => sym_memory
+                                    .stack_insert(this_id.clone(), val.unwrap()),
 
                                 Some(ty) => panic_with_diagnostics(
                                     &format!(

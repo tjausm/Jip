@@ -114,14 +114,16 @@ impl Solver {
             }
         }
     }
-    /// returns true if an expression can never be satisfied
-    pub fn expression_unsatisfiable<'a>(&mut self, expression: &SymExpression) -> bool {
+    /// returns ok if an expression can never be satisfied otherwise returns a model to satisfy it
+    pub fn expression_unsatisfiable<'a>(&mut self, expression: &SymExpression) -> Result<(), String> {
         //negate assumption and try to find counter-example
         //no counter-example for !assumption means assumption is never true
         match self.verify_expr(expression) {
-            SmtResult::Unsat => true,
-            _ => false,
-        }
+                SmtResult::Unsat => return Ok(()),
+                SmtResult::Sat(model) => {
+                    return Err(model);
+                }
+            }
     }
 
     /// returns error if there exists a counterexample for given formula
@@ -130,6 +132,19 @@ impl Solver {
         self.s.push(1).unwrap();
 
         let (expr_str, fvs, assertions) = expr_to_str(expr);
+
+        if self.config.verbose {
+            println!("\nInvoking z3");
+            println!("  Declarations: {:?}", fvs);
+            println!("  Assertions:");
+
+            for assertion in &assertions {
+                println!("      {:?}", assertion);
+            }
+
+            println!("    Formula: {:?}\n", expr_str);
+        }
+
         for fv in fvs {
             match fv {
                 (SymType::Bool, id) => self.s.declare_const(id, "Bool").unwrap(),
