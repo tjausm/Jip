@@ -342,7 +342,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                             }
                         }
                         Lhs::AccessField(obj_name, field) => {
-                            match sym_memory.heap_access_object(&pc, &arr_sizes, &solver, &mut diagnostics, obj_name, field, None)? {
+                            match sym_memory.heap_access_object(&pc, &arr_sizes, &mut solver, &mut diagnostics, obj_name, field, None)? {
                                 Some(SymExpression::Reference(r)) => sym_memory.stack_insert(this_id.to_string(), SymExpression::Reference(r)),
                                 None => continue 'q_edges,                
                                 _ => panic_with_diagnostics(&format!("Can't access field {}.{}", obj_name, field), &sym_memory),
@@ -379,7 +379,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                                     },
                                     Some(SymExpression::LazyReference(lr)) => {
                                         // release lazy reference and initialize object
-                                        let r = match lr.release(&mut diagnostics,&solver,  &mut sym_memory, &pc, &arr_sizes)? {
+                                        let r = match lr.release(&mut diagnostics, &mut solver,  &pc, &arr_sizes)? {
                                             Some(r) => r,
                                             _ => continue 'q_edges
                                         };
@@ -390,7 +390,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                                 },
                             
                             Lhs::AccessField(obj_name, field) => {
-                                match sym_memory.heap_access_object(&pc, &arr_sizes, &solver, &mut diagnostics, obj_name, field, None)? {
+                                match sym_memory.heap_access_object(&pc, &arr_sizes, &mut solver, &mut diagnostics, obj_name, field, None)? {
                                     Some(SymExpression::Reference(r)) => {
                                         // make an empty object and insert into heap
                                         let obj = sym_memory.init_object( from_class.clone());

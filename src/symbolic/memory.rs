@@ -110,7 +110,7 @@ impl<'a> SymMemory {
         &mut self,
         pc: &PathConstraints,
         arr_sizes: &ArrSizes,
-        solver: &Solver,
+        solver: &mut Solver,
         diagnostics: &mut Diagnostics,
         obj_name: &String,
         field_name: &'a String,

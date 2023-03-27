@@ -15,6 +15,8 @@ pub enum ExitCode {
 
 pub type Depth = i32;
 
+pub type Feasible = bool;
+
 #[derive(Debug, Clone)]
 pub enum Error {
     Verification(String),
@@ -59,6 +61,7 @@ impl Default for Diagnostics {
         };
     }
 }
+
 
 /// Panics with passed message and passed datastructure (intended for SymMemory)
 #[track_caller]

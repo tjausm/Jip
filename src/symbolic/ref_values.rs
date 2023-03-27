@@ -27,8 +27,7 @@ impl LazyReference {
     fn is_never_null(
         &self,
         diagnostics: &mut Diagnostics,
-        solver: &Solver,
-        sym_memory: &mut SymMemory,
+        solver: &mut Solver,
         pc: &PathConstraints,
         sizes: &ArrSizes,
     ) -> Result<bool, Error> {
@@ -60,16 +59,16 @@ impl LazyReference {
     pub fn initialize(
         &self,
         diagnostics: &mut Diagnostics,
-        solver: &Solver,
+        solver: &mut Solver,
         sym_memory: &mut SymMemory,
         pc: &PathConstraints,
         sizes: &ArrSizes,
     ) -> Result<Option<Reference>, Error> {
-        let feasible = self.is_never_null(diagnostics, solver, sym_memory, pc, sizes)?;
+        let feasible = self.is_never_null(diagnostics, solver,  pc, sizes)?;
 
         if feasible {
             let r = self.0;
-            let obj = sym_memory.init_lazy_object(self.1);
+            let obj = sym_memory.init_lazy_object(self.1.clone());
             sym_memory.heap_insert(Some(r), obj);
             Ok(Some(r))
         } else {
@@ -81,12 +80,11 @@ impl LazyReference {
     pub fn release(
         &self,
         diagnostics: &mut Diagnostics,
-        solver: &Solver,
-        sym_memory: &mut SymMemory,
+        solver: &mut Solver,
         pc: &PathConstraints,
         sizes: &ArrSizes,
     ) -> Result<Option<Reference>, Error> {
-        let feasible = self.is_never_null(diagnostics, solver, sym_memory, pc, sizes)?;
+        let feasible = self.is_never_null(diagnostics, solver, pc, sizes)?;
 
         if feasible {
             Ok(Some(self.0))

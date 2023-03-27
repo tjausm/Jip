@@ -47,7 +47,7 @@ impl Solver {
     /// Creates a new solver using the configured backend.
     /// For both Yices and Cvc we pas a set of flags to make them work with the rust interface
     pub fn new(config: &Config) -> Solver {
-        let conf = match config.solver_type {
+        let conf = match &config.solver_type {
             SolverType::Z3(arg) => SmtConf::z3(arg),
             SolverType::Yices2(arg) => {
                 let mut conf = SmtConf::yices_2(arg);
