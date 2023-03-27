@@ -4,6 +4,9 @@
 #[macro_use]
 extern crate lalrpop_util;
 
+#[macro_use]
+extern crate global_counter;
+
 use clap::{Parser, Subcommand};
 use shared::{Config, ExitCode, SolverType, Depth};
 use std::process::exit;
@@ -77,7 +80,8 @@ enum Mode {
     },
 }
 
-fn main() {
+fn main(){
+
     let cli = Cli::parse();
     let exit = |(exit_code, result): (ExitCode, String)| {
         println!("{}", result);

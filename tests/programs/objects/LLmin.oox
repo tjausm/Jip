@@ -1,5 +1,7 @@
 class Main {
     
+(distinct |lazyRef(16676507149380960641)| 0)  && (distinct |lazyRef(16676507149380960641)| 0)
+
     static void main(Node p)
     requires (p != null)
     {

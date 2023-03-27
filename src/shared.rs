@@ -5,7 +5,6 @@ use std::fmt::Debug;
 use std::panic;
 use std::process::exit;
 use uuid::Uuid;
-
 /// Indicates if program is valid, counterexample was found or other error occured
 pub enum ExitCode {
     Valid = 0,
@@ -26,7 +25,7 @@ pub enum Error {
 /// Either has a scope id or None if we are at the entry scope of the program
 #[derive(Debug, Clone, PartialEq)]
 pub struct Scope {
-    pub id: Option<Uuid>,
+    pub id: Option<i32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -61,6 +60,31 @@ impl Default for Diagnostics {
         };
     }
 }
+
+global_counter!(SCOPE_COUNTER, i32, 0);
+global_counter!(REF_COUNTER, i32, 0);
+
+ pub struct ScopeCounter;
+
+ impl ScopeCounter {
+     /// returns a unique number
+     pub fn new() -> i32 {
+         let i = SCOPE_COUNTER.get_cloned();
+         SCOPE_COUNTER.inc();
+         i
+     }
+ }
+ pub struct RefCounter;
+
+ impl RefCounter {
+    /// returns a unique number
+     pub fn new() -> i32 {
+         let i = SCOPE_COUNTER.get_cloned();
+         SCOPE_COUNTER.inc();
+         i
+     }
+ }
+
 
 
 /// Panics with passed message and passed datastructure (intended for SymMemory)

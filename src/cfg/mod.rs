@@ -8,7 +8,7 @@ mod utils;
 use crate::ast::*;
 use crate::cfg::types::*;
 use crate::cfg::utils::{get_classname, get_routine_content};
-use crate::shared::{panic_with_diagnostics, Scope};
+use crate::shared::{panic_with_diagnostics, Scope, ScopeCounter};
 use petgraph::dot::Dot;
 use petgraph::graph::{Graph, NodeIndex};
 use rustc_hash::FxHashMap;
@@ -439,7 +439,7 @@ fn routine_to_cfg<'a>(
     }
 
     let fun_scope = Scope {
-        id: Some(Uuid::new_v4()),
+        id: Some(ScopeCounter::new()),
     };
     let enter_scope = Action::EnterScope {
         to: fun_scope.clone(),

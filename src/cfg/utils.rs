@@ -4,15 +4,11 @@ use crate::ast::*;
 use crate::cfg::types::*;
 use crate::shared::Scope;
 
-/// print the first 4 symbols of a scope id
+/// prints either main or scope id if we have one
 pub fn print_short_id(scope: &Scope) -> String {
-    let id = scope.id.map(|id| format!("{:?}", id));
-    match id {
-        None => "".to_owned(),
-        Some(id) => {
-            let (short_id, _) = id.split_at(4);
-            short_id.to_owned()
-        }
+    match scope.id {
+        None => "main".to_owned(),
+        Some(id) => id.to_string()
     }
 }
 
