@@ -78,9 +78,12 @@ pub fn lhs_from_rhs<'a>(
         _ => return Ok(false)
     };
     match lhs {
-        Lhs::Identifier(id) => sym_memory.stack_insert(id.to_string(), var),
-        Lhs::AccessField(obj_name, field_name) => {
-            sym_memory.heap_access_object(
+        Lhs::Identifier(id) =>{
+             sym_memory.stack_insert(id.to_string(), var);
+             Ok(true)
+            },
+        Lhs::AccessField(obj_name, field_name) => 
+            match sym_memory.heap_access_object(
                 pc,
                 arr_sizes,
                 solver,
@@ -88,9 +91,12 @@ pub fn lhs_from_rhs<'a>(
                 obj_name,
                 field_name,
                 Some(var),
-            );
-        }
-        Lhs::AccessArray(arr_name, index) => {
+            )? {
+                Some(_) => Ok(true),
+                None => Ok(false),
+            },
+        
+        Lhs::AccessArray(arr_name, index) => 
             sym_memory.heap_access_array(
                 &pc,
                 arr_sizes,
@@ -99,10 +105,9 @@ pub fn lhs_from_rhs<'a>(
                 arr_name,
                 index.clone(),
                 Some(var),
-            ).map(|v|Some(v));
-        }
-    };
-    Ok(true)
+            ).map(|v| true)
+        
+    }
 }
 
 /// handles the assertion in the SEE (used in `assert` and `require` statements)

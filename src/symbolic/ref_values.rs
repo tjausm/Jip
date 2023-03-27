@@ -6,7 +6,7 @@ use super::{
 };
 use crate::{
     ast::*,
-    shared::{panic_with_diagnostics, Config, Diagnostics, Error},
+    shared::{panic_with_diagnostics, Diagnostics, Error},
     smt_solver::Solver,
 };
 use core::fmt;
@@ -17,11 +17,19 @@ use uuid::Uuid;
 pub type Reference = Uuid;
 
 #[derive(Clone)]
-pub struct LazyReference(Reference, Identifier);
+pub struct LazyReference {
+    r: Reference,
+    class: Identifier,
+}
 
 impl LazyReference {
-    pub fn new(r: Reference, id: Identifier) -> Self {
-        LazyReference(r, id)
+    pub fn new(r: Reference, class: Identifier) -> Self {
+        LazyReference { r, class }
+    }
+
+    /// DO NOT USE function to generate reference from lazy reference. Use `initialize()` & `release()` instead to do this.
+    pub fn get(&self) -> (Reference, &Identifier) {
+        return (self.r, &self.class);
     }
 
     fn is_never_null(
@@ -64,11 +72,11 @@ impl LazyReference {
         pc: &PathConstraints,
         sizes: &ArrSizes,
     ) -> Result<Option<Reference>, Error> {
-        let feasible = self.is_never_null(diagnostics, solver,  pc, sizes)?;
+        let feasible = self.is_never_null(diagnostics, solver, pc, sizes)?;
 
         if feasible {
-            let r = self.0;
-            let obj = sym_memory.init_lazy_object(self.1.clone());
+            let r = self.r;
+            let obj = sym_memory.init_lazy_object(self.class.clone());
             sym_memory.heap_insert(Some(r), obj);
             Ok(Some(r))
         } else {
@@ -87,7 +95,7 @@ impl LazyReference {
         let feasible = self.is_never_null(diagnostics, solver, pc, sizes)?;
 
         if feasible {
-            Ok(Some(self.0))
+            Ok(Some(self.r))
         } else {
             Ok(None)
         }
@@ -616,7 +624,7 @@ impl PartialEq for ArrSize {
 impl fmt::Debug for LazyReference {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut formated = "".to_string();
-        formated.push_str(&self.0.clone().to_string()[0..4]);
+        formated.push_str(&self.r.clone().to_string()[0..4]);
         write!(f, "LazyRef({} | null)", formated)
     }
 }

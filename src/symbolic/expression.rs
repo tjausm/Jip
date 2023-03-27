@@ -497,6 +497,7 @@ impl SymExpression {
             SymExpression::Literal(_) => self,
             SymExpression::FreeVariable(_, _) => self,
             SymExpression::Reference(_) => self,
+            SymExpression::LazyReference(_) => self,
             SymExpression::Uninitialized => panic_with_diagnostics(
                 "There is an uninitialized value in an expression. Did you declare all variables?",
                 &self,

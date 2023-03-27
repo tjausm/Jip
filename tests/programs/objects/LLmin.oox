@@ -1,6 +1,8 @@
 class Main {
     
-    static void main(Node p){
+    static void main(Node p)
+    requires (p != null)
+    {
         // Node min := p.min();
         bool isMin := Main.isMin(0, p); 
         assert isMin;
@@ -8,6 +10,7 @@ class Main {
 
     static bool isMin(int min, Node p){
         bool isMin := true;
+        assert true;
         Node next := p.next;
         while (next != null) {
             int val := p.value;

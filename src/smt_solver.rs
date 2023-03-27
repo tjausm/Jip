@@ -1,12 +1,18 @@
 //! Encode expressions into the smt-lib format to test satisfiability using the chosen backend
 
-use crate::ast::*;
+
+use crate::ast::Literal;
 use crate::shared::{panic_with_diagnostics, Error, SolverType, Config};
 use crate::symbolic::expression::{PathConstraints, SymExpression, SymType};
-use crate::symbolic::ref_values::{ArrSize, Boundary};
+use crate::symbolic::ref_values::{ArrSize, Boundary, LazyReference, SymRefType};
 use rsmt2::print::ModelParser;
 use rsmt2::{self, SmtConf, SmtRes};
 use rustc_hash::FxHashSet;
+use uuid::Uuid;
+
+type Formula = String;
+type Declarations = FxHashSet<(SymType, String)>;
+type Assertions =  FxHashSet<String>;
 
 #[derive(PartialEq)]
 pub enum SmtResult {
@@ -169,10 +175,11 @@ impl Solver {
 }
 
 /// returns an expression as RSMT parseable string
-/// with a set of all it's free variables  
+/// with a set of declarations declaring free variables
+/// and a set of assertions that we do berfore checking formula
 fn expr_to_str<'a>(
     expr: &'a SymExpression,
-) -> (String, FxHashSet<(SymType, String)>, FxHashSet<String>) {
+) -> (Formula, Declarations, Assertions) {
     match expr {
         SymExpression::And(l_expr, r_expr) => {
             let (l, mut fv_l, mut a_l) = expr_to_str(l_expr);
@@ -313,7 +320,21 @@ fn expr_to_str<'a>(
         }
         SymExpression::Literal(Literal::Boolean(b)) => {
             (format!("{}", b), FxHashSet::default(), FxHashSet::default())
-        }
+        },
+        SymExpression::LazyReference(lr) => {
+            let mut a = FxHashSet::default();
+            let mut fv = FxHashSet::default();
+
+            let (r, class) = lr.get();
+            let r_value = format!("{}", r.as_u64_pair().0);
+            let null = format!("{}", Uuid::nil().as_u64_pair().0);
+            let r_name = format!("|lazyRef({})|", r_value);
+            
+            fv.insert((SymType::Ref(SymRefType::Object(class.clone())), r_name.clone()));
+            a.insert(format!("(xor (= {} {}) (= {} {}))", r_name, r_value, r_name, null));
+
+            (r_name, fv, a)
+        },
         SymExpression::Reference(r) => (
             format!("{}", r.as_u64_pair().0),
             FxHashSet::default(),
