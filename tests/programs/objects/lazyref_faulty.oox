@@ -1,0 +1,15 @@
+class Main {
+    
+    static void main(O x, O y, bool b){
+
+        // now x and y are initialized and can't be equal
+        assume x != null && y != null;
+        assert x == y;
+
+    }
+}
+
+class O {
+    -int value;
+}
+

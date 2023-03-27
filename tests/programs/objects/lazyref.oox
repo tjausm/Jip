@@ -1,0 +1,18 @@
+class Main {
+    
+    static void main(O x, O y, bool b){
+        // check if lazyref is equal to self
+        assert x == x;
+        
+
+        // now x should initialize because it's not null
+        assume x != null;
+        int x := x.value; 
+
+    }
+}
+
+class O {
+    -int value;
+}
+
