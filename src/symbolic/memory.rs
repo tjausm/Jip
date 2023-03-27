@@ -300,7 +300,7 @@ impl<'a> SymMemory {
     }
 
     // inits 1 objects with its concrete fields as free variables and its reference fields as lazy references
-    fn init_lazy_object(&mut self, r: Reference, class: Identifier) -> ReferenceValue {
+    pub fn init_lazy_object(&mut self, class: Identifier) -> ReferenceValue {
         let r = Uuid::new_v4();
         let mut fields = FxHashMap::default();
 

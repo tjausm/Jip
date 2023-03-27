@@ -369,11 +369,8 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                     } => {
                         // get reference r, init object, and insert into heap under reference
                         match lhs {
-                            Lhs::Identifier(id) => {
-                                let expr = sym_memory
-                                    .stack_get(id);
-
-                                match expr {
+                            Lhs::Identifier(id) => 
+                                match sym_memory.stack_get(id) {
                                     Some(SymExpression::Reference(r)) => {
                                         // make an empty object and insert into heap
                                         let obj = sym_memory.init_object(r, from_class.clone());
@@ -386,8 +383,8 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                                         sym_memory.heap_insert(Some(r), obj);
                                     },
                                     _ => panic_with_diagnostics(&format!("Can't initialize '{} {}' because it has not been declared yet", from_class, id), &sym_memory),
-                                };
-                            }
+                                },
+                            
                             Lhs::AccessField(obj, field) => {
                                 match sym_memory.heap_access_object(obj, field, None)? {
                                     SymExpression::Reference(r) => {

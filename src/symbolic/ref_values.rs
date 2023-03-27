@@ -1,7 +1,7 @@
 //! Symbolic model representing the values on the heap while symbolically executing a program
 //!
 use super::{expression::{SymExpression, SymType, PathConstraints}, memory::SymMemory};
-use crate::{ast::*, shared::{panic_with_diagnostics, Error}, smt_solver::Solver};
+use crate::{ast::*, shared::{panic_with_diagnostics, Error, Config, Diagnostics}, smt_solver::Solver};
 use core::fmt;
 use rustc_hash::FxHashMap;
 use std::cmp::Ordering;
@@ -17,11 +17,53 @@ impl LazyReference {
         LazyReference(r, id)
     }
 
-    pub fn initialize(&self, sym_memory: &mut SymMemory, pc: &PathConstraints, solver: &Solver) -> Result<Reference, Error> {
-        todo!("");
+    fn is_never_null(&self, config: Config, diagnostics: &mut Diagnostics , solver: &Solver, sym_memory: &mut SymMemory, pc: &PathConstraints, sizes: &ArrSizes) -> Result<bool, Error> {
+        
+        // check if path is feasible
+        let mut pc = pc.conjunct();
+        if config.simplify {
+            pc = pc.simplify(Some(sizes));
+        }
+
+        diagnostics.z3_calls += 1;
+        if solver.expression_unsatisfiable(&pc) {
+            return Ok(false)
+        }
+
+        // if it's feasible we check if ref is never null
+        let ref_is_null = SymExpression::NE(Box::new(SymExpression::LazyReference(self.clone())), Box::new(SymExpression::Reference(Uuid::nil())));
+        let mut pc_null_check = SymExpression::And(Box::new(pc), Box::new(ref_is_null));
+
+        
+        diagnostics.z3_calls += 1;
+        match solver.verify_constraints(pc_null_check) {
+            Ok(_) => Ok(true),
+            Err(e) => Err(e),
+        }
     }
-    pub fn release(&self, sym_memory: &mut SymMemory, pc: &PathConstraints, solver: &Solver) -> Result<Reference, Error> {
-        todo!("");
+
+    pub fn initialize(&self, config: Config, diagnostics: &mut Diagnostics , solver: &Solver, sym_memory: &mut SymMemory, pc: &PathConstraints, sizes: &ArrSizes) -> Result<Option<Reference>, Error> {
+        let feasible = self.is_never_null(config, diagnostics, solver, sym_memory, pc, sizes)?;
+
+        if feasible {
+            let r = self.0;
+            let obj = sym_memory.init_lazy_object(self.1);
+            sym_memory.heap_insert(Some(r), obj);
+            Ok(Some(r))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// todo: what if we duplicate lazy ref and instantiate lazy object on 1 ref and new object on other?
+    pub fn release(&self, config: Config, diagnostics: &mut Diagnostics , solver: &Solver, sym_memory: &mut SymMemory, pc: &PathConstraints, sizes: &ArrSizes) -> Result<Option<Reference>, Error> {
+        let feasible = self.is_never_null(config, diagnostics, solver, sym_memory, pc, sizes)?;
+
+        if feasible {
+            Ok(Some(self.0))
+        } else {
+            Ok(None)
+        }
     }
 }
 
