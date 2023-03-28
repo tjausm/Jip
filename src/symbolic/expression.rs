@@ -726,12 +726,12 @@ impl fmt::Debug for SymExpression {
             SymExpression::FreeVariable(_, fv) => write!(f, "{}", fv),
             SymExpression::SizeOf(_, r, _, s) => {
                 if let Some(size) = s {
-                    write!(f, "(#{} -> {:?})", r, size)
+                    write!(f, "(#{:?} -> {:?})", r, size)
                 } else {
-                    write!(f, "#{}", r)
+                    write!(f, "#{:?}", r)
                 }
             }
-            SymExpression::Reference(r) => write!(f, "Ref({})", r),
+            SymExpression::Reference(r) => write!(f, "{:?}", r),
             SymExpression::LazyReference(lr) => write!(f, "{:?}", lr),
             SymExpression::Uninitialized => write!(f, "Unitialized"),
         }

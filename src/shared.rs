@@ -61,7 +61,6 @@ impl Default for Diagnostics {
 }
 
 
-global_counter!(REF_COUNTER, i32, 1);
 global_counter!(SCOPE_COUNTER, i32, 1);
  pub struct ScopeCounter;
 
@@ -73,22 +72,6 @@ global_counter!(SCOPE_COUNTER, i32, 1);
          i
      }
  }
- pub struct RefCounter;
-
- impl RefCounter {
-    /// returns a unique number
-     pub fn new() -> i32 {
-         let i = SCOPE_COUNTER.get_cloned();
-         SCOPE_COUNTER.inc();
-         i
-     }
-    /// returns null reference
-     pub fn null() -> i32 {
-         0
-     }
- }
-
-
 
 /// Panics with passed message and passed datastructure (intended for SymMemory)
 #[track_caller]

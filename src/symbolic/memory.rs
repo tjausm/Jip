@@ -8,7 +8,7 @@ use super::ref_values::{
     ArrSize, ArrSizes, Array, LazyReference, Reference, ReferenceValue, SymRefType,
 };
 use crate::ast::*;
-use crate::shared::{panic_with_diagnostics, Diagnostics, Error, Scope, RefCounter};
+use crate::shared::{panic_with_diagnostics, Diagnostics, Error, Scope};
 use crate::smt_solver::Solver;
 
 #[derive(Debug, Clone)]
@@ -60,7 +60,7 @@ impl<'a> SymMemory {
     /// Iterate over frames from stack returning the first variable with given `id`
     pub fn stack_get(&self, id: &'a Identifier) -> Option<SymExpression> {
         if id == "null" {
-            return Some(SymExpression::Reference(RefCounter::null()));
+            return Some(SymExpression::Reference(Reference::null()));
         };
 
         for s in self.stack.iter().rev() {
@@ -98,7 +98,7 @@ impl<'a> SymMemory {
     /// Inserts mapping `Reference |-> ReferenceValue` into heap returning it's reference.
     /// Generates new reference if none is given
     pub fn heap_insert(&mut self, r: Option<Reference>, v: ReferenceValue) -> Reference {
-        let r = r.unwrap_or(RefCounter::new());
+        let r = r.unwrap_or(Reference::new());
         self.heap.insert(r, v);
         r
     }
@@ -243,7 +243,7 @@ impl<'a> SymMemory {
         match (is_lazy, &ty) {
             (false, SymType::Ref(SymRefType::Object(class))) => {
                 // generate and insert reference
-                let r = RefCounter::new();
+                let r = Reference::new();
                 let sym_r = SymExpression::Reference(r);
                 arr.insert(simple_index, sym_r.clone());
 
@@ -256,7 +256,7 @@ impl<'a> SymMemory {
             }
             // generate and return lazy reference
             (true, SymType::Ref(SymRefType::Object(class))) => {
-                let lr = LazyReference::new(RefCounter::new(), class.clone());
+                let lr = LazyReference::new(Reference::new(), class.clone());
                 Ok(SymExpression::LazyReference(lr))
             }
             (_, SymType::Ref(SymRefType::Array(_))) => {
@@ -312,7 +312,7 @@ impl<'a> SymMemory {
 
     // inits 1 objects with its concrete fields as free variables and its reference fields as lazy references
     pub fn init_lazy_object(&mut self, class: Identifier) -> ReferenceValue {
-        let r = RefCounter::new();
+        let r = Reference::new();
         let mut fields = FxHashMap::default();
 
         let members = self.prog.get_class(&class).1.clone();
@@ -321,7 +321,7 @@ impl<'a> SymMemory {
             match member {
                 Member::Field((ty, field)) => match ty {
                     (Type::Int) => {
-                        let field_name = format!("|{}.{}|", r, field);
+                        let field_name = format!("|{:?}.{}|", r, field);
 
                         fields.insert(
                             field.clone(),
@@ -329,7 +329,7 @@ impl<'a> SymMemory {
                         );
                     }
                     Type::Bool => {
-                        let field_name = format!("{}.{}", &r.to_string()[0..6], field);
+                        let field_name = format!("{:?}.{}", r, field);
 
                         fields.insert(
                             field.clone(),
@@ -339,7 +339,7 @@ impl<'a> SymMemory {
                     Type::Class(class) => {
                         // either make lazy object or uninitialized
                         let lazy_ref = SymExpression::LazyReference(LazyReference::new(
-                            RefCounter::new(),
+                            Reference::new(),
                             class.clone(),
                         ));
                         fields.insert(field.clone(), lazy_ref);
@@ -408,7 +408,7 @@ impl fmt::Debug for SymMemory {
         }
         let mut formated_sym_heap = "".to_string();
         for (r, ref_val) in &self.heap {
-            formated_sym_heap.push_str(&format!("   {} := {:?}\n", r, ref_val))
+            formated_sym_heap.push_str(&format!("   {:?} := {:?}\n", r, ref_val))
         }
 
         write!(

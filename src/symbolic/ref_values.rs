@@ -6,14 +6,36 @@ use super::{
 };
 use crate::{
     ast::*,
-    shared::{panic_with_diagnostics, Diagnostics, Error, RefCounter},
+    shared::{panic_with_diagnostics, Diagnostics, Error},
     smt_solver::Solver,
 };
 use core::fmt;
 use rustc_hash::FxHashMap;
 use std::cmp::Ordering;
 
-pub type Reference = i32;
+global_counter!(REF_COUNTER, i32, 1);
+
+
+#[derive(Clone, Copy, Hash, PartialEq, Eq)]
+pub struct Reference(i32);
+
+impl Reference {
+    /// generates unique reference using a global counter
+    pub fn new() -> Reference {
+        let i = REF_COUNTER.get_cloned();
+        REF_COUNTER.inc();
+        Reference(i)
+    }
+    /// generates unique reference using a global counter
+    pub fn null() -> Reference {
+        Reference(0)
+    }
+
+    /// return the i32 representing reference
+    pub fn get(&self) -> i32 {
+        self.0
+    }
+}
 
 #[derive(Clone)]
 pub struct LazyReference {
@@ -52,14 +74,17 @@ impl LazyReference {
         // if it's feasible we check if ref is never null
         let ref_is_null = SymExpression::EQ(
             Box::new(SymExpression::LazyReference(self.clone())),
-            Box::new(SymExpression::Reference(RefCounter::null())),
+            Box::new(SymExpression::Reference(Reference::null())),
         );
         let mut pc_null_check = SymExpression::And(Box::new(pc), Box::new(ref_is_null));
 
         diagnostics.z3_calls += 1;
         match solver.expression_unsatisfiable(&pc_null_check) {
             Ok(_) => Ok(true),
-            Err(model) => Err(Error::Verification(format!("A reference could possibly be null:\n{}", model))),
+            Err(model) => Err(Error::Verification(format!(
+                "A reference could possibly be null:\n{}",
+                model
+            ))),
         }
     }
 
@@ -620,16 +645,27 @@ impl PartialEq for ArrSize {
     }
 }
 
-impl fmt::Debug for LazyReference {
+impl fmt::Debug for Reference {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "LazyRef({} || null)", self.r)
+        if self.get() == 0 {
+            write!(f, "null")
+        } else {
+            write!(f, "Ref({})", self.get())
+        }
     }
 }
+
+impl fmt::Debug for LazyReference {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "LazyRef({} || null)", self.r.get())
+    }
+}
+
 impl fmt::Debug for ArrSizes {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut res = "Ranges:\n".to_string();
         for (arr, range) in self.0.iter() {
-            res.push_str(&format!("    #{} -> {:?}\n", arr, range));
+            res.push_str(&format!("    #{:?} -> {:?}\n", arr, range));
         }
         write!(f, "{}", res)
     }

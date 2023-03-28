@@ -10,13 +10,13 @@ use crate::ast::*;
 use crate::cfg::types::{Action, Node};
 use crate::cfg::{generate_cfg, generate_dot_cfg};
 use crate::see::utils::*;
-use crate::shared::{Config, RefCounter};
+use crate::shared::{Config};
 use crate::shared::ExitCode;
 use crate::shared::{panic_with_diagnostics, Depth, Diagnostics, Error};
 use crate::smt_solver::Solver;
 use crate::symbolic::expression::{PathConstraints, SymExpression, SymType};
 use crate::symbolic::memory::SymMemory;
-use crate::symbolic::ref_values::{ArrSizes, ReferenceValue, SymRefType, LazyReference};
+use crate::symbolic::ref_values::{ArrSizes, ReferenceValue, SymRefType, LazyReference, Reference};
 
 use colored::Colorize;
 use petgraph::stable_graph::NodeIndex;
@@ -205,7 +205,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                             sym_memory.stack_insert(id.clone(), SymExpression::Reference(r));
                         }
                         (Type::Class(class_name), id) => {
-                            let lr = LazyReference::new(RefCounter::new(), class_name.clone());
+                            let lr = LazyReference::new(Reference::new(), class_name.clone());
                             sym_memory.stack_insert(id.clone(), SymExpression::LazyReference(lr));
                         }
                         (ty, id) => panic_with_diagnostics(
@@ -226,7 +226,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                             sym_memory.stack_insert(id.clone(), SymExpression::Uninitialized)
                         }
                         _ => sym_memory
-                            .stack_insert(id.clone(), SymExpression::Reference(RefCounter::new())),
+                            .stack_insert(id.clone(), SymExpression::Reference(Reference::new())),
                     },
                     Statement::Assume(assumption) => {
                         if !assume(
