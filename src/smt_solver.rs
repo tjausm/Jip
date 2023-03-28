@@ -134,6 +134,7 @@ impl Solver {
 
         if self.config.verbose {
             println!("\nInvoking z3");
+            println!("SymExpression: {:?}", &expr);
             println!("  Declarations: {:?}", fvs);
             println!("  Assertions:");
 

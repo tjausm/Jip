@@ -650,14 +650,14 @@ impl fmt::Debug for Reference {
         if self.get() == 0 {
             write!(f, "null")
         } else {
-            write!(f, "Ref({})", self.get())
+            write!(f, "r({})", self.get())
         }
     }
 }
 
 impl fmt::Debug for LazyReference {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "LazyRef({} || null)", self.r.get())
+        write!(f, "r({} || null)", self.r.get())
     }
 }
 
