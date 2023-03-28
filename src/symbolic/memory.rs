@@ -256,8 +256,12 @@ impl<'a> SymMemory {
             }
             // generate and return lazy reference
             (true, SymType::Ref(SymRefType::Object(class))) => {
+                // generate and insert reference
                 let lr = LazyReference::new(Reference::new(), class.clone());
-                Ok(SymExpression::LazyReference(lr))
+                let sym_lr = SymExpression::LazyReference(lr);
+                arr.insert(simple_index, sym_lr.clone());
+
+                Ok(sym_lr)
             }
             (_, SymType::Ref(SymRefType::Array(_))) => {
                 todo!("2+ dimensional arrays are not supported")
