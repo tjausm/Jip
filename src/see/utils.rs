@@ -4,13 +4,14 @@ use crate::shared::{Config, Error};
 use crate::smt_solver::Solver;
 use crate::symbolic::expression::{PathConstraints, SymExpression, SymType};
 use crate::symbolic::memory::SymMemory;
-use crate::symbolic::ref_values::{ArrSizes, SymRefType};
+use crate::symbolic::ref_values::{ArrSizes, SymRefType, EvaluatedRefs};
 
 /// returns the symbolic expression rhs refers to, or None if we encounter a lazy object on an infeasible path
 pub fn parse_rhs<'a, 'b>(
     sym_memory: &mut SymMemory,
     pc: &PathConstraints,
     arr_sizes: &mut ArrSizes,
+    eval_refs: &mut EvaluatedRefs,
     solver: &mut Solver,
     diagnostics: &mut Diagnostics,
     rhs: &'a Rhs,
@@ -20,6 +21,7 @@ pub fn parse_rhs<'a, 'b>(
             .heap_access_object(
                 pc,
                 arr_sizes,
+                eval_refs,
                 solver,
                 diagnostics,
                 obj_name,
@@ -68,12 +70,13 @@ pub fn lhs_from_rhs<'a>(
     sym_memory: &mut SymMemory,
     pc: &PathConstraints,
     arr_sizes: &mut ArrSizes,
+    eval_refs: &mut EvaluatedRefs,
     solver: &mut Solver,
     diagnostics: &mut Diagnostics,
     lhs: &'a Lhs,
     rhs: &'a Rhs,
 ) -> Result<Feasible, Error> {
-    let var = match parse_rhs(sym_memory, pc, arr_sizes, solver, diagnostics, rhs)? {
+    let var = match parse_rhs(sym_memory, pc, arr_sizes, eval_refs, solver, diagnostics, rhs)? {
         Some(var) => var,
         _ => return Ok(false),
     };
@@ -85,6 +88,7 @@ pub fn lhs_from_rhs<'a>(
         Lhs::AccessField(obj_name, field_name) => match sym_memory.heap_access_object(
             pc,
             arr_sizes,
+            eval_refs,
             solver,
             diagnostics,
             obj_name,

@@ -10,11 +10,13 @@ use crate::{
     smt_solver::Solver,
 };
 use core::fmt;
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 use std::cmp::Ordering;
 
-global_counter!(REF_COUNTER, i32, 1);
+/// tracks whether
+pub type EvaluatedRefs = FxHashSet<Reference>;
 
+global_counter!(REF_COUNTER, i32, 1);
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq)]
 pub struct Reference(i32);
@@ -45,7 +47,10 @@ pub struct LazyReference {
 
 impl LazyReference {
     pub fn new(class: Identifier) -> Self {
-        LazyReference { r: Reference::new(), class }
+        LazyReference {
+            r: Reference::new(),
+            class,
+        }
     }
 
     /// DO NOT USE function to generate reference from lazy reference. Use `initialize()` & `release()` instead to do this.
@@ -95,13 +100,23 @@ impl LazyReference {
         sym_memory: &mut SymMemory,
         pc: &PathConstraints,
         sizes: &ArrSizes,
+        eval_refs: &mut EvaluatedRefs,
     ) -> Result<Option<Reference>, Error> {
+        // try to add ref to hashset, and if it was already present return
+        if eval_refs.contains(&self.r) {
+            return Ok(Some(self.r));
+        };
+
         let feasible = self.is_never_null(diagnostics, solver, pc, sizes)?;
 
         if feasible {
+            // insert fresh lazy object into heap
             let r = self.r;
             let obj = sym_memory.init_lazy_object(r, self.class.clone());
             sym_memory.heap_insert(Some(r), obj);
+
+            //update evaluated refs & return
+            eval_refs.insert(r);
             Ok(Some(r))
         } else {
             Ok(None)
@@ -115,7 +130,13 @@ impl LazyReference {
         solver: &mut Solver,
         pc: &PathConstraints,
         sizes: &ArrSizes,
+        eval_refs: &mut EvaluatedRefs,
     ) -> Result<Option<Reference>, Error> {
+        // try to add ref to hashset, and if it was already present return
+        if eval_refs.insert(self.r) {
+            return Ok(Some(self.r));
+        };
+
         let feasible = self.is_never_null(diagnostics, solver, pc, sizes)?;
 
         if feasible {

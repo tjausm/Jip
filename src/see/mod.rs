@@ -16,11 +16,12 @@ use crate::shared::{panic_with_diagnostics, Depth, Diagnostics, Error};
 use crate::smt_solver::Solver;
 use crate::symbolic::expression::{PathConstraints, SymExpression, SymType};
 use crate::symbolic::memory::SymMemory;
-use crate::symbolic::ref_values::{ArrSizes,  SymRefType, LazyReference, Reference};
+use crate::symbolic::ref_values::{ArrSizes,  SymRefType, LazyReference, Reference, EvaluatedRefs};
 
 use colored::Colorize;
 use petgraph::stable_graph::NodeIndex;
 use petgraph::visit::EdgeRef;
+use rustc_hash::FxHashSet;
 
 use std::collections::VecDeque;
 use std::fs;
@@ -156,18 +157,19 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
     let (start_node, cfg) = generate_cfg(prog.clone());
 
     //init our bfs through the cfg
-    let mut q: VecDeque<(SymMemory, PathConstraints, ArrSizes, Depth, NodeIndex, Trace)> = VecDeque::new();
+    let mut q: VecDeque<(SymMemory, PathConstraints, ArrSizes, EvaluatedRefs, Depth, NodeIndex, Trace)> = VecDeque::new();
     q.push_back((
         SymMemory::new(prog.clone()),
         PathConstraints::default(),
         ArrSizes::default(),
+        FxHashSet::default(),
         d,
         start_node,
         vec![]
     ));
 
     // enque all connected nodes, till d=0 or we reach end of cfg
-    'q_states: while let Some((mut sym_memory, mut pc, mut arr_sizes, d, curr_node, mut trace)) = q.pop_front() {
+    'q_states: while let Some((mut sym_memory, mut pc, mut arr_sizes, mut eval_refs, d, curr_node, mut trace)) = q.pop_front() {
         if d == 0 {
             continue;
         }
@@ -262,6 +264,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                             &mut sym_memory,
                             &pc,
                             &mut arr_sizes,
+                            &mut eval_refs,
                             &mut solver,
                             &mut diagnostics,
                             lhs,
@@ -351,7 +354,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                             }
                         }
                         Lhs::AccessField(obj_name, field) => {
-                            match sym_memory.heap_access_object(&pc, &arr_sizes, &mut solver, &mut diagnostics, obj_name, field, None)? {
+                            match sym_memory.heap_access_object(&pc, &arr_sizes, &mut eval_refs, &mut solver, &mut diagnostics, obj_name, field, None)? {
                                 Some(SymExpression::Reference(r)) => sym_memory.stack_insert(this_id.to_string(), SymExpression::Reference(r)),
                                 None => continue 'q_edges,                
                                 _ => panic_with_diagnostics(&format!("Can't access field {}.{}", obj_name, field), &sym_memory),
@@ -388,7 +391,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                                     },
                                     Some(SymExpression::LazyReference(lr)) => {
                                         // release lazy reference and initialize object
-                                        let r = match lr.release(&mut diagnostics, &mut solver,  &pc, &arr_sizes)? {
+                                        let r = match lr.release(&mut diagnostics, &mut solver,  &pc, &arr_sizes, &mut eval_refs)? {
                                             Some(r) => r,
                                             _ => continue 'q_edges
                                         };
@@ -399,7 +402,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                                 },
                             
                             Lhs::AccessField(obj_name, field) => {
-                                match sym_memory.heap_access_object(&pc, &arr_sizes, &mut solver, &mut diagnostics, obj_name, field, None)? {
+                                match sym_memory.heap_access_object(&pc, &arr_sizes, &mut eval_refs, &mut solver, &mut diagnostics, obj_name, field, None)? {
                                     Some(SymExpression::Reference(r)) => {
                                         // make an empty object and insert into heap
                                         let obj = sym_memory.init_object( from_class.clone());
@@ -496,7 +499,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                 }
             }
             let next = edge.target();
-            q.push_back((sym_memory, pc.clone(), arr_sizes.clone(), d - 1, next, trace.clone()));
+            q.push_back((sym_memory, pc.clone(), arr_sizes.clone(), eval_refs.clone(), d - 1, next, trace.clone()));
         }
     }
     return Ok(diagnostics);

@@ -5,7 +5,7 @@ use std::fmt;
 
 use super::expression::{PathConstraints, SymExpression, SymType};
 use super::ref_values::{
-    ArrSize, ArrSizes, Array, LazyReference, Reference, ReferenceValue, SymRefType,
+    ArrSize, ArrSizes, Array, LazyReference, Reference, ReferenceValue, SymRefType, EvaluatedRefs,
 };
 use crate::ast::*;
 use crate::shared::{panic_with_diagnostics, Diagnostics, Error, Scope};
@@ -109,6 +109,7 @@ impl<'a> SymMemory {
         &mut self,
         pc: &PathConstraints,
         arr_sizes: &ArrSizes,
+        eval_refs: &mut EvaluatedRefs,
         solver: &mut Solver,
         diagnostics: &mut Diagnostics,
         obj_name: &String,
@@ -119,7 +120,7 @@ impl<'a> SymMemory {
             Some(SymExpression::LazyReference(lr)) =>
             // if path is infeasible return nothing otherwise initialize obj and return ref
             {
-                match lr.initialize(diagnostics, solver, self, pc, arr_sizes)? {
+                match lr.initialize(diagnostics, solver, self, pc, arr_sizes, eval_refs)? {
                     Some(r) => r,
                     _ => return Ok(None),
                 }
@@ -152,6 +153,13 @@ impl<'a> SymMemory {
                     None => Ok(Some(expr.clone())),
                 }
             }
+            None => panic_with_diagnostics(
+                &format!(
+                    "Can't get value of '{}.{}' because {} with reference {:?} this does not seem to refer to an object'",
+                    obj_name, field_name, obj_name, &r
+                ),
+                &self,
+            ),
             otherwise => panic_with_diagnostics(
                 &format!(
                     "Can't get value of '{}.{}' because {:?} is not an object'",
