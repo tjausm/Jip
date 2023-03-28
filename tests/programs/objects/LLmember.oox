@@ -28,14 +28,13 @@ class Node {
     bool member(int x, int limit) {
 
         Node n := this;
-        int v := this.value ;
+        int v;
 
-        while (limit > 0 && n != null){
+        while (n != null){
+            v := n.value;
             if(x==v) return true ;
             else {
                 n := this.next ;
-                v := n.value;
-                limit := limit - 1;
             };     
         }
         return false;

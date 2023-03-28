@@ -1,10 +1,20 @@
 class Main {
     
-    static void main(Node p){
+    static void main(Node p)
+    ensures(p != null)
+    {
         int len := p.length();
-        assert len == 1;
 
+        bool correct := Main.checkLen(p, len);
+        assert correct;
+    }
 
+    static bool checkLen(Node p, int len){
+        while(p != null){
+            len := len - 1;
+            p := p.next;
+        };
+        return len == 0;
     }
 }
 
