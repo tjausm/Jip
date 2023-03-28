@@ -512,12 +512,12 @@ impl SymExpression {
 /// destructs a `Expression::forall(arr, index, value)` statement using the following algorithm:
 /// ``` ignore
 /// // asserts expression holds for all values in array
-/// c = true
-/// foreach (i, v) in arr { [i |->index, v |-> value] in expr}     /// // substitute (i,v) into expression
+/// let mut c = true
+/// for (i, v) in arr { c = c && [i |->index, v |-> value] in expr}     /// // substitute (i,v) into expression
 ///
 /// // asserts expression holds for all values > 0 and < #arr that are not in symbolic array
 /// o = true
-/// foreach (i,v) in arr {o = index != i && o}
+/// for (i,v) in arr {o = index != i && o}
 /// e = (0 < index && o && index < #arr && value == 0 ==> expr
 ///
 /// return c && e
