@@ -10,11 +10,8 @@
 class Main {
 
     static void main(int[] a, Num x, Num u, Num m)
-        requires(a != null)
+        requires(a != null && x != null && u != null && m != null)
     {
-      // setting N to 10:
-      int N := 10 ;
-      assume x != null ;
       assume forall a, i, v : v>0;
 
       int k := 0 ;
