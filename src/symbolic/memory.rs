@@ -125,7 +125,13 @@ impl<'a> SymMemory {
                 }
             }
             Some(SymExpression::Reference(r)) => r,
-            Some(otherwise) => panic_with_diagnostics(&format!("Error while accessing {} because {:?} is not a reference", obj_name, otherwise), &self),
+            Some(otherwise) => panic_with_diagnostics(
+                &format!(
+                    "Error while accessing {} because {:?} is not a reference",
+                    obj_name, otherwise
+                ),
+                &self,
+            ),
             _ => panic_with_diagnostics(&format!("Did you declare object {}?", obj_name), &self),
         };
 
@@ -257,7 +263,7 @@ impl<'a> SymMemory {
             // generate and return lazy reference
             (true, SymType::Ref(SymRefType::Object(class))) => {
                 // generate and insert reference
-                let lr = LazyReference::new( class.clone());
+                let lr = LazyReference::new(class.clone());
                 let sym_lr = SymExpression::LazyReference(lr);
                 arr.insert(simple_index, sym_lr.clone());
 
@@ -315,7 +321,7 @@ impl<'a> SymMemory {
     }
 
     // inits 1 objects with its concrete fields as free variables and its reference fields as lazy references
-    pub fn init_lazy_object(&mut self, r : Reference, class: Identifier) -> ReferenceValue {
+    pub fn init_lazy_object(&mut self, r: Reference, class: Identifier) -> ReferenceValue {
         let mut fields = FxHashMap::default();
 
         let members = self.prog.get_class(&class).1.clone();
@@ -341,9 +347,9 @@ impl<'a> SymMemory {
                     }
                     Type::Class(class) => {
                         // either make lazy object or uninitialized
-                        let lazy_ref = SymExpression::LazyReference(LazyReference::new(
-                            class.clone(),
-                        ));
+                        let lr = LazyReference::new(class.clone());
+                        let lazy_ref = SymExpression::LazyReference(lr);
+
                         fields.insert(field.clone(), lazy_ref);
                     }
                     Type::Void => panic_with_diagnostics(

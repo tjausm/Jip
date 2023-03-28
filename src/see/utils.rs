@@ -73,31 +73,30 @@ pub fn lhs_from_rhs<'a>(
     lhs: &'a Lhs,
     rhs: &'a Rhs,
 ) -> Result<Feasible, Error> {
-    let var = match parse_rhs(sym_memory, pc, arr_sizes, solver, diagnostics, rhs)?{
+    let var = match parse_rhs(sym_memory, pc, arr_sizes, solver, diagnostics, rhs)? {
         Some(var) => var,
-        _ => return Ok(false)
+        _ => return Ok(false),
     };
     match lhs {
-        Lhs::Identifier(id) =>{
-             sym_memory.stack_insert(id.to_string(), var);
-             Ok(true)
-            },
-        Lhs::AccessField(obj_name, field_name) => 
-            match sym_memory.heap_access_object(
-                pc,
-                arr_sizes,
-                solver,
-                diagnostics,
-                obj_name,
-                field_name,
-                Some(var),
-            )? {
-                Some(_) => Ok(true),
-                None => Ok(false),
-            },
-        
-        Lhs::AccessArray(arr_name, index) => 
-            sym_memory.heap_access_array(
+        Lhs::Identifier(id) => {
+            sym_memory.stack_insert(id.to_string(), var);
+            Ok(true)
+        }
+        Lhs::AccessField(obj_name, field_name) => match sym_memory.heap_access_object(
+            pc,
+            arr_sizes,
+            solver,
+            diagnostics,
+            obj_name,
+            field_name,
+            Some(var),
+        )? {
+            Some(_) => Ok(true),
+            None => Ok(false),
+        },
+
+        Lhs::AccessArray(arr_name, index) => sym_memory
+            .heap_access_array(
                 &pc,
                 arr_sizes,
                 solver,
@@ -105,8 +104,8 @@ pub fn lhs_from_rhs<'a>(
                 arr_name,
                 index.clone(),
                 Some(var),
-            ).map(|v| true)
-        
+            )
+            .map(|_| true),
     }
 }
 

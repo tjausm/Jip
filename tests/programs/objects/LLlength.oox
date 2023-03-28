@@ -31,10 +31,11 @@ class Node {
     }
 
     int length() {
-        Node n := this.next;
-        if (n==null) return 1 ;
+        if (this==null) return 0 ;
         else {
+            Node n := this.next;
             int k := n.length() ;
+            assert true;
             return k+1 ;
         };
     }

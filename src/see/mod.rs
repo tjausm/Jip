@@ -26,6 +26,8 @@ use std::collections::VecDeque;
 use std::fs;
 use std::time::Instant;
 
+type Trace<'a> = Vec<&'a Node>;
+
 pub fn bench(
     program: &str,
     start: Depth,
@@ -112,23 +114,24 @@ pub fn print_verification(program: &str, d: Depth, config: &Config) -> (ExitCode
 }
 
 /// prints the verbose debug info
-fn print_debug(node: &Node, sym_memory: &SymMemory, pc: &PathConstraints, arr_sizes: &ArrSizes) {
+fn print_debug(node: &Node, sym_memory: &SymMemory, pc: &PathConstraints, arr_sizes: &ArrSizes, trace: &Trace) {
     let print_node = format!("{:?}", node);
     let print_sym_memory = format!("{:?}", sym_memory);
     let print_ranges = format!("{:?}", arr_sizes);
+    let print_trace = format!("trace: {:?}", trace);
 
     let pc = pc.combine_over_true();
     let print_pc = format!("Path constraints -> {:?}", pc);
 
     let dump_state = match node {
         Node::Statement(Statement::Assert(_)) => true,
-        Node::Statement(Statement::Assignment((_, Rhs::AccessArray(_, _)))) => true,
+        Node::Statement(Statement::Assume(_)) => true,
         _ => false,
     };
     if dump_state {
         println!(
-            "{}\n\n{}\n\n{}\n\n{}",
-            print_node, print_pc, print_ranges, print_sym_memory
+            "{}\n\n{}\n\n{}\n\n{}\n\n{}",
+            print_node, print_trace, print_pc, print_ranges, print_sym_memory
         );
     } else {
         println!("{}", print_node);
@@ -153,23 +156,25 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
     let (start_node, cfg) = generate_cfg(prog.clone());
 
     //init our bfs through the cfg
-    let mut q: VecDeque<(SymMemory, PathConstraints, ArrSizes, Depth, NodeIndex)> = VecDeque::new();
+    let mut q: VecDeque<(SymMemory, PathConstraints, ArrSizes, Depth, NodeIndex, Trace)> = VecDeque::new();
     q.push_back((
         SymMemory::new(prog.clone()),
         PathConstraints::default(),
         ArrSizes::default(),
         d,
         start_node,
+        vec![]
     ));
 
     // enque all connected nodes, till d=0 or we reach end of cfg
-    'q_states: while let Some((mut sym_memory, mut pc, mut arr_sizes, d, curr_node)) = q.pop_front() {
+    'q_states: while let Some((mut sym_memory, mut pc, mut arr_sizes, d, curr_node, mut trace)) = q.pop_front() {
         if d == 0 {
             continue;
         }
 
         if config.verbose {
-            print_debug(&cfg[curr_node], &sym_memory, &pc, &arr_sizes);
+            trace.push(&cfg[curr_node]);
+            print_debug(&cfg[curr_node], &sym_memory, &pc, &arr_sizes, &trace);
         };
 
         match &cfg[curr_node] {
@@ -491,7 +496,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                 }
             }
             let next = edge.target();
-            q.push_back((sym_memory, pc.clone(), arr_sizes.clone(), d - 1, next));
+            q.push_back((sym_memory, pc.clone(), arr_sizes.clone(), d - 1, next, trace.clone()));
         }
     }
     return Ok(diagnostics);
