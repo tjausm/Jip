@@ -733,7 +733,7 @@ impl fmt::Debug for SymExpression {
             }
             SymExpression::Reference(r) => write!(f, "{:?}", r),
             SymExpression::LazyReference(lr) => write!(f, "{:?}", lr),
-            SymExpression::Uninitialized => write!(f, "Unitialized"),
+            SymExpression::Uninitialized => write!(f, "Uninitialized"),
         }
     }
 }
