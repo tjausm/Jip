@@ -260,7 +260,8 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                         &mut diagnostics,
                     )?,
                     Statement::Assignment((lhs, rhs)) => {
-                        lhs_from_rhs(
+                        // try assignment, stop exploring path if it's infeasible
+                        if !lhs_from_rhs(
                             &mut sym_memory,
                             &pc,
                             &mut arr_sizes,
@@ -269,7 +270,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                             &mut diagnostics,
                             lhs,
                             rhs,
-                        )?;
+                        )? {continue};
                     }
                     Statement::Return(expr) => {
                         // stop path if current scope `id == None`, indicating we are in main scope
