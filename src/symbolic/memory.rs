@@ -257,7 +257,7 @@ impl<'a> SymMemory {
             // generate and return lazy reference
             (true, SymType::Ref(SymRefType::Object(class))) => {
                 // generate and insert reference
-                let lr = LazyReference::new(Reference::new(), class.clone());
+                let lr = LazyReference::new( class.clone());
                 let sym_lr = SymExpression::LazyReference(lr);
                 arr.insert(simple_index, sym_lr.clone());
 
@@ -315,8 +315,7 @@ impl<'a> SymMemory {
     }
 
     // inits 1 objects with its concrete fields as free variables and its reference fields as lazy references
-    pub fn init_lazy_object(&mut self, class: Identifier) -> ReferenceValue {
-        let r = Reference::new();
+    pub fn init_lazy_object(&mut self, r : Reference, class: Identifier) -> ReferenceValue {
         let mut fields = FxHashMap::default();
 
         let members = self.prog.get_class(&class).1.clone();
@@ -343,7 +342,6 @@ impl<'a> SymMemory {
                     Type::Class(class) => {
                         // either make lazy object or uninitialized
                         let lazy_ref = SymExpression::LazyReference(LazyReference::new(
-                            Reference::new(),
                             class.clone(),
                         ));
                         fields.insert(field.clone(), lazy_ref);

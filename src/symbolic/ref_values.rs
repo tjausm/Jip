@@ -44,8 +44,8 @@ pub struct LazyReference {
 }
 
 impl LazyReference {
-    pub fn new(r: Reference, class: Identifier) -> Self {
-        LazyReference { r, class }
+    pub fn new(class: Identifier) -> Self {
+        LazyReference { r: Reference::new(), class }
     }
 
     /// DO NOT USE function to generate reference from lazy reference. Use `initialize()` & `release()` instead to do this.
@@ -100,7 +100,7 @@ impl LazyReference {
 
         if feasible {
             let r = self.r;
-            let obj = sym_memory.init_lazy_object(self.class.clone());
+            let obj = sym_memory.init_lazy_object(r, self.class.clone());
             sym_memory.heap_insert(Some(r), obj);
             Ok(Some(r))
         } else {
