@@ -186,8 +186,9 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                             SymExpression::FreeVariable(SymType::Bool, id.clone()),
                         ),
                         (Type::Array(ty), id) => {
+                            let r = Reference::new();
                             let size =
-                                SymExpression::FreeVariable(SymType::Int, format!("|#{}|", id));
+                                SymExpression::FreeVariable(SymType::Int, format!("|#{:?}|", r));
                             let sym_ty = match &**ty {
                                 Type::Int => SymType::Int,
                                 Type::Bool => SymType::Bool,
@@ -201,7 +202,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                                 ),
                             };
                             let arr = sym_memory.init_array(sym_ty.clone(), size, true);
-                            let r = sym_memory.heap_insert(None, arr);
+                            sym_memory.heap_insert(Some(r), arr);
                             sym_memory.stack_insert(id.clone(), SymExpression::Reference(r));
                         }
                         (Type::Class(class_name), id) => {
