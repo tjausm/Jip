@@ -86,6 +86,8 @@ pub enum SymType {
 #[derive(Clone)]
 pub enum SymExpression {
     Implies(Box<SymExpression>, Box<SymExpression>),
+    Forall(Identifier, Identifier, Identifier, Box<Expression>),
+    Exists(Identifier, Identifier, Identifier, Box<Expression>),
     And(Box<SymExpression>, Box<SymExpression>),
     Or(Box<SymExpression>, Box<SymExpression>),
     EQ(Box<SymExpression>, Box<SymExpression>),
@@ -115,11 +117,10 @@ impl SymExpression {
     pub fn new(sym_memory: &SymMemory, expr: Expression) -> Self {
         match expr {
             Expression::Forall(arr_name, index, value, expr) => destruct_forall(
-                arr_name.clone(),
-                sym_memory.heap_get_array(&arr_name),
-                &index,
-                &value,
-                &expr,
+                (arr_name.clone(),
+                index,
+                value,
+                *expr),
                 sym_memory,
             ),
             Expression::Exists(arr_name, index, value, expr) => todo!(),
@@ -523,13 +524,10 @@ impl SymExpression {
 /// return c && e
 /// ```
 fn destruct_forall<'a>(
-    arr_name: Identifier,
-    (sym_ty, arr, size_expr, _): &Array,
-    index: &Identifier,
-    value: &Identifier,
-    inner_expr: &Expression,
+    (arr_name, index, value, inner_expr): (Identifier, Identifier, Identifier, Expression),
     sym_memory: &SymMemory,
 ) -> SymExpression {
+    let (sym_ty, arr, size_expr, _) = sym_memory.heap_get_array(&arr_name);
     let index_id = SymExpression::FreeVariable(SymType::Int, index.clone());
 
     // foreach (i, v) pair in arr:
@@ -706,6 +704,12 @@ impl fmt::Debug for SymExpression {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             SymExpression::Implies(l_expr, r_expr) => write!(f, "({:?} ==> {:?})", l_expr, r_expr),
+            SymExpression::Forall(arr, i, v, body) => {
+                write!(f, "forall {}, {}, {} : {:?}", arr, i, v, body)
+            }
+            SymExpression::Exists(arr, i, v, body) => {
+                write!(f, "exists {}, {}, {} : {:?}", arr, i, v, body)
+            }
             SymExpression::And(l_expr, r_expr) => write!(f, "({:?} && {:?})", l_expr, r_expr),
             SymExpression::Or(l_expr, r_expr) => write!(f, "({:?} || {:?})", l_expr, r_expr),
             SymExpression::EQ(l_expr, r_expr) => write!(f, "({:?} == {:?})", l_expr, r_expr),
