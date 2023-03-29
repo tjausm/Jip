@@ -45,22 +45,22 @@ fn build_test_from_directory(test_file: &mut File, directory: ReadDir, parent: &
 }
 
 //gens 1 test per program in 'tests/programs/..' folder (file can't have extension)
-//tests check if program ending with '_faulty' are shown incorrect,
+//tests check if program ending with '_invalid' are shown incorrect,
 //and if all other program are proven to be correct
 fn write_test(test_file: &mut File, entry: &DirEntry, parent: &str) {
     let entry = entry.path().canonicalize().unwrap();
     let path = entry.display();
-    let faulty = entry
+    let invalid = entry
         .file_stem()
         .unwrap()
         .to_string_lossy()
-        .ends_with("faulty");
+        .ends_with("invalid");
     let test_name = format!("{}{}", parent, entry.file_stem().unwrap().to_string_lossy());
 
-    if faulty {
+    if invalid {
         write!(
             test_file,
-            include_str!("./tests/test_faulty_template"),
+            include_str!("./tests/test_invalid_template"),
             name = test_name,
             path = path
         )
