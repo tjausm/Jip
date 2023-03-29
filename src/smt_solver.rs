@@ -1,20 +1,19 @@
 //! Encode expressions into the smt-lib format to test satisfiability using the chosen backend
 
-
 use crate::ast::Literal;
-use crate::shared::{panic_with_diagnostics, Error, SolverType, Config};
+use crate::shared::{panic_with_diagnostics, Config, Error, SolverType};
 use crate::symbolic::expression::{PathConstraints, SymExpression, SymType};
 use crate::symbolic::memory::SymMemory;
-use crate::symbolic::ref_values::{ArrSize, Boundary, LazyReference, SymRefType, Reference};
+use crate::symbolic::ref_values::{ArrSize, Boundary, LazyReference, Reference, SymRefType};
+use core::fmt;
 use rsmt2::print::ModelParser;
 use rsmt2::{self, SmtConf, SmtRes};
 use rustc_hash::FxHashSet;
-use core::fmt;
 use std::str::FromStr;
 
 type Formula = String;
 type Declarations = FxHashSet<(SymType, String)>;
-type Assertions =  FxHashSet<String>;
+type Assertions = FxHashSet<String>;
 pub struct Model(Vec<(SymExpression, Literal)>);
 
 #[derive(PartialEq)]
@@ -34,7 +33,7 @@ impl<'a> rsmt2::print::IdentParser<String, SymType, &'a str> for Parser {
         match ty {
             ty if ty == "Int" => SmtRes::Ok(SymType::Int),
             ty if ty == "Bool" => SmtRes::Ok(SymType::Bool),
-            _ => panic_with_diagnostics(&format!("Error shouldn't happen"), &())
+            _ => panic_with_diagnostics(&format!("Error shouldn't happen"), &()),
         }
     }
 }
@@ -44,13 +43,21 @@ impl<'a> ModelParser<String, SymType, (SymExpression, Literal), &'a str> for Par
         self,
         input: &'a str,
         id: &String,
-        x: &[(String, SymType)],
+        _: &[(String, SymType)],
         ty: &SymType,
     ) -> SmtRes<(SymExpression, Literal)> {
+        // remove spaces & braces from input
+        let clean_input = input.replace(&['(', ')', ' '][..], "");
+
         let fv = SymExpression::FreeVariable(ty.clone(), id.to_string());
-        let lit = match  ty {
-            SymType::Bool => Literal::Boolean(bool::from_str(input).unwrap()),
-            _=> Literal::Integer(i64::from_str(input).unwrap()),
+        let lit = match ty {
+            SymType::Bool => Literal::Boolean(bool::from_str(&clean_input).unwrap()),
+            _ => match i64::from_str(&clean_input) {
+                Ok(i) => Literal::Integer(i),
+                Err(err) => {
+                    panic_with_diagnostics(&format!("Error: {:?} - Value: {}", err, input), &())
+                }
+            },
         };
 
         Ok((fv, lit))
@@ -59,7 +66,7 @@ impl<'a> ModelParser<String, SymType, (SymExpression, Literal), &'a str> for Par
 
 pub struct Solver {
     s: rsmt2::Solver<Parser>,
-    pub config: Config
+    pub config: Config,
 }
 
 impl Solver {
@@ -87,7 +94,10 @@ impl Solver {
         solver.set_option(":print-success", "false").unwrap(); //turn off automatic succes printing in yices2
         solver.produce_models().unwrap();
         solver.set_logic(rsmt2::Logic::QF_NIA).unwrap(); //set logic to quantifier free non-linear arithmetics
-        Solver { s: solver, config: config.clone() }
+        Solver {
+            s: solver,
+            config: config.clone(),
+        }
     }
 
     /// returns a satisfying model of an expression if one was found
@@ -136,14 +146,16 @@ impl Solver {
         self.s.pop(1).unwrap();
         //either return Sat(model) or Unsat
         if satisfiable {
-            let mut model : Vec<(SymExpression, Literal)> = vec![];
+            let mut model: Vec<(SymExpression, Literal)> = vec![];
             match rsmt2_model {
                 Ok(rsmt2_model) => {
                     for var in rsmt2_model {
                         model.push(var.3);
                     }
                 }
-                Err(err) => panic_with_diagnostics(&format!("Error during model parsing: {:?}", err), &()),
+                Err(err) => {
+                    panic_with_diagnostics(&format!("Error during model parsing: {:?}", err), &())
+                }
             };
 
             Some(Model(model))
@@ -286,7 +298,9 @@ fn expr_to_str<'a>(
             (format!("{}", id), fv, FxHashSet::default())
         }
         SymExpression::SizeOf(_, _, size_expr, Some(s)) => match s {
-            ArrSize::Point(n) => expr_to_str(&SymExpression::Literal(Literal::Integer(*n)), &sym_memory),
+            ArrSize::Point(n) => {
+                expr_to_str(&SymExpression::Literal(Literal::Integer(*n)), &sym_memory)
+            }
             ArrSize::Range(Boundary::Known(min), Boundary::Known(max)) => {
                 let (expr, fv, mut a) = expr_to_str(size_expr, &sym_memory);
                 a.insert(format!("(<= {} {})", min, expr));
@@ -311,7 +325,7 @@ fn expr_to_str<'a>(
         }
         SymExpression::Literal(Literal::Boolean(b)) => {
             (format!("{}", b), FxHashSet::default(), FxHashSet::default())
-        },
+        }
         SymExpression::LazyReference(lr) => {
             let mut a = FxHashSet::default();
             let mut fv = FxHashSet::default();
@@ -320,12 +334,18 @@ fn expr_to_str<'a>(
             let r_value = format!("{}", r.get());
             let null = format!("{}", Reference::null().get());
             let r_name = format!("|lazyRef({})|", r_value);
-            
-            fv.insert((SymType::Ref(SymRefType::Object(class.clone())), r_name.clone()));
-            a.insert(format!("(xor (= {} {}) (= {} {}))", r_name, r_value, r_name, null));
+
+            fv.insert((
+                SymType::Ref(SymRefType::Object(class.clone())),
+                r_name.clone(),
+            ));
+            a.insert(format!(
+                "(xor (= {} {}) (= {} {}))",
+                r_name, r_value, r_name, null
+            ));
 
             (r_name, fv, a)
-        },
+        }
         SymExpression::Reference(r) => (
             format!("{}", r.get()),
             FxHashSet::default(),
@@ -343,4 +363,3 @@ fn expr_to_str<'a>(
         }
     }
 }
-
