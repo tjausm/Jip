@@ -320,27 +320,3 @@ fn expr_to_str<'a>(
     }
 }
 
-#[cfg(test)]
-mod tests {
-
-
-    use crate::symbolic::memory::SymMemory;
-
-    use super::*;
-    lalrpop_mod!(pub parser);
-
-    #[test]
-    fn test_solving() {
-        let p = parser::VerificationExpressionParser::new();
-        let expr = p
-            .parse("!(((1 >= 0) && (2 > 0)) ==> ((((1 + 2) >= 1) && ((1 + 2) >= 1)) && true))")
-            .unwrap();
-
-        //let se = SymExpression::new(&SymMemory::new(Program(vec![])), expr);
-        // todo!()
-        // let sat = verify_expr(&se);
-
-        // assert!(sat == SmtResult::Unsat);
-        // println!("end");
-    }
-}
