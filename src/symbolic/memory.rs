@@ -5,7 +5,7 @@ use std::fmt;
 
 use super::expression::{PathConstraints, SymExpression, SymType};
 use super::ref_values::{
-    ArrSize, ArrSizes, Array, LazyReference, Reference, ReferenceValue, SymRefType, EvaluatedRefs,
+    ArrSize, ArrSizes, Array, EvaluatedRefs, LazyReference, Reference, ReferenceValue, SymRefType,
 };
 use crate::ast::*;
 use crate::shared::{panic_with_diagnostics, Diagnostics, Error, Scope};
@@ -231,7 +231,23 @@ impl<'a> SymMemory {
                 diagnostics.z3_calls += 1;
                 let size_of =
                     SymExpression::SizeOf(arr_name.clone(), r, Box::new(size_expr.clone()), size);
-                solver.verify_array_access(pc, &size_of, &simple_index)?
+
+                //append length > index to PathConstraints and try to falsify
+                let length_gt_index =
+                    SymExpression::GT(Box::new(size_of.clone()), Box::new(simple_index.clone()));
+                let mut pc = pc.clone();
+                pc.push_assertion(length_gt_index);
+                let constraints = pc.combine_over_true();
+
+                match solver.verify_expr(&SymExpression::Not(Box::new(constraints)), &self) {
+                    None => (),
+                    Some(model) => {
+                        return Err(Error::Verification(format!(
+                    "Following input could (potentially) accesses an array out of bounds:\n{}",
+                    model
+                )));
+                    }
+                }
             }
         };
 

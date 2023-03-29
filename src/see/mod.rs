@@ -241,7 +241,6 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                             &mut sym_memory,
                             &mut pc,
                             &mut arr_sizes,
-                            config,
                             d > prune_depth,
                             &mut solver,
                             assumption,
@@ -254,7 +253,6 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                         &mut sym_memory,
                         &mut pc,
                         &mut arr_sizes,
-                        config,
                         &mut solver,
                         assertion,
                         &mut diagnostics,
@@ -392,7 +390,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                                     },
                                     Some(SymExpression::LazyReference(lr)) => {
                                         // release lazy reference and initialize object
-                                        let r = match lr.release(&mut diagnostics, &mut solver,  &pc, &arr_sizes, &mut eval_refs)? {
+                                        let r = match lr.release(&mut diagnostics, &mut solver,  &pc, &arr_sizes, &mut eval_refs, &sym_memory)? {
                                             Some(r) => r,
                                             _ => continue 'q_edges
                                         };
@@ -469,7 +467,6 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                                     &mut sym_memory,
                                     &mut pc,
                                     &mut arr_sizes,
-                                    config,
                                     &mut solver,
                                     assertion,
                                     &mut diagnostics,
@@ -484,7 +481,6 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                                         &mut sym_memory,
                                         &mut pc,
                                         &mut arr_sizes,
-                                        config,
                                         prune_depth < d,
                                         &mut solver,
                                         assumption,

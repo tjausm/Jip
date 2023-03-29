@@ -64,6 +64,7 @@ impl LazyReference {
         solver: &mut Solver,
         pc: &PathConstraints,
         sizes: &ArrSizes,
+        sym_memory: &SymMemory
     ) -> Result<bool, Error> {
         // check if path is feasible
         let mut pc = pc.conjunct();
@@ -72,7 +73,7 @@ impl LazyReference {
         }
 
         diagnostics.z3_calls += 1;
-        if solver.expression_unsatisfiable(&pc).is_ok() {
+        if solver.verify_expr(&pc, sym_memory).is_none() {
             return Ok(false);
         }
 
@@ -84,9 +85,9 @@ impl LazyReference {
         let mut pc_null_check = SymExpression::And(Box::new(pc), Box::new(ref_is_null));
 
         diagnostics.z3_calls += 1;
-        match solver.expression_unsatisfiable(&pc_null_check) {
-            Ok(_) => Ok(true),
-            Err(model) => Err(Error::Verification(format!(
+        match solver.verify_expr(&pc_null_check, sym_memory) {
+            None => Ok(true),
+            Some(model) => Err(Error::Verification(format!(
                 "A reference could possibly be null:\n{}",
                 model
             ))),
@@ -107,7 +108,7 @@ impl LazyReference {
             return Ok(Some(self.r));
         };
 
-        let feasible = self.is_never_null(diagnostics, solver, pc, sizes)?;
+        let feasible = self.is_never_null(diagnostics, solver, pc, sizes, sym_memory)?;
 
         if feasible {
             // insert fresh lazy object into heap
@@ -131,13 +132,14 @@ impl LazyReference {
         pc: &PathConstraints,
         sizes: &ArrSizes,
         eval_refs: &mut EvaluatedRefs,
+        sym_memory: &SymMemory
     ) -> Result<Option<Reference>, Error> {
         // try to add ref to hashset, and if it was already present return
         if eval_refs.insert(self.r) {
             return Ok(Some(self.r));
         };
 
-        let feasible = self.is_never_null(diagnostics, solver, pc, sizes)?;
+        let feasible = self.is_never_null(diagnostics, solver, pc, sizes, sym_memory)?;
 
         if feasible {
             Ok(Some(self.r))

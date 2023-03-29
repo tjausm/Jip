@@ -4,6 +4,7 @@
 use crate::ast::Literal;
 use crate::shared::{panic_with_diagnostics, Error, SolverType, Config};
 use crate::symbolic::expression::{PathConstraints, SymExpression, SymType};
+use crate::symbolic::memory::SymMemory;
 use crate::symbolic::ref_values::{ArrSize, Boundary, LazyReference, SymRefType, Reference};
 use rsmt2::print::ModelParser;
 use rsmt2::{self, SmtConf, SmtRes};
@@ -76,61 +77,11 @@ impl Solver {
         Solver { s: solver, config: config.clone() }
     }
 
-    /// Combine pathconstraints to assert `pc ==> length > index` == always true
-    pub fn verify_array_access<'a>(
-        &mut self,
-        pc: &PathConstraints,
-        size_of: &'a SymExpression,
-        index: &'a SymExpression,
-    ) -> Result<(), Error> {
-        //append length > index to PathConstraints and try to falsify
-        let length_gt_index = SymExpression::GT(Box::new(size_of.clone()), Box::new(index.clone()));
-        let mut pc = pc.clone();
-        pc.push_assertion(length_gt_index);
-        let constraints = pc.combine_over_true();
-
-        match self.verify_expr(&SymExpression::Not(Box::new(constraints))) {
-            SmtResult::Unsat => return Ok(()),
-            SmtResult::Sat(model) => {
-                return Err(Error::Verification(format!(
-                    "Following input could (potentially) accesses an array out of bounds:\n{}",
-                    model
-                )));
-            }
-        }
-    }
-
-    /// given a set of pathconstraints combined over true, method returns a counterexample to violate them if there is one
-    /// `solve_constraints(ctx, vec![assume x, assert y, assume z] = x -> (y && z)`
-    pub fn verify_constraints<'a>(&mut self, constraints: SymExpression) -> Result<(), Error> {
-        match self.verify_expr(&SymExpression::Not(Box::new(constraints))) {
-            SmtResult::Unsat => return Ok(()),
-            SmtResult::Sat(model) => {
-                return Err(Error::Verification(format!(
-                    "Following input violates one of the assertion:\n{}",
-                    model
-                )));
-            }
-        }
-    }
-    /// returns ok if an expression can never be satisfied otherwise returns a model to satisfy it
-    pub fn expression_unsatisfiable<'a>(&mut self, expression: &SymExpression) -> Result<(), String> {
-        //negate assumption and try to find counter-example
-        //no counter-example for !assumption means assumption is never true
-        match self.verify_expr(expression) {
-                SmtResult::Unsat => return Ok(()),
-                SmtResult::Sat(model) => {
-                    return Err(model);
-                }
-            }
-    }
-
-    /// returns error if there exists a counterexample for given formula
-    /// in other words, given formula `a > b`, counterexample: a -> 0, b -> 0
-    fn verify_expr(&mut self, expr: &SymExpression) -> SmtResult {
+    /// returns a satisfying model of an expression if one was found
+    pub fn verify_expr(&mut self, expr: &SymExpression, sym_memory: &SymMemory) -> Option<String> {
         self.s.push(1).unwrap();
 
-        let (expr_str, fvs, assertions) = expr_to_str(expr);
+        let (expr_str, fvs, assertions) = expr_to_str(expr, &sym_memory);
 
         if self.config.verbose {
             println!("\nInvoking z3");
@@ -182,9 +133,9 @@ impl Solver {
                 Err(err) => model_str = format!("Error during model parsing: {:?}", err),
             };
 
-            SmtResult::Sat(model_str.to_owned())
+            Some(model_str.to_owned())
         } else {
-            SmtResult::Unsat
+            None
         }
     }
 }
@@ -193,114 +144,115 @@ impl Solver {
 /// with a set of declarations declaring free variables
 /// and a set of assertions that we do berfore checking formula
 fn expr_to_str<'a>(
-    expr: &'a SymExpression,
+    expr: &SymExpression,
+    sym_memory: &SymMemory,
 ) -> (Formula, Declarations, Assertions) {
     match expr {
         SymExpression::And(l_expr, r_expr) => {
-            let (l, mut fv_l, mut a_l) = expr_to_str(l_expr);
-            let (r, fv_r, a_r) = expr_to_str(r_expr);
+            let (l, mut fv_l, mut a_l) = expr_to_str(l_expr, &sym_memory);
+            let (r, fv_r, a_r) = expr_to_str(r_expr, &sym_memory);
             fv_l.extend(fv_r);
             a_l.extend(a_r);
             return (format!("(and {} {})", l, r), fv_l, a_l);
         }
         SymExpression::Or(l_expr, r_expr) => {
-            let (l, mut fv_l, mut a_l) = expr_to_str(l_expr);
-            let (r, fv_r, a_r) = expr_to_str(r_expr);
+            let (l, mut fv_l, mut a_l) = expr_to_str(l_expr, &sym_memory);
+            let (r, fv_r, a_r) = expr_to_str(r_expr, &sym_memory);
             fv_l.extend(fv_r);
             a_l.extend(a_r);
             return (format!("(or {} {})", l, r), fv_l, a_l);
         }
         SymExpression::Implies(l_expr, r_expr) => {
-            let (l, mut fv_l, mut a_l) = expr_to_str(l_expr);
-            let (r, fv_r, a_r) = expr_to_str(r_expr);
+            let (l, mut fv_l, mut a_l) = expr_to_str(l_expr, &sym_memory);
+            let (r, fv_r, a_r) = expr_to_str(r_expr, &sym_memory);
             fv_l.extend(fv_r);
             a_l.extend(a_r);
             return (format!("(=> {} {})", l, r), fv_l, a_l);
         }
         SymExpression::EQ(l_expr, r_expr) => {
-            let (l, mut fv_l, mut a_l) = expr_to_str(l_expr);
-            let (r, fv_r, a_r) = expr_to_str(r_expr);
+            let (l, mut fv_l, mut a_l) = expr_to_str(l_expr, &sym_memory);
+            let (r, fv_r, a_r) = expr_to_str(r_expr, &sym_memory);
             fv_l.extend(fv_r);
             a_l.extend(a_r);
             return (format!("(= {} {})", l, r), fv_l, a_l);
         }
         SymExpression::NE(l_expr, r_expr) => {
-            let (l, mut fv_l, mut a_l) = expr_to_str(l_expr);
-            let (r, fv_r, a_r) = expr_to_str(r_expr);
+            let (l, mut fv_l, mut a_l) = expr_to_str(l_expr, &sym_memory);
+            let (r, fv_r, a_r) = expr_to_str(r_expr, &sym_memory);
             fv_l.extend(fv_r);
             a_l.extend(a_r);
             return (format!("(distinct {} {})", l, r), fv_l, a_l);
         }
         SymExpression::LT(l_expr, r_expr) => {
-            let (l, mut fv_l, mut a_l) = expr_to_str(l_expr);
-            let (r, fv_r, a_r) = expr_to_str(r_expr);
+            let (l, mut fv_l, mut a_l) = expr_to_str(l_expr, &sym_memory);
+            let (r, fv_r, a_r) = expr_to_str(r_expr, &sym_memory);
             fv_l.extend(fv_r);
             a_l.extend(a_r);
             return (format!("(< {} {})", l, r), fv_l, a_l);
         }
         SymExpression::GT(l_expr, r_expr) => {
-            let (l, mut fv_l, mut a_l) = expr_to_str(l_expr);
-            let (r, fv_r, a_r) = expr_to_str(r_expr);
+            let (l, mut fv_l, mut a_l) = expr_to_str(l_expr, &sym_memory);
+            let (r, fv_r, a_r) = expr_to_str(r_expr, &sym_memory);
             fv_l.extend(fv_r);
             a_l.extend(a_r);
             return (format!("(> {} {})", l, r), fv_l, a_l);
         }
         SymExpression::GEQ(l_expr, r_expr) => {
-            let (l, mut fv_l, mut a_l) = expr_to_str(l_expr);
-            let (r, fv_r, a_r) = expr_to_str(r_expr);
+            let (l, mut fv_l, mut a_l) = expr_to_str(l_expr, &sym_memory);
+            let (r, fv_r, a_r) = expr_to_str(r_expr, &sym_memory);
             fv_l.extend(fv_r);
             a_l.extend(a_r);
             return (format!("(>= {} {})", l, r), fv_l, a_l);
         }
         SymExpression::LEQ(l_expr, r_expr) => {
-            let (l, mut fv_l, mut a_l) = expr_to_str(l_expr);
-            let (r, fv_r, a_r) = expr_to_str(r_expr);
+            let (l, mut fv_l, mut a_l) = expr_to_str(l_expr, &sym_memory);
+            let (r, fv_r, a_r) = expr_to_str(r_expr, &sym_memory);
             fv_l.extend(fv_r);
             a_l.extend(a_r);
             return (format!("(<= {} {})", l, r), fv_l, a_l);
         }
         SymExpression::Plus(l_expr, r_expr) => {
-            let (l, mut fv_l, mut a_l) = expr_to_str(l_expr);
-            let (r, fv_r, a_r) = expr_to_str(r_expr);
+            let (l, mut fv_l, mut a_l) = expr_to_str(l_expr, &sym_memory);
+            let (r, fv_r, a_r) = expr_to_str(r_expr, &sym_memory);
             fv_l.extend(fv_r);
             a_l.extend(a_r);
             return (format!("(+ {} {})", l, r), fv_l, a_l);
         }
         SymExpression::Minus(l_expr, r_expr) => {
-            let (l, mut fv_l, mut a_l) = expr_to_str(l_expr);
-            let (r, fv_r, a_r) = expr_to_str(r_expr);
+            let (l, mut fv_l, mut a_l) = expr_to_str(l_expr, &sym_memory);
+            let (r, fv_r, a_r) = expr_to_str(r_expr, &sym_memory);
             fv_l.extend(fv_r);
             a_l.extend(a_r);
             return (format!("(- {} {})", l, r), fv_l, a_l);
         }
         SymExpression::Multiply(l_expr, r_expr) => {
-            let (l, mut fv_l, mut a_l) = expr_to_str(l_expr);
-            let (r, fv_r, a_r) = expr_to_str(r_expr);
+            let (l, mut fv_l, mut a_l) = expr_to_str(l_expr, &sym_memory);
+            let (r, fv_r, a_r) = expr_to_str(r_expr, &sym_memory);
             fv_l.extend(fv_r);
             a_l.extend(a_r);
             return (format!("(* {} {})", l, r), fv_l, a_l);
         }
         SymExpression::Divide(l_expr, r_expr) => {
-            let (l, mut fv_l, mut a_l) = expr_to_str(l_expr);
-            let (r, fv_r, a_r) = expr_to_str(r_expr);
+            let (l, mut fv_l, mut a_l) = expr_to_str(l_expr, &sym_memory);
+            let (r, fv_r, a_r) = expr_to_str(r_expr, &sym_memory);
             fv_l.extend(fv_r);
             a_l.extend(a_r);
             return (format!("(div {} {})", l, r), fv_l, a_l);
         }
         SymExpression::Mod(l_expr, r_expr) => {
-            let (l, mut fv_l, mut a_l) = expr_to_str(l_expr);
-            let (r, fv_r, a_r) = expr_to_str(r_expr);
+            let (l, mut fv_l, mut a_l) = expr_to_str(l_expr, &sym_memory);
+            let (r, fv_r, a_r) = expr_to_str(r_expr, &sym_memory);
             fv_l.extend(fv_r);
             a_l.extend(a_r);
             return (format!("(mod {} {})", l, r), fv_l, a_l);
         }
         SymExpression::Negative(expr) => {
-            let (expr, fv, a) = expr_to_str(expr);
+            let (expr, fv, a) = expr_to_str(expr, &sym_memory);
 
             return (format!("(- {})", expr), fv, a);
         }
         SymExpression::Not(expr) => {
-            let (expr, fv, a) = expr_to_str(expr);
+            let (expr, fv, a) = expr_to_str(expr, &sym_memory);
 
             return (format!("(not {})", expr), fv, a);
         }
@@ -310,26 +262,26 @@ fn expr_to_str<'a>(
             (format!("{}", id), fv, FxHashSet::default())
         }
         SymExpression::SizeOf(_, _, size_expr, Some(s)) => match s {
-            ArrSize::Point(n) => expr_to_str(&SymExpression::Literal(Literal::Integer(*n))),
+            ArrSize::Point(n) => expr_to_str(&SymExpression::Literal(Literal::Integer(*n)), &sym_memory),
             ArrSize::Range(Boundary::Known(min), Boundary::Known(max)) => {
-                let (expr, fv, mut a) = expr_to_str(size_expr);
+                let (expr, fv, mut a) = expr_to_str(size_expr, &sym_memory);
                 a.insert(format!("(<= {} {})", min, expr));
                 a.insert(format!("(<= {} {})", expr, max));
                 return (expr, fv, a);
             }
             ArrSize::Range(Boundary::Known(min), _) => {
-                let (expr, fv, mut a) = expr_to_str(size_expr);
+                let (expr, fv, mut a) = expr_to_str(size_expr, &sym_memory);
                 a.insert(format!("(<= {} {})", min, expr));
                 return (expr, fv, a);
             }
             ArrSize::Range(_, Boundary::Known(max)) => {
-                let (expr, fv, mut a) = expr_to_str(size_expr);
+                let (expr, fv, mut a) = expr_to_str(size_expr, &sym_memory);
                 a.insert(format!("(<= {} {})", expr, max));
                 return (expr, fv, a);
             }
-            _ => expr_to_str(size_expr),
+            _ => expr_to_str(size_expr, &sym_memory),
         },
-        SymExpression::SizeOf(_, _, size_expr, None) => expr_to_str(size_expr),
+        SymExpression::SizeOf(_, _, size_expr, None) => expr_to_str(size_expr, &sym_memory),
         SymExpression::Literal(Literal::Integer(n)) => {
             (format!("{}", n), FxHashSet::default(), FxHashSet::default())
         }

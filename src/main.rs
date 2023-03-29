@@ -58,7 +58,7 @@ enum Mode {
     /// Verify program and print result
     Verify {
         /// Up to which depth program is evaluated
-        #[clap(default_value_t = 40)]
+        #[clap(default_value_t = 50)]
         depth: Depth,
 
         /// Report detailed information about proceedings of SEE

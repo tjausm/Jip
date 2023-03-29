@@ -4,7 +4,7 @@ use crate::shared::{Config, Error};
 use crate::smt_solver::Solver;
 use crate::symbolic::expression::{PathConstraints, SymExpression, SymType};
 use crate::symbolic::memory::SymMemory;
-use crate::symbolic::ref_values::{ArrSizes, SymRefType, EvaluatedRefs};
+use crate::symbolic::ref_values::{ArrSizes, EvaluatedRefs, SymRefType};
 
 /// returns the symbolic expression rhs refers to, or None if we encounter a lazy object on an infeasible path
 pub fn parse_rhs<'a, 'b>(
@@ -76,7 +76,15 @@ pub fn lhs_from_rhs<'a>(
     lhs: &'a Lhs,
     rhs: &'a Rhs,
 ) -> Result<Feasible, Error> {
-    let var = match parse_rhs(sym_memory, pc, arr_sizes, eval_refs, solver, diagnostics, rhs)? {
+    let var = match parse_rhs(
+        sym_memory,
+        pc,
+        arr_sizes,
+        eval_refs,
+        solver,
+        diagnostics,
+        rhs,
+    )? {
         Some(var) => var,
         _ => return Ok(false),
     };
@@ -118,13 +126,12 @@ pub fn assert(
     sym_memory: &mut SymMemory,
     pc: &mut PathConstraints,
     arr_sizes: &mut ArrSizes,
-    config: &Config,
     solver: &mut Solver,
     assertion: &Expression,
     diagnostics: &mut Diagnostics,
 ) -> Result<(), Error> {
     let sym_assertion = SymExpression::new(&sym_memory, assertion.clone());
-
+    let config = &solver.config;
     // update arr_sizes
     if config.infer_size {
         arr_sizes.update_inference(sym_assertion.clone());
@@ -154,7 +161,15 @@ pub fn assert(
     // if we have not solved by now, invoke z3
     diagnostics.z3_calls = diagnostics.z3_calls + 1;
 
-    solver.verify_constraints(constraints)
+    match solver.verify_expr(&SymExpression::Not(Box::new(constraints)), sym_memory) {
+        Some(model) => {
+            return Err(Error::Verification(format!(
+                "Following input violates one of the assertion:\n{}",
+                model
+            )))
+        }
+        None => Ok(()),
+    }
 }
 
 /// handles the assume in the SEE (used in `assume`, `require` and `ensure` statements)
@@ -163,14 +178,13 @@ pub fn assume(
     sym_memory: &mut SymMemory,
     pc: &mut PathConstraints,
     arr_sizes: &mut ArrSizes,
-    config: &Config,
     use_z3: bool,
     solver: &mut Solver,
     assumption: &Expression,
     diagnostics: &mut Diagnostics,
 ) -> bool {
     let sym_assumption = SymExpression::new(&sym_memory, assumption.clone());
-
+    let config = &solver.config;
     // update sizes if it's turned on
     if config.infer_size {
         arr_sizes.update_inference(sym_assumption.clone());
@@ -196,10 +210,10 @@ pub fn assume(
     match (use_z3, &constraints) {
         // if is unsatisfiable return false
         (_, SymExpression::Literal(Literal::Boolean(false))) => return false,
-        // if z3 confirms it is unsatisfiable, we must return false again
+        // if z3 finds a satisfying model return true, otherwise return false
         (true, _) => {
             diagnostics.z3_calls = diagnostics.z3_calls + 1;
-            !solver.expression_unsatisfiable(&constraints).is_ok()
+            solver.verify_expr(&constraints, sym_memory).is_some()
         }
         // if either not proved or z3 is turned off we just return true and go on
         (false, _) => true,
