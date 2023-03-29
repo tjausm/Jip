@@ -1,4 +1,4 @@
-// program showcases how we can have a false positive
+// program showcases how we have a false positive
 // if there are 2 symbolic values mapped to 1 index
 
 class Main {
@@ -11,8 +11,12 @@ class Main {
 
         // set length to be 2
         assume 2 == #a -1;
+
+        // get first a[0] and a[1]
         int first := a[0];
         int second := a[#a - 1];
+
+
         assert first < second;
 
     }
