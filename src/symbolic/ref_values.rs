@@ -88,7 +88,7 @@ impl LazyReference {
         match solver.verify_expr(&pc_null_check, sym_memory) {
             None => Ok(true),
             Some(model) => Err(Error::Verification(format!(
-                "A reference could possibly be null:\n{}",
+                "A reference could possibly be null:\n{:?}",
                 model
             ))),
         }

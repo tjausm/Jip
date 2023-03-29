@@ -7,7 +7,7 @@
 class Main {
     static void main(int step, int[] a){
         a := PVbenchmark.pullUp(step, a);
-        a := PVbenchmark.pullUp_invalid(step, a);
+        //a := PVbenchmark.pullUp_invalid(step, a);
     }
 }
 

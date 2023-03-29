@@ -164,7 +164,7 @@ pub fn assert(
     match solver.verify_expr(&SymExpression::Not(Box::new(constraints)), sym_memory) {
         Some(model) => {
             return Err(Error::Verification(format!(
-                "Following input violates one of the assertion:\n{}",
+                "Following input violates one of the assertion:\n{:?}",
                 model
             )))
         }

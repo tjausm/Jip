@@ -210,7 +210,7 @@ pub enum Expression {
     SizeOf(Identifier),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub enum Literal {
     Boolean(bool),
     Integer(i64),
@@ -268,8 +268,7 @@ impl fmt::Debug for Expression {
             Expression::Negative(expr) => write!(f, "-{:?}", expr),
             Expression::Not(expr) => write!(f, "!{:?}", expr),
             Expression::Identifier(id) => write!(f, "{}", id),
-            Expression::Literal(Literal::Boolean(val)) => write!(f, "{:?}", val),
-            Expression::Literal(Literal::Integer(val)) => write!(f, "{:?}", val),
+            Expression::Literal(lit) => write!(f, "{:?}", lit),
             Expression::SizeOf(id) => write!(f, "#{}", id),
         }
     }
@@ -303,6 +302,14 @@ impl fmt::Debug for Type {
             Type::Int => write!(f, "int"),
             Type::Class(name) => write!(f, "{}", name),
             Type::Array(ty) => write!(f, "{:?}[]", ty),
+        }
+    }
+}
+impl fmt::Debug for Literal {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Literal::Boolean(b) => write!(f, "{}", b),
+            Literal::Integer(i) => write!(f, "{}", i),
         }
     }
 }

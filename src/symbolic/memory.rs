@@ -243,7 +243,7 @@ impl<'a> SymMemory {
                     None => (),
                     Some(model) => {
                         return Err(Error::Verification(format!(
-                    "Following input could (potentially) accesses an array out of bounds:\n{}",
+                    "Following input could (potentially) accesses an array out of bounds:\n{:?}",
                     model
                 )));
                     }

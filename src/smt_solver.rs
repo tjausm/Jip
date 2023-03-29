@@ -9,10 +9,13 @@ use crate::symbolic::ref_values::{ArrSize, Boundary, LazyReference, SymRefType, 
 use rsmt2::print::ModelParser;
 use rsmt2::{self, SmtConf, SmtRes};
 use rustc_hash::FxHashSet;
+use core::fmt;
+use std::str::FromStr;
 
 type Formula = String;
 type Declarations = FxHashSet<(SymType, String)>;
 type Assertions =  FxHashSet<String>;
+pub struct Model(Vec<(SymExpression, Literal)>);
 
 #[derive(PartialEq)]
 pub enum SmtResult {
@@ -23,24 +26,34 @@ pub enum SmtResult {
 #[derive(Clone, Copy)]
 struct Parser;
 
-impl<'a> rsmt2::print::IdentParser<String, String, &'a str> for Parser {
+impl<'a> rsmt2::print::IdentParser<String, SymType, &'a str> for Parser {
     fn parse_ident(self, input: &'a str) -> rsmt2::SmtRes<String> {
         Ok(input.into())
     }
-    fn parse_type(self, _: &'a str) -> rsmt2::SmtRes<String> {
-        Ok("".to_string())
+    fn parse_type(self, ty: &'a str) -> rsmt2::SmtRes<SymType> {
+        match ty {
+            ty if ty == "Int" => SmtRes::Ok(SymType::Int),
+            ty if ty == "Bool" => SmtRes::Ok(SymType::Bool),
+            _ => panic_with_diagnostics(&format!("Error shouldn't happen"), &())
+        }
     }
 }
 
-impl<'a> ModelParser<String, String, String, &'a str> for Parser {
+impl<'a> ModelParser<String, SymType, (SymExpression, Literal), &'a str> for Parser {
     fn parse_value(
         self,
         input: &'a str,
-        ident: &String,
-        _: &[(String, String)],
-        _: &String,
-    ) -> SmtRes<String> {
-        Ok(format!("{} -> {}", ident, input))
+        id: &String,
+        x: &[(String, SymType)],
+        ty: &SymType,
+    ) -> SmtRes<(SymExpression, Literal)> {
+        let fv = SymExpression::FreeVariable(ty.clone(), id.to_string());
+        let lit = match  ty {
+            SymType::Bool => Literal::Boolean(bool::from_str(input).unwrap()),
+            _=> Literal::Integer(i64::from_str(input).unwrap()),
+        };
+
+        Ok((fv, lit))
     }
 }
 
@@ -78,7 +91,7 @@ impl Solver {
     }
 
     /// returns a satisfying model of an expression if one was found
-    pub fn verify_expr(&mut self, expr: &SymExpression, sym_memory: &SymMemory) -> Option<String> {
+    pub fn verify_expr(&mut self, expr: &SymExpression, sym_memory: &SymMemory) -> Option<Model> {
         self.s.push(1).unwrap();
 
         let (expr_str, fvs, assertions) = expr_to_str(expr, &sym_memory);
@@ -119,24 +132,35 @@ impl Solver {
             ),
         };
 
-        let model = self.s.get_model();
+        let rsmt2_model = self.s.get_model();
         self.s.pop(1).unwrap();
-        //either return Sat(formated model) or Unsat
+        //either return Sat(model) or Unsat
         if satisfiable {
-            let mut model_str = "".to_string();
-            match model {
-                Ok(model) => {
-                    for var in model {
-                        model_str = format!("{}{}\n", model_str, var.3);
+            let mut model : Vec<(SymExpression, Literal)> = vec![];
+            match rsmt2_model {
+                Ok(rsmt2_model) => {
+                    for var in rsmt2_model {
+                        model.push(var.3);
                     }
                 }
-                Err(err) => model_str = format!("Error during model parsing: {:?}", err),
+                Err(err) => panic_with_diagnostics(&format!("Error during model parsing: {:?}", err), &()),
             };
 
-            Some(model_str.to_owned())
+            Some(Model(model))
         } else {
             None
         }
+    }
+}
+
+impl fmt::Debug for Model {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut model_str = "".to_string();
+        for var in &self.0 {
+            let fv = format!("{:?}", var.0);
+            model_str = format!("{}{:<12}-> {:?}\n", model_str, fv, var.1);
+        }
+        write!(f, "{}", model_str)
     }
 }
 

@@ -73,6 +73,7 @@ global_counter!(SCOPE_COUNTER, i32, 1);
      }
  }
 
+
 /// Panics with passed message and passed datastructure (intended for SymMemory)
 #[track_caller]
 pub fn panic_with_diagnostics<D: Debug>(msg: &str, sym_memory: &D) -> ! {
