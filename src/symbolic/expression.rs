@@ -748,82 +748,42 @@ mod tests {
 
     lalrpop_mod!(pub parser);
 
-    // fn parse(i: &str) -> SymExpression {
-    //     let expr = parser::VerificationExpressionParser::new()
-    //         .parse(i)
-    //         .unwrap();
-    //     SymExpression::new(&SymMemory::new(Program(vec![])), expr)
-    // }
+ fn parse(i: &str) -> SymExpression {
+     let expr = parser::VerificationExpressionParser::new()
+         .parse(i)
+         .unwrap();
+     SymExpression::new(&SymMemory::new(Program(vec![])), expr)
+ }
 
-    // #[test]
-    // fn sum_expr_equivalence() {
-    //     let e1 = parse("1+2+3");
-    //     let e2 = parse("3+2+1");
-    //     let e3 = parse("2+3+1");
-    //     assert!(calculate_hash(&e1) == calculate_hash(&e2));
-    //     assert!(calculate_hash(&e1) == calculate_hash(&e3));
-    // }
-    // #[test]
-    // fn mult_expr_equivalence() {
-    //     let e1 = parse("2*3*4+5-1");
-    //     let e2 = parse("3*2*4+5-1");
-    //     let e3 = parse("2*3*4+(-1)+5");
+ #[test]
+ fn sum_expr_equivalence() {
+     let e1 = parse("1+2+3");
+     let e2 = parse("3+2+1");
+     let e3 = parse("2+3+1");
+     assert!(calculate_hash(&e1) == calculate_hash(&e2));
+     assert!(calculate_hash(&e1) == calculate_hash(&e3));
+ }
+ #[test]
+ fn mult_expr_equivalence() {
+     let e1 = parse("2*3*4+5-1");
+     let e2 = parse("3*2*4+5-1");
+     let e3 = parse("2*3*4+(-1)+5");
 
-    //     assert!(calculate_hash(&e1) == calculate_hash(&e2));
-    //     assert!(calculate_hash(&e1) == calculate_hash(&e3));
-    // }
-    // #[test]
-    // fn more_expr_equivalence() {
-    //     let e1 = parse("(7*4+5/8%5)+3");
-    //     let e2 = parse("3+(4*7+5/8%5)");
-    //     assert!(calculate_hash(&e1) == calculate_hash(&e2));
-    // }
-    // #[test]
-    // fn int_comparison() {
-    //     let e1 = parse("1");
-    //     let e2 = parse("1");
-    //     let e3 = parse("123");
-    //     assert!(calculate_hash(&e1) == calculate_hash(&e2));
-    //     assert!(calculate_hash(&e2) != calculate_hash(&e3));
-    // }
-    // #[test]
-    // fn arrlength_not_equivalent() {
-    //     let e1 = parse("#a");
-    //     let e2 = parse("a");
-    //     assert!(calculate_hash(&e1) != calculate_hash(&e2));
-    // }
-    // #[test]
-    // fn literal_not_equivalent() {
-    //     let e1 = parse("false");
-    //     let e2 = parse("true");
-    //     assert!(calculate_hash(&e1) != calculate_hash(&e2));
-    // }
-
-    // #[test]
-    // fn deterministic_sort() {
-    //     let one = parse("1");
-    //     let id = parse("id");
-    //     let negative = parse("-1");
-    //     let three = parse("0+1+2*3/3");
-
-    //     // construct some random arrays with these expressions
-    //     let vec1 = vec![negative.clone(), three.clone(), id.clone(), one.clone()];
-    //     let vec2 = vec![negative.clone(), one.clone(), id.clone(), three.clone()];
-    //     let vec3 = vec![three.clone(), id.clone(), negative.clone(), one.clone()];
-    //     let vec4 = vec![id, negative, one, three];
-
-    //     let mut vec1 = map_hash(&vec1);
-    //     vec1.sort();
-    //     let mut vec2 = map_hash(&vec2);
-    //     vec2.sort();
-    //     let mut vec3 = map_hash(&vec3);
-    //     vec3.sort();
-    //     let mut vec4 = map_hash(&vec4);
-    //     vec4.sort();
-
-    //     // check if arrays are equal after sorting
-    //     assert!(vec1 == vec2);
-    //     assert!(vec1 == vec3);
-    //     assert!(vec1 == vec4);
-    // }
+     assert!(calculate_hash(&e1) == calculate_hash(&e2));
+     assert!(calculate_hash(&e1) == calculate_hash(&e3));
+ }
+ #[test]
+ fn more_expr_equivalence() {
+     let e1 = parse("(7*4+5/8%5)+3");
+     let e2 = parse("3+(4*7+5/8%5)");
+     assert!(calculate_hash(&e1) == calculate_hash(&e2));
+ }
+#[test]
+    fn int_comparison() {
+        let e1 = parse("1");
+        let e2 = parse("1");
+        let e3 = parse("123");
+        assert!(calculate_hash(&e1) == calculate_hash(&e2));
+        assert!(calculate_hash(&e2) != calculate_hash(&e3));
+    }
 }
