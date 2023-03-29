@@ -308,7 +308,7 @@ impl<'a> SymMemory {
                 Ok(lit)
             }
             _ => {
-                let fv_id = format!("|{}[{:?}]|", arr_name.clone(), simple_index);
+                let fv_id = format!("{}[{:?}]", arr_name.clone(), simple_index);
                 let fv = SymExpression::FreeVariable(ty.clone(), fv_id);
                 arr.insert(simple_index, fv.clone());
                 Ok(fv)
@@ -354,7 +354,7 @@ impl<'a> SymMemory {
             match member {
                 Member::Field((ty, field)) => match ty {
                     (Type::Int) => {
-                        let field_name = format!("|{:?}.{}|", r, field);
+                        let field_name = format!("{:?}.{}", r, field);
 
                         fields.insert(
                             field.clone(),

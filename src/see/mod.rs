@@ -195,7 +195,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                         (Type::Array(ty), id) => {
                             let r = Reference::new();
                             let size =
-                                SymExpression::FreeVariable(SymType::Int, format!("|#{:?}|", r));
+                                SymExpression::FreeVariable(SymType::Int, format!("#{:?}", r));
                             let sym_ty = match &**ty {
                                 Type::Int => SymType::Int,
                                 Type::Bool => SymType::Bool,

@@ -48,8 +48,9 @@ impl<'a> ModelParser<String, SymType, (SymExpression, Literal), &'a str> for Par
     ) -> SmtRes<(SymExpression, Literal)> {
         // remove spaces & braces from input
         let clean_input = input.replace(&['(', ')', ' '][..], "");
+        let clean_id = id.replace("|", "");
 
-        let fv = SymExpression::FreeVariable(ty.clone(), id.to_string());
+        let fv = SymExpression::FreeVariable(ty.clone(), clean_id);
         let lit = match ty {
             SymType::Bool => Literal::Boolean(bool::from_str(&clean_input).unwrap()),
             _ => match i64::from_str(&clean_input) {
@@ -293,9 +294,10 @@ fn expr_to_str<'a>(
             return (format!("(not {})", expr), fv, a);
         }
         SymExpression::FreeVariable(ty, id) => {
+            let closed_id = format!("|{}|", id);
             let mut fv = FxHashSet::default();
-            fv.insert((ty.clone(), id.clone()));
-            (format!("{}", id), fv, FxHashSet::default())
+            fv.insert((ty.clone(), closed_id.clone()));
+            (format!("{}", closed_id), fv, FxHashSet::default())
         }
         SymExpression::SizeOf(_, _, size_expr, Some(s)) => match s {
             ArrSize::Point(n) => {
