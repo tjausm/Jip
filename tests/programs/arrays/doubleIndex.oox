@@ -1,0 +1,19 @@
+// program showcases how we can have a false positive
+// if there are 2 symbolic values mapped to 1 index
+
+class Main {
+    static void main(int[] a, int b)
+    ensures (#a > 1)
+    {
+        // set concrete values in array
+        a[0] := 0;
+        a[1] := 1;
+
+        // set length to be 2
+        assume 2 == #a -1;
+        int first := a[0];
+        int second := a[#a - 1];
+        assert first < second;
+
+    }
+}
