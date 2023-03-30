@@ -556,6 +556,7 @@ impl Forall {
 /// return c && e
 /// ```
     pub fn construct(&self, current_memory: &SymMemory) -> SymExpression {
+
         let (r, index, value, inner_expr, captured_memory) = (self.r, &self.index,  &self.value, &self.inner_expr, &self.captured_memory);
         let index_id = SymExpression::FreeVariable(SymType::Int, index.clone());
 

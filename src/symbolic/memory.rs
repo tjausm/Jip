@@ -232,7 +232,7 @@ impl<'a> SymMemory {
                 pc.push_assertion(length_gt_index);
                 let constraints = pc.combine_over_true();
 
-                match solver.verify_expr(&SymExpression::Not(Box::new(constraints)), &self) {
+                match solver.verify_expr(&SymExpression::Not(Box::new(constraints)), &self, Some(arr_sizes)) {
                     None => (),
                     Some(model) => {
                         return Err(Error::Verification(format!(

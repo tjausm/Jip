@@ -10,7 +10,7 @@ use crate::symbolic::ref_values::{ArrSizes, EvaluatedRefs, SymRefType};
 pub fn parse_rhs<'a, 'b>(
     sym_memory: &mut SymMemory,
     pc: &PathConstraints,
-    arr_sizes: &mut ArrSizes,
+    sizes: &mut ArrSizes,
     eval_refs: &mut EvaluatedRefs,
     solver: &mut Solver,
     diagnostics: &mut Diagnostics,
@@ -20,7 +20,7 @@ pub fn parse_rhs<'a, 'b>(
         Rhs::AccessField(obj_name, field_name) => sym_memory
             .heap_access_object(
                 pc,
-                arr_sizes,
+                sizes,
                 eval_refs,
                 solver,
                 diagnostics,
@@ -49,7 +49,7 @@ pub fn parse_rhs<'a, 'b>(
 
         Rhs::AccessArray(arr_name, index) => sym_memory.heap_access_array(
             &pc,
-            arr_sizes,
+            sizes,
             solver,
             diagnostics,
             arr_name,
@@ -69,7 +69,7 @@ pub fn parse_rhs<'a, 'b>(
 pub fn lhs_from_rhs<'a>(
     sym_memory: &mut SymMemory,
     pc: &PathConstraints,
-    arr_sizes: &mut ArrSizes,
+    sizes: &mut ArrSizes,
     eval_refs: &mut EvaluatedRefs,
     solver: &mut Solver,
     diagnostics: &mut Diagnostics,
@@ -79,7 +79,7 @@ pub fn lhs_from_rhs<'a>(
     let var = match parse_rhs(
         sym_memory,
         pc,
-        arr_sizes,
+        sizes,
         eval_refs,
         solver,
         diagnostics,
@@ -95,7 +95,7 @@ pub fn lhs_from_rhs<'a>(
         }
         Lhs::AccessField(obj_name, field_name) => match sym_memory.heap_access_object(
             pc,
-            arr_sizes,
+            sizes,
             eval_refs,
             solver,
             diagnostics,
@@ -110,7 +110,7 @@ pub fn lhs_from_rhs<'a>(
         Lhs::AccessArray(arr_name, index) => sym_memory
             .heap_access_array(
                 &pc,
-                arr_sizes,
+                sizes,
                 solver,
                 diagnostics,
                 arr_name,
@@ -125,21 +125,21 @@ pub fn lhs_from_rhs<'a>(
 pub fn assert(
     sym_memory: &mut SymMemory,
     pc: &mut PathConstraints,
-    arr_sizes: &mut ArrSizes,
+    sizes: &mut ArrSizes,
     solver: &mut Solver,
     assertion: &Expression,
     diagnostics: &mut Diagnostics,
 ) -> Result<(), Error> {
     let sym_assertion = SymExpression::new(&sym_memory, assertion.clone());
     let config = &solver.config;
-    // update arr_sizes
+    // update sizes
     if config.infer_size {
-        arr_sizes.update_inference(sym_assertion.clone());
+        sizes.update_inference(sym_assertion.clone());
     }
 
     // add (inferred  and / orsimplified) assertion
     if config.simplify {
-        let simple_assertion = sym_assertion.simplify(Some(&arr_sizes));
+        let simple_assertion = sym_assertion.simplify(Some(&sizes));
         //let simple_assertion = assertion;
         match simple_assertion {
             SymExpression::Literal(Literal::Boolean(true)) => (),
@@ -152,7 +152,7 @@ pub fn assert(
     // calculate (inferred and / or simplified) constraints
     let mut constraints = pc.combine_over_true();
     if config.simplify {
-        constraints = constraints.simplify(Some(arr_sizes))
+        constraints = constraints.simplify(Some(sizes))
     };
     match constraints {
         SymExpression::Literal(Literal::Boolean(true)) => return Ok(()),
@@ -161,7 +161,7 @@ pub fn assert(
     // if we have not solved by now, invoke z3
     diagnostics.z3_calls = diagnostics.z3_calls + 1;
 
-    match solver.verify_expr(&SymExpression::Not(Box::new(constraints)), sym_memory) {
+    match solver.verify_expr(&SymExpression::Not(Box::new(constraints)), sym_memory, Some(sizes)) {
         Some(model) => {
             return Err(Error::Verification(format!(
                 "Following input violates one of the assertion:\n{:?}",
@@ -177,7 +177,7 @@ pub fn assert(
 pub fn assume(
     sym_memory: &mut SymMemory,
     pc: &mut PathConstraints,
-    arr_sizes: &mut ArrSizes,
+    sizes: &mut ArrSizes,
     use_z3: bool,
     solver: &mut Solver,
     assumption: &Expression,
@@ -187,10 +187,10 @@ pub fn assume(
     let config = &solver.config;
     // update sizes if it's turned on
     if config.infer_size {
-        arr_sizes.update_inference(sym_assumption.clone());
+        sizes.update_inference(sym_assumption.clone());
     }
     if config.simplify {
-        let simple_assumption = sym_assumption.simplify(Some(arr_sizes));
+        let simple_assumption = sym_assumption.simplify(Some(sizes));
 
         match simple_assumption {
             SymExpression::Literal(Literal::Boolean(false)) => return false,
@@ -203,7 +203,7 @@ pub fn assume(
 
     let mut constraints = pc.conjunct();
     if config.simplify {
-        constraints = constraints.simplify(Some(arr_sizes))
+        constraints = constraints.simplify(Some(sizes))
     };
 
     // return false if expression always evaluates to false
@@ -213,7 +213,7 @@ pub fn assume(
         // if z3 finds a satisfying model return true, otherwise return false
         (true, _) => {
             diagnostics.z3_calls = diagnostics.z3_calls + 1;
-            solver.verify_expr(&constraints, sym_memory).is_some()
+            solver.verify_expr(&constraints, sym_memory, Some(sizes)).is_some()
         }
         // if either not proved or z3 is turned off we just return true and go on
         (false, _) => true,

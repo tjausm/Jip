@@ -73,7 +73,7 @@ impl LazyReference {
         }
 
         diagnostics.z3_calls += 1;
-        if solver.verify_expr(&pc, sym_memory).is_none() {
+        if solver.verify_expr(&pc, sym_memory, Some(sizes)).is_none() {
             return Ok(false);
         }
 
@@ -85,7 +85,7 @@ impl LazyReference {
         let mut pc_null_check = SymExpression::And(Box::new(pc), Box::new(ref_is_null));
 
         diagnostics.z3_calls += 1;
-        match solver.verify_expr(&pc_null_check, sym_memory) {
+        match solver.verify_expr(&pc_null_check, sym_memory, Some(sizes)) {
             None => Ok(true),
             Some(model) => Err(Error::Verification(format!(
                 "A reference could possibly be null:\n{:?}",
