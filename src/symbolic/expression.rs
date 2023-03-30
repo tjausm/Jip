@@ -83,10 +83,13 @@ pub enum SymType {
     Ref(SymRefType),
 }
 
+
+
+
 #[derive(Clone)]
 pub enum SymExpression {
     Implies(Box<SymExpression>, Box<SymExpression>),
-    Forall(Reference, ),
+    Forall(Reference, Forall),
     Exists(Identifier, Identifier, Identifier, Box<Expression>),
     And(Box<SymExpression>, Box<SymExpression>),
     Or(Box<SymExpression>, Box<SymExpression>),
@@ -122,15 +125,7 @@ impl SymExpression {
                     Some(_) => panic_with_diagnostics(&format!("In '{:?}' identifier {} is not a reference", inner_expr, arr_name), &sym_memory),
                     None => panic_with_diagnostics(&format!("In '{:?}' identifier {} is not declared", inner_expr, arr_name), &sym_memory),
                 };
-                let x = |arr| destruct_forall(arr, r, &index, &value, &*inner_expr, sym_memory.clone());
-                
-                let a = sym_memory.heap_get_array(&"".to_string());
-                let b = sym_memory.heap_get_array(&"".to_string());
-                
-                let c = x(a);
-                let d = x(b);
-
-                todo!()
+                SymExpression::Forall(r, Forall::new(r, index, value, *inner_expr, sym_memory.clone()))
             },
             Expression::Exists(arr_name, index, value, expr) => todo!(),
             Expression::Identifier(id) => match sym_memory.stack_get(&id) {
@@ -518,6 +513,24 @@ impl SymExpression {
     }
 }
 
+#[derive(Clone)]
+pub struct Forall {
+    r: Reference,
+    index: Identifier,
+    value: Identifier,
+    inner_expr:Expression,
+    captured_memory: SymMemory
+}
+
+impl Forall {
+    fn new(    r: Reference,
+        index: Identifier,
+        value: Identifier,
+        inner_expr:Expression,
+        captured_memory: SymMemory) -> Self {
+        Self { r, index, value, inner_expr, captured_memory }
+    }
+
 /// destructs a `Expression::forall(arr, index, value)` statement using the following algorithm:
 /// ``` ignore
 /// // asserts expression holds for all values in array
@@ -531,74 +544,71 @@ impl SymExpression {
 ///
 /// return c && e
 /// ```
-fn destruct_forall<'a>(
-    (sym_ty, arr, size_expr, _): &Array,
-    r: Reference,
-    index: &Identifier,
-    value: &Identifier,
-    inner_expr: &Expression,
-    sym_memory: SymMemory
-) -> SymExpression {
-    let index_id = SymExpression::FreeVariable(SymType::Int, index.clone());
+    fn destruct(&self, (sym_ty, arr, size_expr, _): &Array) -> SymExpression {
+        let (r, index, value, inner_expr, captured_memory) = (self.r, &self.index,  &self.value, &self.inner_expr, &self.captured_memory);
+        let index_id = SymExpression::FreeVariable(SymType::Int, index.clone());
 
-    // foreach (i, v) pair in arr:
-    // - C = for each[i |-> index, v |-> value]expr && C
-    // - O = index != i && O
-    let mut c = SymExpression::Literal(Literal::Boolean(true));
-    let mut o = SymExpression::Literal(Literal::Boolean(true));
-    for (i, v) in arr.into_iter() {
-        // we insert index and value substitutions into stack
-        // and build a new inner_expression with said substitutions
-        let mut extended_memory = sym_memory.clone();
-        extended_memory.stack_insert(index.clone(), i.clone());
-        extended_memory.stack_insert(value.clone(), v.clone());
-
-        c = SymExpression::And(
-            Box::new(c),
-            Box::new(SymExpression::new(&extended_memory, inner_expr.clone())),
+        // foreach (i, v) pair in arr:
+        // - C = for each[i |-> index, v |-> value]expr && C
+        // - O = index != i && O
+        let mut c = SymExpression::Literal(Literal::Boolean(true));
+        let mut o = SymExpression::Literal(Literal::Boolean(true));
+        for (i, v) in arr.into_iter() {
+            // we insert index and value substitutions into stack
+            // and build a new inner_expression with said substitutions
+            let mut extended_memory = captured_memory.clone();
+            extended_memory.stack_insert(index.clone(), i.clone());
+            extended_memory.stack_insert(value.clone(), v.clone());
+    
+            c = SymExpression::And(
+                Box::new(c),
+                Box::new(SymExpression::new(&extended_memory, inner_expr.clone())),
+            );
+    
+            let ne = SymExpression::NE(Box::new(index_id.clone()), Box::new(i.clone()));
+            o = SymExpression::And(Box::new(ne), Box::new(o));
+        }
+    
+        // E = index >= 0 && O && index < #arr ==> expr
+        let i_geq_0 = SymExpression::GEQ(
+            Box::new(index_id.clone()),
+            Box::new(SymExpression::Literal(Literal::Integer(0))),
         );
-
-        let ne = SymExpression::NE(Box::new(index_id.clone()), Box::new(i.clone()));
-        o = SymExpression::And(Box::new(ne), Box::new(o));
+    
+        let i_lt_size = SymExpression::LT(
+            Box::new(index_id.clone()),
+            Box::new(SymExpression::SizeOf(
+                r,
+                Box::new(size_expr.clone()),
+                None,
+            )),
+        );
+    
+        // build inner expression with index and value as freevars
+        let mut extended_memory = captured_memory.clone();
+        extended_memory.stack_insert(
+            index.clone(),
+            SymExpression::FreeVariable(SymType::Int, index.clone()),
+        );
+        extended_memory.stack_insert(
+            value.clone(),
+            SymExpression::FreeVariable(sym_ty.clone(), value.clone()),
+        );
+        let inner_expr = SymExpression::new(&extended_memory, inner_expr.clone());
+    
+        let e = SymExpression::Implies(
+            Box::new(SymExpression::And(
+                Box::new(i_geq_0),
+                Box::new(SymExpression::And(Box::new(o), Box::new(i_lt_size))),
+            )),
+            Box::new(inner_expr),
+        );
+    
+        SymExpression::And(Box::new(c), Box::new(e))
+      
     }
-
-    // E = index >= 0 && O && index < #arr ==> expr
-    let i_geq_0 = SymExpression::GEQ(
-        Box::new(index_id.clone()),
-        Box::new(SymExpression::Literal(Literal::Integer(0))),
-    );
-
-    let i_lt_size = SymExpression::LT(
-        Box::new(index_id.clone()),
-        Box::new(SymExpression::SizeOf(
-            r,
-            Box::new(size_expr.clone()),
-            None,
-        )),
-    );
-
-    // build inner expression with index and value as freevars
-    let mut extended_memory = sym_memory.clone();
-    extended_memory.stack_insert(
-        index.clone(),
-        SymExpression::FreeVariable(SymType::Int, index.clone()),
-    );
-    extended_memory.stack_insert(
-        value.clone(),
-        SymExpression::FreeVariable(sym_ty.clone(), value.clone()),
-    );
-    let inner_expr = SymExpression::new(&extended_memory, inner_expr.clone());
-
-    let e = SymExpression::Implies(
-        Box::new(SymExpression::And(
-            Box::new(i_geq_0),
-            Box::new(SymExpression::And(Box::new(o), Box::new(i_lt_size))),
-        )),
-        Box::new(inner_expr),
-    );
-
-    SymExpression::And(Box::new(c), Box::new(e))
 }
+
 
 /// Intermediate type use to implement custom `Hash` for Expression
 /// while also using the default hasher for the 'base values'
@@ -704,13 +714,18 @@ impl fmt::Debug for PathConstraints {
         write!(f, "{:?}", self.combine_over_true())
     }
 }
+impl fmt::Debug for Forall {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "exists {:?}, {}, {} : {:?}", self.r, self.index, self.value, self.inner_expr)
+    }
+}
 
 impl fmt::Debug for SymExpression {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             SymExpression::Implies(l_expr, r_expr) => write!(f, "({:?} ==> {:?})", l_expr, r_expr),
-            SymExpression::Forall(arr, i, v, body) => {
-                write!(f, "forall {}, {}, {} : {:?}", arr, i, v, body)
+            SymExpression::Forall(_, forall) => {
+                write!(f, "{:?}", forall)
             }
             SymExpression::Exists(arr, i, v, body) => {
                 write!(f, "exists {}, {}, {} : {:?}", arr, i, v, body)
