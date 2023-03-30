@@ -105,7 +105,7 @@ impl Solver {
     pub fn verify_expr(&mut self, expr: &SymExpression, sym_memory: &SymMemory) -> Option<Model> {
         self.s.push(1).unwrap();
 
-        let (expr_str, fvs, assertions) = expr_to_str(expr, &sym_memory);
+        let (expr_str, fvs, assertions) = expr_to_smtlib(expr, &sym_memory);
 
         if self.config.verbose {
             println!("\nInvoking z3");
@@ -180,116 +180,120 @@ impl fmt::Debug for Model {
 /// returns an expression as RSMT parseable string
 /// with a set of declarations declaring free variables
 /// and a set of assertions that we do berfore checking formula
-fn expr_to_str<'a>(
+fn expr_to_smtlib<'a>(
     expr: &SymExpression,
     sym_memory: &SymMemory,
 ) -> (Formula, Declarations, Assertions) {
     match expr {
+        SymExpression::Forall(forall) => {
+            let forall_expr = forall.construct(sym_memory);
+            expr_to_smtlib(&forall_expr, sym_memory)
+        }
         SymExpression::And(l_expr, r_expr) => {
-            let (l, mut fv_l, mut a_l) = expr_to_str(l_expr, &sym_memory);
-            let (r, fv_r, a_r) = expr_to_str(r_expr, &sym_memory);
+            let (l, mut fv_l, mut a_l) = expr_to_smtlib(l_expr, &sym_memory);
+            let (r, fv_r, a_r) = expr_to_smtlib(r_expr, &sym_memory);
             fv_l.extend(fv_r);
             a_l.extend(a_r);
             return (format!("(and {} {})", l, r), fv_l, a_l);
         }
         SymExpression::Or(l_expr, r_expr) => {
-            let (l, mut fv_l, mut a_l) = expr_to_str(l_expr, &sym_memory);
-            let (r, fv_r, a_r) = expr_to_str(r_expr, &sym_memory);
+            let (l, mut fv_l, mut a_l) = expr_to_smtlib(l_expr, &sym_memory);
+            let (r, fv_r, a_r) = expr_to_smtlib(r_expr, &sym_memory);
             fv_l.extend(fv_r);
             a_l.extend(a_r);
             return (format!("(or {} {})", l, r), fv_l, a_l);
         }
         SymExpression::Implies(l_expr, r_expr) => {
-            let (l, mut fv_l, mut a_l) = expr_to_str(l_expr, &sym_memory);
-            let (r, fv_r, a_r) = expr_to_str(r_expr, &sym_memory);
+            let (l, mut fv_l, mut a_l) = expr_to_smtlib(l_expr, &sym_memory);
+            let (r, fv_r, a_r) = expr_to_smtlib(r_expr, &sym_memory);
             fv_l.extend(fv_r);
             a_l.extend(a_r);
             return (format!("(=> {} {})", l, r), fv_l, a_l);
         }
         SymExpression::EQ(l_expr, r_expr) => {
-            let (l, mut fv_l, mut a_l) = expr_to_str(l_expr, &sym_memory);
-            let (r, fv_r, a_r) = expr_to_str(r_expr, &sym_memory);
+            let (l, mut fv_l, mut a_l) = expr_to_smtlib(l_expr, &sym_memory);
+            let (r, fv_r, a_r) = expr_to_smtlib(r_expr, &sym_memory);
             fv_l.extend(fv_r);
             a_l.extend(a_r);
             return (format!("(= {} {})", l, r), fv_l, a_l);
         }
         SymExpression::NE(l_expr, r_expr) => {
-            let (l, mut fv_l, mut a_l) = expr_to_str(l_expr, &sym_memory);
-            let (r, fv_r, a_r) = expr_to_str(r_expr, &sym_memory);
+            let (l, mut fv_l, mut a_l) = expr_to_smtlib(l_expr, &sym_memory);
+            let (r, fv_r, a_r) = expr_to_smtlib(r_expr, &sym_memory);
             fv_l.extend(fv_r);
             a_l.extend(a_r);
             return (format!("(distinct {} {})", l, r), fv_l, a_l);
         }
         SymExpression::LT(l_expr, r_expr) => {
-            let (l, mut fv_l, mut a_l) = expr_to_str(l_expr, &sym_memory);
-            let (r, fv_r, a_r) = expr_to_str(r_expr, &sym_memory);
+            let (l, mut fv_l, mut a_l) = expr_to_smtlib(l_expr, &sym_memory);
+            let (r, fv_r, a_r) = expr_to_smtlib(r_expr, &sym_memory);
             fv_l.extend(fv_r);
             a_l.extend(a_r);
             return (format!("(< {} {})", l, r), fv_l, a_l);
         }
         SymExpression::GT(l_expr, r_expr) => {
-            let (l, mut fv_l, mut a_l) = expr_to_str(l_expr, &sym_memory);
-            let (r, fv_r, a_r) = expr_to_str(r_expr, &sym_memory);
+            let (l, mut fv_l, mut a_l) = expr_to_smtlib(l_expr, &sym_memory);
+            let (r, fv_r, a_r) = expr_to_smtlib(r_expr, &sym_memory);
             fv_l.extend(fv_r);
             a_l.extend(a_r);
             return (format!("(> {} {})", l, r), fv_l, a_l);
         }
         SymExpression::GEQ(l_expr, r_expr) => {
-            let (l, mut fv_l, mut a_l) = expr_to_str(l_expr, &sym_memory);
-            let (r, fv_r, a_r) = expr_to_str(r_expr, &sym_memory);
+            let (l, mut fv_l, mut a_l) = expr_to_smtlib(l_expr, &sym_memory);
+            let (r, fv_r, a_r) = expr_to_smtlib(r_expr, &sym_memory);
             fv_l.extend(fv_r);
             a_l.extend(a_r);
             return (format!("(>= {} {})", l, r), fv_l, a_l);
         }
         SymExpression::LEQ(l_expr, r_expr) => {
-            let (l, mut fv_l, mut a_l) = expr_to_str(l_expr, &sym_memory);
-            let (r, fv_r, a_r) = expr_to_str(r_expr, &sym_memory);
+            let (l, mut fv_l, mut a_l) = expr_to_smtlib(l_expr, &sym_memory);
+            let (r, fv_r, a_r) = expr_to_smtlib(r_expr, &sym_memory);
             fv_l.extend(fv_r);
             a_l.extend(a_r);
             return (format!("(<= {} {})", l, r), fv_l, a_l);
         }
         SymExpression::Plus(l_expr, r_expr) => {
-            let (l, mut fv_l, mut a_l) = expr_to_str(l_expr, &sym_memory);
-            let (r, fv_r, a_r) = expr_to_str(r_expr, &sym_memory);
+            let (l, mut fv_l, mut a_l) = expr_to_smtlib(l_expr, &sym_memory);
+            let (r, fv_r, a_r) = expr_to_smtlib(r_expr, &sym_memory);
             fv_l.extend(fv_r);
             a_l.extend(a_r);
             return (format!("(+ {} {})", l, r), fv_l, a_l);
         }
         SymExpression::Minus(l_expr, r_expr) => {
-            let (l, mut fv_l, mut a_l) = expr_to_str(l_expr, &sym_memory);
-            let (r, fv_r, a_r) = expr_to_str(r_expr, &sym_memory);
+            let (l, mut fv_l, mut a_l) = expr_to_smtlib(l_expr, &sym_memory);
+            let (r, fv_r, a_r) = expr_to_smtlib(r_expr, &sym_memory);
             fv_l.extend(fv_r);
             a_l.extend(a_r);
             return (format!("(- {} {})", l, r), fv_l, a_l);
         }
         SymExpression::Multiply(l_expr, r_expr) => {
-            let (l, mut fv_l, mut a_l) = expr_to_str(l_expr, &sym_memory);
-            let (r, fv_r, a_r) = expr_to_str(r_expr, &sym_memory);
+            let (l, mut fv_l, mut a_l) = expr_to_smtlib(l_expr, &sym_memory);
+            let (r, fv_r, a_r) = expr_to_smtlib(r_expr, &sym_memory);
             fv_l.extend(fv_r);
             a_l.extend(a_r);
             return (format!("(* {} {})", l, r), fv_l, a_l);
         }
         SymExpression::Divide(l_expr, r_expr) => {
-            let (l, mut fv_l, mut a_l) = expr_to_str(l_expr, &sym_memory);
-            let (r, fv_r, a_r) = expr_to_str(r_expr, &sym_memory);
+            let (l, mut fv_l, mut a_l) = expr_to_smtlib(l_expr, &sym_memory);
+            let (r, fv_r, a_r) = expr_to_smtlib(r_expr, &sym_memory);
             fv_l.extend(fv_r);
             a_l.extend(a_r);
             return (format!("(div {} {})", l, r), fv_l, a_l);
         }
         SymExpression::Mod(l_expr, r_expr) => {
-            let (l, mut fv_l, mut a_l) = expr_to_str(l_expr, &sym_memory);
-            let (r, fv_r, a_r) = expr_to_str(r_expr, &sym_memory);
+            let (l, mut fv_l, mut a_l) = expr_to_smtlib(l_expr, &sym_memory);
+            let (r, fv_r, a_r) = expr_to_smtlib(r_expr, &sym_memory);
             fv_l.extend(fv_r);
             a_l.extend(a_r);
             return (format!("(mod {} {})", l, r), fv_l, a_l);
         }
         SymExpression::Negative(expr) => {
-            let (expr, fv, a) = expr_to_str(expr, &sym_memory);
+            let (expr, fv, a) = expr_to_smtlib(expr, &sym_memory);
 
             return (format!("(- {})", expr), fv, a);
         }
         SymExpression::Not(expr) => {
-            let (expr, fv, a) = expr_to_str(expr, &sym_memory);
+            let (expr, fv, a) = expr_to_smtlib(expr, &sym_memory);
 
             return (format!("(not {})", expr), fv, a);
         }
@@ -301,27 +305,27 @@ fn expr_to_str<'a>(
         }
         SymExpression::SizeOf( _, size_expr, Some(s)) => match s {
             ArrSize::Point(n) => {
-                expr_to_str(&SymExpression::Literal(Literal::Integer(*n)), &sym_memory)
+                expr_to_smtlib(&SymExpression::Literal(Literal::Integer(*n)), &sym_memory)
             }
             ArrSize::Range(Boundary::Known(min), Boundary::Known(max)) => {
-                let (expr, fv, mut a) = expr_to_str(size_expr, &sym_memory);
+                let (expr, fv, mut a) = expr_to_smtlib(size_expr, &sym_memory);
                 a.insert(format!("(<= {} {})", min, expr));
                 a.insert(format!("(<= {} {})", expr, max));
                 return (expr, fv, a);
             }
             ArrSize::Range(Boundary::Known(min), _) => {
-                let (expr, fv, mut a) = expr_to_str(size_expr, &sym_memory);
+                let (expr, fv, mut a) = expr_to_smtlib(size_expr, &sym_memory);
                 a.insert(format!("(<= {} {})", min, expr));
                 return (expr, fv, a);
             }
             ArrSize::Range(_, Boundary::Known(max)) => {
-                let (expr, fv, mut a) = expr_to_str(size_expr, &sym_memory);
+                let (expr, fv, mut a) = expr_to_smtlib(size_expr, &sym_memory);
                 a.insert(format!("(<= {} {})", expr, max));
                 return (expr, fv, a);
             }
-            _ => expr_to_str(size_expr, &sym_memory),
+            _ => expr_to_smtlib(size_expr, &sym_memory),
         },
-        SymExpression::SizeOf( _, size_expr, None) => expr_to_str(size_expr, &sym_memory),
+        SymExpression::SizeOf( _, size_expr, None) => expr_to_smtlib(size_expr, &sym_memory),
         SymExpression::Literal(Literal::Integer(n)) => {
             (format!("{}", n), FxHashSet::default(), FxHashSet::default())
         }

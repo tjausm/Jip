@@ -170,19 +170,13 @@ impl<'a> SymMemory {
         }
     }
 
-    pub fn heap_get_array(&self, arr_name: &Identifier) -> &Array {
-        match self.stack_get(arr_name) {
-            Some(SymExpression::Reference(r)) => match self.heap.get(&r) {
-                Some(ReferenceValue::Array(arr)) => arr,
-                otherwise => panic_with_diagnostics(
-                    &format!(
-                        "{:?} is not an array, it has value {:?} on the heap",
-                        otherwise, arr_name
-                    ),
-                    &self,
-                ),
-            },
-            _ => panic_with_diagnostics(&format!("{} is not a reference", arr_name), &self),
+    pub fn heap_get(&self, r: Reference) -> &ReferenceValue {
+        match self.heap.get(&r) {
+            Some(ref_val) => ref_val,
+            otherwise => panic_with_diagnostics(
+                &format!("{:?} does not reference anything on the heap", r),
+                &self,
+            ),
         }
     }
 
@@ -229,8 +223,7 @@ impl<'a> SymMemory {
             }
             _ => {
                 diagnostics.z3_calls += 1;
-                let size_of =
-                    SymExpression::SizeOf( r, Box::new(size_expr.clone()), size);
+                let size_of = SymExpression::SizeOf(r, Box::new(size_expr.clone()), size);
 
                 //append length > index to PathConstraints and try to falsify
                 let length_gt_index =

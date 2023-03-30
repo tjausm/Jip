@@ -7,7 +7,7 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use super::ref_values::{ArrSize, ArrSizes, Array, LazyReference, Reference, SymRefType};
+use super::ref_values::{ArrSize, ArrSizes, Array, LazyReference, Reference, SymRefType, ReferenceValue};
 use crate::{ast::*, shared::panic_with_diagnostics, symbolic::memory::SymMemory};
 
 #[derive(Clone)]
@@ -89,7 +89,7 @@ pub enum SymType {
 #[derive(Clone)]
 pub enum SymExpression {
     Implies(Box<SymExpression>, Box<SymExpression>),
-    Forall(Reference, Forall),
+    Forall(Forall),
     Exists(Identifier, Identifier, Identifier, Box<Expression>),
     And(Box<SymExpression>, Box<SymExpression>),
     Or(Box<SymExpression>, Box<SymExpression>),
@@ -125,7 +125,7 @@ impl SymExpression {
                     Some(_) => panic_with_diagnostics(&format!("In '{:?}' identifier {} is not a reference", inner_expr, arr_name), &sym_memory),
                     None => panic_with_diagnostics(&format!("In '{:?}' identifier {} is not declared", inner_expr, arr_name), &sym_memory),
                 };
-                SymExpression::Forall(r, Forall::new(r, index, value, *inner_expr, sym_memory.clone()))
+                SymExpression::Forall(Forall::new(r, index, value, *inner_expr, sym_memory.clone()))
             },
             Expression::Exists(arr_name, index, value, expr) => todo!(),
             Expression::Identifier(id) => match sym_memory.stack_get(&id) {
@@ -498,17 +498,27 @@ impl SymExpression {
                 }
                 _ => self,
             },
+            SymExpression::Negative(expr) => match expr.clone().simplify(sizes){
+                SymExpression::Literal(Literal::Integer(n)) => SymExpression::Literal(Literal::Integer(-n)),
+                expr => SymExpression::Negative(Box::new(expr))
+            },
             SymExpression::Literal(_) => self,
             SymExpression::FreeVariable(_, _) => self,
             SymExpression::Reference(_) => self,
             SymExpression::LazyReference(_) => self,
+            
+                // annotate forall with curr infered size if available
+            SymExpression::Forall(f) => {
+                let mut ann_f = f.clone();
+                ann_f.sizes = sizes.cloned();
+                SymExpression::Forall(ann_f.clone())
+            },
+            SymExpression::Exists(_, _, _, _) => self,
             SymExpression::Uninitialized => panic_with_diagnostics(
                 "There is an uninitialized value in an expression. Did you declare all variables?",
                 &self,
             ),
-            otherwise => {
-                panic_with_diagnostics(&format!("{:?} is not yet implemented", otherwise), &self)
-            }
+
         }
     }
 }
@@ -519,7 +529,8 @@ pub struct Forall {
     index: Identifier,
     value: Identifier,
     inner_expr:Expression,
-    captured_memory: SymMemory
+    captured_memory: SymMemory,
+    pub sizes: Option<ArrSizes>
 }
 
 impl Forall {
@@ -528,7 +539,7 @@ impl Forall {
         value: Identifier,
         inner_expr:Expression,
         captured_memory: SymMemory) -> Self {
-        Self { r, index, value, inner_expr, captured_memory }
+        Self { r, index, value, inner_expr, captured_memory, sizes: None }
     }
 
 /// destructs a `Expression::forall(arr, index, value)` statement using the following algorithm:
@@ -544,9 +555,16 @@ impl Forall {
 ///
 /// return c && e
 /// ```
-    fn destruct(&self, (sym_ty, arr, size_expr, _): &Array) -> SymExpression {
+    pub fn construct(&self, current_memory: &SymMemory) -> SymExpression {
         let (r, index, value, inner_expr, captured_memory) = (self.r, &self.index,  &self.value, &self.inner_expr, &self.captured_memory);
         let index_id = SymExpression::FreeVariable(SymType::Int, index.clone());
+
+
+        let (sym_ty, arr, size_expr, _) = match current_memory.heap_get(r){
+            ReferenceValue::Array(arr) => arr,
+            _ => panic_with_diagnostics(&format!("Can't quantify over {:?} since it does not refer to an array", r), &current_memory),
+
+        };
 
         // foreach (i, v) pair in arr:
         // - C = for each[i |-> index, v |-> value]expr && C
@@ -575,12 +593,13 @@ impl Forall {
             Box::new(SymExpression::Literal(Literal::Integer(0))),
         );
     
+        let size = self.sizes.as_ref().map(|s| s.get(&r)).flatten();
         let i_lt_size = SymExpression::LT(
             Box::new(index_id.clone()),
             Box::new(SymExpression::SizeOf(
                 r,
                 Box::new(size_expr.clone()),
-                None,
+                size,
             )),
         );
     
@@ -716,7 +735,7 @@ impl fmt::Debug for PathConstraints {
 }
 impl fmt::Debug for Forall {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "exists {:?}, {}, {} : {:?}", self.r, self.index, self.value, self.inner_expr)
+        write!(f, "forall {:?}, {}, {} : {:?}", self.r, self.index, self.value, self.inner_expr)
     }
 }
 
@@ -724,7 +743,7 @@ impl fmt::Debug for SymExpression {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             SymExpression::Implies(l_expr, r_expr) => write!(f, "({:?} ==> {:?})", l_expr, r_expr),
-            SymExpression::Forall(_, forall) => {
+            SymExpression::Forall(forall) => {
                 write!(f, "{:?}", forall)
             }
             SymExpression::Exists(arr, i, v, body) => {
