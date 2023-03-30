@@ -1,9 +1,8 @@
-# Building
+# Build & run
 1. [Install rustup](https://www.rust-lang.org/tools/install)
-2.
-    1. **Ubuntu**: ```sudo apt install cmake llvm```
-    2. **Windows**: download [cmake](https://cmake.org/download/) and [llvm](https://llvm.org/builds/)
-3. run `cargo build -vv` in the root folder (it can take 20 - 30 min to build due to z3 the package, add the `-vv` flag to make sure the build process is still in progress)
+2. install version 4.8.5 [z3](https://github.com/Z3Prover/z3/releases) and make sure z3 is available as a binary in your path 
+3. Build with cmd `cargo build` a
+4. Run with cmd `target/debug/jip`
 
 
 # Usage:
@@ -43,15 +42,15 @@ SUBCOMMANDS:
 
 
 # Testing
-All tests are executed with `cargo test`, we have 2 types of tests:
+All tests are executed with `cargo test -r`, we have 2 types of tests:
 
 1. **Unit tests**: constructed using the [default method](https://doc.rust-lang.org/rust-by-example/testing/unit_testing.html).
 1. **Program tests**: one test is constructed for each OOX program in the `src/tests/programs` folder. We assume a test program contains no violation of it's assertions unless it has a file name ending in `_faulty`.
 
 # Cheatsheet
 - **Testing** 
-    - `cargo test`
-    - `cargo test --no-fail-fast -- --test-threads 3`   
+    - `cargo test -r` 
+    - `cargo test -- --test-threads 3`   
     - `cargo test -- --no-capture`   
 - **Build** 
     - `cargo build`
