@@ -524,10 +524,13 @@ impl SymExpression {
 /// return c && e
 /// ```
 fn destruct_forall<'a>(
-    (arr_name, index, value, inner_expr): (Identifier, Identifier, Identifier, Expression),
-    sym_memory: &SymMemory,
+    (sym_ty, arr, size_expr, _): &Array,
+    r: Reference,
+    index: &Identifier,
+    value: &Identifier,
+    inner_expr: &Expression,
+    sym_memory: SymMemory
 ) -> SymExpression {
-    let (sym_ty, arr, size_expr, _) = sym_memory.heap_get_array(&arr_name);
     let index_id = SymExpression::FreeVariable(SymType::Int, index.clone());
 
     // foreach (i, v) pair in arr:
@@ -556,11 +559,6 @@ fn destruct_forall<'a>(
         Box::new(index_id.clone()),
         Box::new(SymExpression::Literal(Literal::Integer(0))),
     );
-
-    let r = match sym_memory.stack_get(&arr_name) {
-        Some(SymExpression::Reference(r)) => r,
-        _ => todo!("shouldn't occur"),
-    };
 
     let i_lt_size = SymExpression::LT(
         Box::new(index_id.clone()),
