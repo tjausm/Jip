@@ -299,7 +299,7 @@ fn expr_to_str<'a>(
             fv.insert((ty.clone(), closed_id.clone()));
             (format!("{}", closed_id), fv, FxHashSet::default())
         }
-        SymExpression::SizeOf(_, _, size_expr, Some(s)) => match s {
+        SymExpression::SizeOf( _, size_expr, Some(s)) => match s {
             ArrSize::Point(n) => {
                 expr_to_str(&SymExpression::Literal(Literal::Integer(*n)), &sym_memory)
             }
@@ -321,7 +321,7 @@ fn expr_to_str<'a>(
             }
             _ => expr_to_str(size_expr, &sym_memory),
         },
-        SymExpression::SizeOf(_, _, size_expr, None) => expr_to_str(size_expr, &sym_memory),
+        SymExpression::SizeOf( _, size_expr, None) => expr_to_str(size_expr, &sym_memory),
         SymExpression::Literal(Literal::Integer(n)) => {
             (format!("{}", n), FxHashSet::default(), FxHashSet::default())
         }
