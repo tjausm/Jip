@@ -223,7 +223,7 @@ impl<'a> SymMemory {
             }
             _ => {
                 diagnostics.z3_calls += 1;
-                let size_of = SymExpression::SizeOf(r, Box::new(size_expr.clone()), size);
+                let size_of = SymExpression::SizeOf(r, Box::new(size_expr.clone()));
 
                 //append length > index to PathConstraints and try to falsify
                 let length_gt_index =

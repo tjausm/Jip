@@ -304,7 +304,7 @@ fn expr_to_smtlib<'a>(
             fv.insert((ty.clone(), closed_id.clone()));
             (format!("{}", closed_id), fv, FxHashSet::default())
         }
-        SymExpression::SizeOf(r, size_expr, _) => match sizes.map(|s|s.get(r)).flatten() {
+        SymExpression::SizeOf(r, size_expr) => match sizes.map(|s|s.get(r)).flatten() {
             Some(ArrSize::Point(n)) => {
                 expr_to_smtlib(&SymExpression::Literal(Literal::Integer(n)), &sym_memory, sizes)
             }
@@ -326,7 +326,7 @@ fn expr_to_smtlib<'a>(
             }
             _ => expr_to_smtlib(size_expr, &sym_memory, sizes),
         },
-        SymExpression::SizeOf( _, size_expr, None) => expr_to_smtlib(size_expr, &sym_memory, sizes),
+        SymExpression::SizeOf( _, size_expr) => expr_to_smtlib(size_expr, &sym_memory, sizes),
         SymExpression::Literal(Literal::Integer(n)) => {
             (format!("{}", n), FxHashSet::default(), FxHashSet::default())
         }
