@@ -7,7 +7,9 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use super::ref_values::{ArrSize, ArrSizes, Array, LazyReference, Reference, SymRefType, ReferenceValue};
+use super::ref_values::{
+    ArrSize, ArrSizes, Array, LazyReference, Reference, ReferenceValue, SymRefType,
+};
 use crate::{ast::*, shared::panic_with_diagnostics, symbolic::memory::SymMemory};
 
 #[derive(Clone)]
@@ -83,9 +85,6 @@ pub enum SymType {
     Ref(SymRefType),
 }
 
-
-
-
 #[derive(Clone)]
 pub enum SymExpression {
     Implies(Box<SymExpression>, Box<SymExpression>),
@@ -120,13 +119,31 @@ impl SymExpression {
     pub fn new(sym_memory: &SymMemory, expr: Expression) -> Self {
         match expr {
             Expression::Forall(arr_name, index, value, inner_expr) => {
-                let r = match sym_memory.stack_get(&arr_name){
+                let r = match sym_memory.stack_get(&arr_name) {
                     Some(SymExpression::Reference(r)) => r,
-                    Some(_) => panic_with_diagnostics(&format!("In '{:?}' identifier {} is not a reference", inner_expr, arr_name), &sym_memory),
-                    None => panic_with_diagnostics(&format!("In '{:?}' identifier {} is not declared", inner_expr, arr_name), &sym_memory),
+                    Some(_) => panic_with_diagnostics(
+                        &format!(
+                            "In '{:?}' identifier {} is not a reference",
+                            inner_expr, arr_name
+                        ),
+                        &sym_memory,
+                    ),
+                    None => panic_with_diagnostics(
+                        &format!(
+                            "In '{:?}' identifier {} is not declared",
+                            inner_expr, arr_name
+                        ),
+                        &sym_memory,
+                    ),
                 };
-                SymExpression::Forall(Forall::new(r, index, value, *inner_expr, sym_memory.clone()))
-            },
+                SymExpression::Forall(Forall::new(
+                    r,
+                    index,
+                    value,
+                    *inner_expr,
+                    sym_memory.clone(),
+                ))
+            }
             Expression::Exists(arr_name, index, value, expr) => todo!(),
             Expression::Identifier(id) => match sym_memory.stack_get(&id) {
                 Some(sym_expr) => sym_expr,
@@ -144,11 +161,7 @@ impl SymExpression {
                         &sym_memory,
                     ),
                 };
-                SymExpression::SizeOf(
-                    r,
-                    Box::new(sym_memory.heap_get_arr_length(&arr_name)),
-                    None,
-                )
+                SymExpression::SizeOf(r, Box::new(sym_memory.heap_get_arr_length(&arr_name)), None)
             }
             Expression::Implies(l, r) => SymExpression::Implies(
                 Box::new(SymExpression::new(sym_memory, *l)),
@@ -218,6 +231,12 @@ impl SymExpression {
 
     /// front end simplifier, only pass sizes if we want to use them in simplification
     pub fn simplify(self, sizes: Option<&ArrSizes>) -> Self {
+        let get_unwrap = |r| sizes.map(|s| s.get(r)).flatten().unwrap();
+        let get_ref = |expr| match &expr {
+            SymExpression::SizeOf(r, _, _) => r.clone(),
+            _ => panic!("Only call function on sizeOf")
+        };
+
         match &self {
             SymExpression::And(l, r) => {
                 match (l.clone().simplify(sizes), r.clone().simplify(sizes)) {
@@ -275,24 +294,24 @@ impl SymExpression {
                     SymExpression::Literal(Literal::Boolean(true))
                 }
                 //if sizeOfs or range's inner-expressions hash equals hash of other => true
-                (SymExpression::SizeOf( _, size, _), r_expr)
+                (SymExpression::SizeOf(_, size, _), r_expr)
                     if size.clone().simplify(sizes) == r_expr.clone() =>
                 {
                     SymExpression::Literal(Literal::Boolean(true))
                 }
-                (l_expr, SymExpression::SizeOf( _, size, _))
+                (l_expr, SymExpression::SizeOf(_, size, _))
                     if l_expr.clone() == size.clone().simplify(sizes) =>
                 {
                     SymExpression::Literal(Literal::Boolean(true))
                 }
                 //if ArrSize is point and point == other side
                 (
-                    SymExpression::SizeOf( _, _, Some(ArrSize::Point(n))),
+                    SymExpression::SizeOf(_, _, Some(ArrSize::Point(n))),
                     SymExpression::Literal(Literal::Integer(m)),
                 ) if n == m => SymExpression::Literal(Literal::Boolean(true)),
                 (
                     SymExpression::Literal(Literal::Integer(m)),
-                    SymExpression::SizeOf( _, _, Some(ArrSize::Point(n))),
+                    SymExpression::SizeOf(_, _, Some(ArrSize::Point(n))),
                 ) if n == m => SymExpression::Literal(Literal::Boolean(true)),
                 (l_simple, r_simple) => SymExpression::EQ(Box::new(l_simple), Box::new(r_simple)),
             },
@@ -311,27 +330,43 @@ impl SymExpression {
                     SymExpression::Literal(Literal::Integer(l_lit)),
                     SymExpression::Literal(Literal::Integer(r_lit)),
                 ) => SymExpression::Literal(Literal::Boolean(l_lit < r_lit)),
-                (
-                    SymExpression::SizeOf( _, _, Some(size)),
-                    SymExpression::Literal(Literal::Integer(n)),
-                ) if size.lt(&ArrSize::Point(n)).is_some() => {
+                (SymExpression::SizeOf(r, _, _), SymExpression::Literal(Literal::Integer(n)))
+                    if sizes
+                        .map(|s| s.get(&r))
+                        .flatten()
+                        .map(|size| size.lt(&ArrSize::Point(n)).is_some())
+                        .is_some() =>
+                {
+                    let size = get_unwrap(&r);
                     let b = size.lt(&ArrSize::Point(n)).unwrap();
                     SymExpression::Literal(Literal::Boolean(b))
                 }
-                (
-                    SymExpression::Literal(Literal::Integer(n)),
-                    SymExpression::SizeOf( _, _, Some(size)),
-                ) if ArrSize::Point(n).lt(&size).is_some() => {
+                (SymExpression::Literal(Literal::Integer(n)), SymExpression::SizeOf(r, _, _))
+                    if sizes
+                        .map(|s| s.get(&r))
+                        .flatten()
+                        .map(|size| ArrSize::Point(n).lt(&size).is_some())
+                        .is_some() =>
+                {
+                    let size = get_unwrap(&r);
                     let b = ArrSize::Point(n).lt(&size).unwrap();
                     SymExpression::Literal(Literal::Boolean(b))
                 }
                 (
-                    SymExpression::SizeOf( _, _, Some(l_size)),
-                    SymExpression::SizeOf( _, _, Some(r_size)),
-                ) if l_size.lt(&r_size).is_some() => {
-                    let b = l_size.lt(&r_size).unwrap();
-                    SymExpression::Literal(Literal::Boolean(b))
-                }
+                    l_simple @ SymExpression::SizeOf(_, _, _),
+                    r_simple @ SymExpression::SizeOf(_, _, _),
+                ) => match (
+                    sizes,
+                    sizes.map(|s| s.get(&get_ref(l_simple.clone()))).flatten(),
+                    sizes.map(|s| s.get(&get_ref(r_simple.clone()))).flatten(),
+                ) {
+                    (Some(sizes), Some(l_size), Some(r_size)) => match l_size.lt(&r_size) {
+                        Some(b) => SymExpression::Literal(Literal::Boolean(b)),
+                        _ => SymExpression::LT(Box::new(l_simple), Box::new(r_simple)),
+                    },
+                    _ => SymExpression::LT(Box::new(l_simple), Box::new(r_simple)),
+                },
+
                 (l_simple, r_simple) => SymExpression::LT(Box::new(l_simple), Box::new(r_simple)),
             },
             SymExpression::GT(l, r) => match (l.clone().simplify(sizes), r.clone().simplify(sizes))
@@ -340,27 +375,42 @@ impl SymExpression {
                     SymExpression::Literal(Literal::Integer(l_lit)),
                     SymExpression::Literal(Literal::Integer(r_lit)),
                 ) => SymExpression::Literal(Literal::Boolean(l_lit > r_lit)),
-                (
-                    SymExpression::SizeOf( _, _, Some(size)),
-                    SymExpression::Literal(Literal::Integer(n)),
-                ) if size.gt(&ArrSize::Point(n)).is_some() => {
+                (SymExpression::SizeOf(r, _, _), SymExpression::Literal(Literal::Integer(n)))
+                    if sizes
+                        .map(|s| s.get(&r))
+                        .flatten()
+                        .map(|size| size.gt(&ArrSize::Point(n)).is_some())
+                        .is_some() =>
+                {
+                    let size = get_unwrap(&r);
                     let b = size.gt(&ArrSize::Point(n)).unwrap();
                     SymExpression::Literal(Literal::Boolean(b))
                 }
-                (
-                    SymExpression::Literal(Literal::Integer(n)),
-                    SymExpression::SizeOf( _, _, Some(size)),
-                ) if ArrSize::Point(n).gt(&size).is_some() => {
+                (SymExpression::Literal(Literal::Integer(n)), SymExpression::SizeOf(r, _, _))
+                    if sizes
+                        .map(|s| s.get(&r))
+                        .flatten()
+                        .map(|size| ArrSize::Point(n).gt(&size).is_some())
+                        .is_some() =>
+                {
+                    let size = get_unwrap(&r);
                     let b = ArrSize::Point(n).gt(&size).unwrap();
                     SymExpression::Literal(Literal::Boolean(b))
                 }
                 (
-                    SymExpression::SizeOf( _, _, Some(l_size)),
-                    SymExpression::SizeOf( _, _, Some(r_size)),
-                ) if l_size.gt(&r_size).is_some() => {
-                    let b = l_size.gt(&r_size).unwrap();
-                    SymExpression::Literal(Literal::Boolean(b))
-                }
+                    l_simple @ SymExpression::SizeOf(_, _, _),
+                    r_simple @ SymExpression::SizeOf(_, _, _),
+                ) => match (
+                    sizes,
+                    sizes.map(|s| s.get(&get_ref(l_simple.clone()))).flatten(),
+                    sizes.map(|s| s.get(&get_ref(r_simple.clone()))).flatten(),
+                ) {
+                    (Some(sizes), Some(l_size), Some(r_size)) => match l_size.gt(&r_size) {
+                        Some(b) => SymExpression::Literal(Literal::Boolean(b)),
+                        _ => SymExpression::GT(Box::new(l_simple), Box::new(r_simple)),
+                    },
+                    _ => SymExpression::GT(Box::new(l_simple), Box::new(r_simple)),
+                },
                 (l_simple, r_simple) => SymExpression::GT(Box::new(l_simple), Box::new(r_simple)),
             },
             SymExpression::GEQ(l, r) => {
@@ -370,26 +420,45 @@ impl SymExpression {
                         SymExpression::Literal(Literal::Integer(r_lit)),
                     ) => SymExpression::Literal(Literal::Boolean(l_lit >= r_lit)),
                     (
-                        SymExpression::SizeOf( _, _, Some(size)),
+                        SymExpression::SizeOf(r, _, _),
                         SymExpression::Literal(Literal::Integer(n)),
-                    ) if size.ge(&ArrSize::Point(n)).is_some() => {
+                    ) if sizes
+                        .map(|s| s.get(&r))
+                        .flatten()
+                        .map(|size| size.ge(&ArrSize::Point(n)).is_some())
+                        .is_some() =>
+                    {
+                        let size = get_unwrap(&r);
                         let b = size.ge(&ArrSize::Point(n)).unwrap();
                         SymExpression::Literal(Literal::Boolean(b))
                     }
                     (
                         SymExpression::Literal(Literal::Integer(n)),
-                        SymExpression::SizeOf( _, _, Some(size)),
-                    ) if ArrSize::Point(n).ge(&size).is_some() => {
+                        SymExpression::SizeOf(r, _, _),
+                    ) if sizes
+                        .map(|s| s.get(&r))
+                        .flatten()
+                        .map(|size| ArrSize::Point(n).ge(&size).is_some())
+                        .is_some() =>
+                    {
+                        let size = get_unwrap(&r);
                         let b = ArrSize::Point(n).ge(&size).unwrap();
                         SymExpression::Literal(Literal::Boolean(b))
                     }
                     (
-                        SymExpression::SizeOf( _, _, Some(l_size)),
-                        SymExpression::SizeOf( _, _, Some(r_size)),
-                    ) if l_size.ge(&r_size).is_some() => {
-                        let b = l_size.ge(&r_size).unwrap();
-                        SymExpression::Literal(Literal::Boolean(b))
-                    }
+                        l_simple @ SymExpression::SizeOf(_, _, _),
+                        r_simple @ SymExpression::SizeOf(_, _, _),
+                    ) => match (
+                        sizes,
+                        sizes.map(|s| s.get(&get_ref(l_simple.clone()))).flatten(),
+                        sizes.map(|s| s.get(&get_ref(r_simple.clone()))).flatten(),
+                    ) {
+                        (Some(sizes), Some(l_size), Some(r_size)) => match l_size.ge(&r_size) {
+                            Some(b) => SymExpression::Literal(Literal::Boolean(b)),
+                            _ => SymExpression::GEQ(Box::new(l_simple), Box::new(r_simple)),
+                        },
+                        _ => SymExpression::GEQ(Box::new(l_simple), Box::new(r_simple)),
+                    },
                     (l_simple, r_simple) => {
                         SymExpression::GEQ(Box::new(l_simple), Box::new(r_simple))
                     }
@@ -403,26 +472,45 @@ impl SymExpression {
                         SymExpression::Literal(Literal::Integer(r_lit)),
                     ) => SymExpression::Literal(Literal::Boolean(l_lit <= r_lit)),
                     (
-                        SymExpression::SizeOf( _, _, Some(size)),
+                        SymExpression::SizeOf(r, _, _),
                         SymExpression::Literal(Literal::Integer(n)),
-                    ) if size.le(&ArrSize::Point(n)).is_some() => {
+                    ) if sizes
+                        .map(|s| s.get(&r))
+                        .flatten()
+                        .map(|size| size.le(&ArrSize::Point(n)).is_some())
+                        .is_some() =>
+                    {
+                        let size = get_unwrap(&r);
                         let b = size.le(&ArrSize::Point(n)).unwrap();
                         SymExpression::Literal(Literal::Boolean(b))
                     }
                     (
                         SymExpression::Literal(Literal::Integer(n)),
-                        SymExpression::SizeOf( _, _, Some(size)),
-                    ) if ArrSize::Point(n).le(&size).is_some() => {
+                        SymExpression::SizeOf(r, _, _),
+                    ) if sizes
+                        .map(|s| s.get(&r))
+                        .flatten()
+                        .map(|size| ArrSize::Point(n).le(&size).is_some())
+                        .is_some() =>
+                    {
+                        let size = get_unwrap(&r);
                         let b = ArrSize::Point(n).le(&size).unwrap();
                         SymExpression::Literal(Literal::Boolean(b))
                     }
                     (
-                        SymExpression::SizeOf( _, _, Some(l_size)),
-                        SymExpression::SizeOf( _, _, Some(r_size)),
-                    ) if l_size.le(&r_size).is_some() => {
-                        let b = l_size.le(&r_size).unwrap();
-                        SymExpression::Literal(Literal::Boolean(b))
-                    }
+                        l_simple @ SymExpression::SizeOf(_, _, _),
+                        r_simple @ SymExpression::SizeOf(_, _, _),
+                    ) => match (
+                        sizes,
+                        sizes.map(|s| s.get(&get_ref(l_simple.clone()))).flatten(),
+                        sizes.map(|s| s.get(&get_ref(r_simple.clone()))).flatten(),
+                    ) {
+                        (Some(sizes), Some(l_size), Some(r_size)) => match l_size.le(&r_size) {
+                            Some(b) => SymExpression::Literal(Literal::Boolean(b)),
+                            _ => SymExpression::LEQ(Box::new(l_simple), Box::new(r_simple)),
+                        },
+                        _ => SymExpression::LEQ(Box::new(l_simple), Box::new(r_simple)),
+                    },
                     (l_simple, r_simple) => {
                         SymExpression::LEQ(Box::new(l_simple), Box::new(r_simple))
                     }
@@ -491,34 +579,33 @@ impl SymExpression {
                 }
                 simple_expr => SymExpression::Not(Box::new(simple_expr)),
             },
-            SymExpression::SizeOf( r, expr, _) => match (expr.clone().simplify(sizes), sizes) {
+            SymExpression::SizeOf(r, expr, _) => match (expr.clone().simplify(sizes), sizes) {
                 (SymExpression::Literal(lit), _) => SymExpression::Literal(lit),
-                (_, Some(sizes)) => {
-                    SymExpression::SizeOf( r.clone(), expr.clone(), sizes.get(r))
-                }
+                (_, Some(sizes)) => SymExpression::SizeOf(r.clone(), expr.clone(), sizes.get(r)),
                 _ => self,
             },
-            SymExpression::Negative(expr) => match expr.clone().simplify(sizes){
-                SymExpression::Literal(Literal::Integer(n)) => SymExpression::Literal(Literal::Integer(-n)),
-                expr => SymExpression::Negative(Box::new(expr))
+            SymExpression::Negative(expr) => match expr.clone().simplify(sizes) {
+                SymExpression::Literal(Literal::Integer(n)) => {
+                    SymExpression::Literal(Literal::Integer(-n))
+                }
+                expr => SymExpression::Negative(Box::new(expr)),
             },
             SymExpression::Literal(_) => self,
             SymExpression::FreeVariable(_, _) => self,
             SymExpression::Reference(_) => self,
             SymExpression::LazyReference(_) => self,
-            
-                // annotate forall with curr infered size if available
+
+            // annotate forall with curr infered size if available
             SymExpression::Forall(f) => {
                 let mut ann_f = f.clone();
                 ann_f.sizes = sizes.cloned();
                 SymExpression::Forall(ann_f.clone())
-            },
+            }
             SymExpression::Exists(_, _, _, _) => self,
             SymExpression::Uninitialized => panic_with_diagnostics(
                 "There is an uninitialized value in an expression. Did you declare all variables?",
                 &self,
             ),
-
         }
     }
 }
@@ -528,43 +615,61 @@ pub struct Forall {
     r: Reference,
     index: Identifier,
     value: Identifier,
-    inner_expr:Expression,
+    inner_expr: Expression,
     captured_memory: SymMemory,
-    pub sizes: Option<ArrSizes>
+    pub sizes: Option<ArrSizes>,
 }
 
 impl Forall {
-    fn new(    r: Reference,
+    fn new(
+        r: Reference,
         index: Identifier,
         value: Identifier,
-        inner_expr:Expression,
-        captured_memory: SymMemory) -> Self {
-        Self { r, index, value, inner_expr, captured_memory, sizes: None }
+        inner_expr: Expression,
+        captured_memory: SymMemory,
+    ) -> Self {
+        Self {
+            r,
+            index,
+            value,
+            inner_expr,
+            captured_memory,
+            sizes: None,
+        }
     }
 
-/// destructs a `Expression::forall(arr, index, value)` statement using the following algorithm:
-/// ``` ignore
-/// // asserts expression holds for all values in array
-/// let mut c = true
-/// for (i, v) in arr { c = c && [i |->index, v |-> value] in expr}     /// // substitute (i,v) into expression
-///
-/// // asserts expression holds for all values > 0 and < #arr that are not in symbolic array
-/// o = true
-/// for (i,v) in arr {o = index != i && o}
-/// e = (0 < index && o && index < #arr && value == 0 ==> expr
-///
-/// return c && e
-/// ```
+    /// destructs a `Expression::forall(arr, index, value)` statement using the following algorithm:
+    /// ``` ignore
+    /// // asserts expression holds for all values in array
+    /// let mut c = true
+    /// for (i, v) in arr { c = c && [i |->index, v |-> value] in expr}     /// // substitute (i,v) into expression
+    ///
+    /// // asserts expression holds for all values > 0 and < #arr that are not in symbolic array
+    /// o = true
+    /// for (i,v) in arr {o = index != i && o}
+    /// e = (0 < index && o && index < #arr && value == 0 ==> expr
+    ///
+    /// return c && e
+    /// ```
     pub fn construct(&self, current_memory: &SymMemory) -> SymExpression {
-
-        let (r, index, value, inner_expr, captured_memory) = (self.r, &self.index,  &self.value, &self.inner_expr, &self.captured_memory);
+        let (r, index, value, inner_expr, captured_memory) = (
+            self.r,
+            &self.index,
+            &self.value,
+            &self.inner_expr,
+            &self.captured_memory,
+        );
         let index_id = SymExpression::FreeVariable(SymType::Int, index.clone());
 
-
-        let (sym_ty, arr, size_expr, _) = match current_memory.heap_get(r){
+        let (sym_ty, arr, size_expr, _) = match current_memory.heap_get(r) {
             ReferenceValue::Array(arr) => arr,
-            _ => panic_with_diagnostics(&format!("Can't quantify over {:?} since it does not refer to an array", r), &current_memory),
-
+            _ => panic_with_diagnostics(
+                &format!(
+                    "Can't quantify over {:?} since it does not refer to an array",
+                    r
+                ),
+                &current_memory,
+            ),
         };
 
         // foreach (i, v) pair in arr:
@@ -578,32 +683,28 @@ impl Forall {
             let mut extended_memory = captured_memory.clone();
             extended_memory.stack_insert(index.clone(), i.clone());
             extended_memory.stack_insert(value.clone(), v.clone());
-    
+
             c = SymExpression::And(
                 Box::new(c),
                 Box::new(SymExpression::new(&extended_memory, inner_expr.clone())),
             );
-    
+
             let ne = SymExpression::NE(Box::new(index_id.clone()), Box::new(i.clone()));
             o = SymExpression::And(Box::new(ne), Box::new(o));
         }
-    
+
         // E = index >= 0 && O && index < #arr ==> expr
         let i_geq_0 = SymExpression::GEQ(
             Box::new(index_id.clone()),
             Box::new(SymExpression::Literal(Literal::Integer(0))),
         );
-    
+
         let size = self.sizes.as_ref().map(|s| s.get(&r)).flatten();
         let i_lt_size = SymExpression::LT(
             Box::new(index_id.clone()),
-            Box::new(SymExpression::SizeOf(
-                r,
-                Box::new(size_expr.clone()),
-                size,
-            )),
+            Box::new(SymExpression::SizeOf(r, Box::new(size_expr.clone()), size)),
         );
-    
+
         // build inner expression with index and value as freevars
         let mut extended_memory = captured_memory.clone();
         extended_memory.stack_insert(
@@ -615,7 +716,7 @@ impl Forall {
             SymExpression::FreeVariable(sym_ty.clone(), value.clone()),
         );
         let inner_expr = SymExpression::new(&extended_memory, inner_expr.clone());
-    
+
         let e = SymExpression::Implies(
             Box::new(SymExpression::And(
                 Box::new(i_geq_0),
@@ -623,12 +724,10 @@ impl Forall {
             )),
             Box::new(inner_expr),
         );
-    
+
         SymExpression::And(Box::new(c), Box::new(e))
-      
     }
 }
-
 
 /// Intermediate type use to implement custom `Hash` for Expression
 /// while also using the default hasher for the 'base values'
@@ -711,7 +810,7 @@ impl Hash for SymExpression {
             SymExpression::Negative(expr) => {
                 HashExpression::Negative(calculate_hash(&*expr)).hash(state)
             }
-            SymExpression::SizeOf( r, _, _) => HashExpression::SizeOf(r.clone()).hash(state),
+            SymExpression::SizeOf(r, _, _) => HashExpression::SizeOf(r.clone()).hash(state),
             SymExpression::FreeVariable(ty, id) => {
                 HashExpression::FreeVariable(ty.clone(), id.clone()).hash(state)
             }
@@ -736,7 +835,11 @@ impl fmt::Debug for PathConstraints {
 }
 impl fmt::Debug for Forall {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "forall {:?}, {}, {} : {:?}", self.r, self.index, self.value, self.inner_expr)
+        write!(
+            f,
+            "forall {:?}, {}, {} : {:?}",
+            self.r, self.index, self.value, self.inner_expr
+        )
     }
 }
 
@@ -768,7 +871,7 @@ impl fmt::Debug for SymExpression {
             SymExpression::Literal(Literal::Boolean(val)) => write!(f, "{:?}", val),
             SymExpression::Literal(Literal::Integer(val)) => write!(f, "{:?}", val),
             SymExpression::FreeVariable(_, fv) => write!(f, "{}", fv),
-            SymExpression::SizeOf( r, _, s) => {
+            SymExpression::SizeOf(r, _, s) => {
                 if let Some(size) = s {
                     write!(f, "(#{:?} -> {:?})", r, size)
                 } else {
@@ -788,37 +891,37 @@ mod tests {
 
     lalrpop_mod!(pub parser);
 
- fn parse(i: &str) -> SymExpression {
-     let expr = parser::VerificationExpressionParser::new()
-         .parse(i)
-         .unwrap();
-     SymExpression::new(&SymMemory::new(Program(vec![])), expr)
- }
+    fn parse(i: &str) -> SymExpression {
+        let expr = parser::VerificationExpressionParser::new()
+            .parse(i)
+            .unwrap();
+        SymExpression::new(&SymMemory::new(Program(vec![])), expr)
+    }
 
- #[test]
- fn sum_expr_equivalence() {
-     let e1 = parse("1+2+3");
-     let e2 = parse("3+2+1");
-     let e3 = parse("2+3+1");
-     assert!(calculate_hash(&e1) == calculate_hash(&e2));
-     assert!(calculate_hash(&e1) == calculate_hash(&e3));
- }
- #[test]
- fn mult_expr_equivalence() {
-     let e1 = parse("2*3*4+5-1");
-     let e2 = parse("3*2*4+5-1");
-     let e3 = parse("2*3*4+(-1)+5");
+    #[test]
+    fn sum_expr_equivalence() {
+        let e1 = parse("1+2+3");
+        let e2 = parse("3+2+1");
+        let e3 = parse("2+3+1");
+        assert!(calculate_hash(&e1) == calculate_hash(&e2));
+        assert!(calculate_hash(&e1) == calculate_hash(&e3));
+    }
+    #[test]
+    fn mult_expr_equivalence() {
+        let e1 = parse("2*3*4+5-1");
+        let e2 = parse("3*2*4+5-1");
+        let e3 = parse("2*3*4+(-1)+5");
 
-     assert!(calculate_hash(&e1) == calculate_hash(&e2));
-     assert!(calculate_hash(&e1) == calculate_hash(&e3));
- }
- #[test]
- fn more_expr_equivalence() {
-     let e1 = parse("(7*4+5/8%5)+3");
-     let e2 = parse("3+(4*7+5/8%5)");
-     assert!(calculate_hash(&e1) == calculate_hash(&e2));
- }
-#[test]
+        assert!(calculate_hash(&e1) == calculate_hash(&e2));
+        assert!(calculate_hash(&e1) == calculate_hash(&e3));
+    }
+    #[test]
+    fn more_expr_equivalence() {
+        let e1 = parse("(7*4+5/8%5)+3");
+        let e2 = parse("3+(4*7+5/8%5)");
+        assert!(calculate_hash(&e1) == calculate_hash(&e2));
+    }
+    #[test]
     fn int_comparison() {
         let e1 = parse("1");
         let e2 = parse("1");
