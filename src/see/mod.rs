@@ -115,10 +115,8 @@ pub fn print_verification(program: &str, d: Depth, config: &Config) -> (ExitCode
 }
 
 /// prints the verbose debug info
-fn print_debug(node: &Node, sym_memory: &SymMemory, pc: &PathConstraints, arr_sizes: &ArrSizes, trace: &Trace) {
-    let print_node = format!("{:?}", node);
-    let print_sym_memory = format!("{:?}", sym_memory);
-    let print_ranges = format!("{:?}", arr_sizes);
+fn print_debug(node: &Node, sym_memory: &SymMemory, pc: &PathConstraints, sizes: &ArrSizes, eval_refs: &EvaluatedRefs, trace: &Trace) {
+    let print_eval_refs = format!("Evaluated refs: {:?}", eval_refs);
     let print_trace = format!("trace: {:?}", trace);
 
     let pc = pc.combine_over_true();
@@ -131,11 +129,11 @@ fn print_debug(node: &Node, sym_memory: &SymMemory, pc: &PathConstraints, arr_si
     };
     if dump_state {
         println!(
-            "{}\n\n{}\n\n{}\n\n{}\n\n{}",
-            print_node, print_trace, print_pc, print_ranges, print_sym_memory
+            "{:?}\n\n{}\n\n{}\n\n{:?}\n\n{}\n\n{:?}",
+            node, print_trace, print_pc, sizes, print_eval_refs, sym_memory
         );
     } else {
-        println!("{}", print_node);
+        println!("{:?}", node);
     }
 }
 
@@ -173,7 +171,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
 
         if config.verbose {
             trace.push(&cfg[curr_node]);
-            print_debug(&cfg[curr_node], &sym_memory, &pc, &sizes, &trace);
+            print_debug(&cfg[curr_node], &sym_memory, &pc, &sizes, &eval_refs, &trace);
         };
 
         match &cfg[curr_node] {
@@ -238,6 +236,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                             &mut sym_memory,
                             &mut pc,
                             &mut sizes,
+                            &eval_refs,
                             d > prune_depth,
                             &mut solver_env,
                             assumption,
@@ -249,6 +248,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                         &mut sym_memory,
                         &mut pc,
                         &mut sizes,
+                        &eval_refs,
                         &mut solver_env,
                         assertion,
                     )?,
@@ -459,6 +459,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                                     &mut sym_memory,
                                     &mut pc,
                                     &mut sizes,
+                                    &eval_refs,
                                     &mut solver_env,
                                     assertion,
                                 )?,
@@ -472,6 +473,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                                         &mut sym_memory,
                                         &mut pc,
                                         &mut sizes,
+                                        &eval_refs,
                                         prune_depth < d,
                                         &mut solver_env,
                                         assumption,

@@ -176,7 +176,7 @@ impl fmt::Debug for Model {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut model_str = "".to_string();
         for var in &self.0 {
-            let fv = format!("{:?}", var.0);
+            let fv = format!("{}", var.0);
             model_str = format!("{}{:<12}-> {:?}\n", model_str, fv, var.1);
         }
         write!(f, "{}", model_str)

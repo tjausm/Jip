@@ -287,7 +287,7 @@ impl fmt::Debug for Rhs {
         match self {
             Rhs::Expression(expr) => write!(f, "{:?};", expr),
             Rhs::AccessField(class, field) => write!(f, "{}.{};", class, field),
-            Rhs::AccessArray(class, index) => write!(f, "{}.[{:?}];", class, index),
+            Rhs::AccessArray(class, index) => write!(f, "{}[{:?}];", class, index),
             Rhs::Invocation((class, fun, args)) => write!(f, " {}.{}({:?});", class, fun, args),
             Rhs::Newobject(class, args) => write!(f, "new {}({:?});", class, args),
             Rhs::NewArray(ty, size) => write!(f, "new {:?}[{:?}]", ty, size),
