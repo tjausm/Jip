@@ -75,12 +75,18 @@ impl LazyReference {
         eval_refs: &EvaluatedRefs,
         sym_memory: &SymMemory,
     ) -> Result<bool, Error> {
+
+        let simplify = solver.config.simplify;
+
         // check if path is feasible
         let mut pc = pc.conjunct();
-        if solver.config.simplify {
+        if simplify {
             pc = pc.simplify(Some(sizes), Some(eval_refs));
+            match pc {
+                SymExpression::Literal(Literal::Boolean(false)) => return Ok(false),
+                _ => ()
+            }
         }
-
         if solver.verify_expr(&pc, sym_memory, Some(sizes)).is_none() {
             return Ok(false);
         }
@@ -90,7 +96,14 @@ impl LazyReference {
             Box::new(SymExpression::LazyReference(self.clone())),
             Box::new(SymExpression::Reference(Reference::null())),
         );
-        let pc_null_check = SymExpression::And(Box::new(pc), Box::new(ref_is_null));
+        let mut pc_null_check = SymExpression::And(Box::new(pc), Box::new(ref_is_null));
+        if simplify {
+            pc_null_check = pc_null_check.simplify(Some(sizes), Some(eval_refs));
+            match pc_null_check {
+                SymExpression::Literal(Literal::Boolean(true)) => return Ok(true),
+                _ => ()
+            }
+        }
 
         match solver.verify_expr(&pc_null_check, sym_memory, Some(sizes)) {
             None => Ok(true),
