@@ -8,7 +8,7 @@ use std::{
 };
 
 use super::ref_values::{
-    ArrSize, ArrSizes, Array, LazyReference, Reference, ReferenceValue, SymRefType,
+    ArrSize, ArrSizes,  LazyReference, Reference, ReferenceValue, SymRefType,
 };
 use crate::{ast::*, shared::panic_with_diagnostics, symbolic::memory::SymMemory};
 

@@ -41,7 +41,7 @@ pub fn bench(
     println!("d           time (s)    paths expl. z3 calls");
     for depth in depths {
         let now = Instant::now();
-        let mut dia;
+        let dia;
         // Code block to measure.
         {
             match verify_program(program, depth, &config) {

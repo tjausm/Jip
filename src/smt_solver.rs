@@ -1,10 +1,10 @@
 //! Encode expressions into the smt-lib format to test satisfiability using the chosen backend
 
 use crate::ast::Literal;
-use crate::shared::{panic_with_diagnostics, Config, Error, SolverType};
-use crate::symbolic::expression::{PathConstraints, SymExpression, SymType};
+use crate::shared::{panic_with_diagnostics, Config,  SolverType};
+use crate::symbolic::expression::{ SymExpression, SymType};
 use crate::symbolic::memory::SymMemory;
-use crate::symbolic::ref_values::{ArrSize, Boundary, LazyReference, Reference, SymRefType, ArrSizes};
+use crate::symbolic::ref_values::{ArrSize, Boundary,  Reference, SymRefType, ArrSizes};
 use core::fmt;
 use rsmt2::print::ModelParser;
 use rsmt2::{self, SmtConf, SmtRes};
@@ -16,11 +16,6 @@ type Declarations = FxHashSet<(SymType, String)>;
 type Assertions = FxHashSet<String>;
 pub struct Model(Vec<(SymExpression, Literal)>);
 
-#[derive(PartialEq)]
-pub enum SmtResult {
-    Unsat,
-    Sat(String),
-}
 
 #[derive(Clone, Copy)]
 struct Parser;
@@ -326,7 +321,6 @@ fn expr_to_smtlib<'a>(
             }
             _ => expr_to_smtlib(size_expr, &sym_memory, sizes),
         },
-        SymExpression::SizeOf( _, size_expr) => expr_to_smtlib(size_expr, &sym_memory, sizes),
         SymExpression::Literal(Literal::Integer(n)) => {
             (format!("{}", n), FxHashSet::default(), FxHashSet::default())
         }
