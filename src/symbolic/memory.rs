@@ -202,7 +202,7 @@ impl<'a> SymMemory {
         // substitute index and try to simplify it to a literal using simplifier and / or z3
         // to prevent from values being indexed twice in the array
         let sym_index = SymExpression::new(self, index);
-        let simple_index = sym_index.clone().simplify(Some(sizes)); // simplify to prevent simplified see from having different results
+        let simple_index = sym_index.clone().simplify(Some(sizes), None); // simplify to prevent simplified see from having different results
         
 
 

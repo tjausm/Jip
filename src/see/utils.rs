@@ -118,6 +118,7 @@ pub fn assert(
     sym_memory: &mut SymMemory,
     pc: &mut PathConstraints,
     sizes: &mut ArrSizes,
+    eval_refs: &EvaluatedRefs,
     solver: &mut SolverEnv,
     assertion: &Expression,
 ) -> Result<(), Error> {
@@ -130,7 +131,7 @@ pub fn assert(
 
     // add (inferred  and / orsimplified) assertion
     if config.simplify {
-        let simple_assertion = sym_assertion.simplify(Some(&sizes));
+        let simple_assertion = sym_assertion.simplify(Some(&sizes), Some(eval_refs));
         //let simple_assertion = assertion;
         match simple_assertion {
             SymExpression::Literal(Literal::Boolean(true)) => (),
@@ -143,7 +144,7 @@ pub fn assert(
     // calculate (inferred and / or simplified) constraints
     let mut constraints = pc.combine_over_true();
     if config.simplify {
-        constraints = constraints.simplify(Some(sizes))
+        constraints = constraints.simplify(Some(sizes), Some(eval_refs))
     };
     match constraints {
         SymExpression::Literal(Literal::Boolean(true)) => return Ok(()),
@@ -163,11 +164,13 @@ pub fn assert(
 
 /// handles the assume in the SEE (used in `assume`, `require` and `ensure` statements)
 /// returns false if assumption is infeasible and can be dropped
+/// prunes path using z3 if prune is set to true
 pub fn assume(
     sym_memory: &mut SymMemory,
     pc: &mut PathConstraints,
     sizes: &mut ArrSizes,
-    use_z3: bool,
+    eval_refs: &EvaluatedRefs,
+    prune: bool,
     solver: &mut SolverEnv,
     assumption: &Expression,
 ) -> bool {
@@ -178,7 +181,7 @@ pub fn assume(
         sizes.update_inference(sym_assumption.clone());
     }
     if config.simplify {
-        let simple_assumption = sym_assumption.simplify(Some(sizes));
+        let simple_assumption = sym_assumption.simplify(Some(sizes), Some(eval_refs));
 
         match simple_assumption {
             SymExpression::Literal(Literal::Boolean(false)) => return false,
@@ -191,11 +194,11 @@ pub fn assume(
 
     let mut constraints = pc.conjunct();
     if config.simplify {
-        constraints = constraints.simplify(Some(sizes))
+        constraints = constraints.simplify(Some(sizes), Some(eval_refs))
     };
 
     // return false if expression always evaluates to false
-    match (use_z3, &constraints) {
+    match (prune, &constraints) {
         // if is unsatisfiable return false
         (_, SymExpression::Literal(Literal::Boolean(false))) => return false,
         // if z3 finds a satisfying model return true, otherwise return false

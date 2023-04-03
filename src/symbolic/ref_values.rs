@@ -58,17 +58,27 @@ impl LazyReference {
         return (self.r, &self.class);
     }
 
+    /// returns reference if it was already initialized
+    pub fn evaluate(&self, eval_refs: &EvaluatedRefs) -> Option<Reference> {
+        if eval_refs.contains(&self.r) {
+            Some(self.r.clone())
+        } else {
+            None
+        }
+    }
+
     fn is_never_null(
         &self,
         solver: &mut SolverEnv,
         pc: &PathConstraints,
         sizes: &ArrSizes,
-        sym_memory: &SymMemory
+        eval_refs: &EvaluatedRefs,
+        sym_memory: &SymMemory,
     ) -> Result<bool, Error> {
         // check if path is feasible
         let mut pc = pc.conjunct();
         if solver.config.simplify {
-            pc = pc.simplify(Some(sizes));
+            pc = pc.simplify(Some(sizes), Some(eval_refs));
         }
 
         if solver.verify_expr(&pc, sym_memory, Some(sizes)).is_none() {
@@ -80,13 +90,13 @@ impl LazyReference {
             Box::new(SymExpression::LazyReference(self.clone())),
             Box::new(SymExpression::Reference(Reference::null())),
         );
-        let mut pc_null_check = SymExpression::And(Box::new(pc), Box::new(ref_is_null));
-
+        let pc_null_check = SymExpression::And(Box::new(pc), Box::new(ref_is_null));
 
         match solver.verify_expr(&pc_null_check, sym_memory, Some(sizes)) {
             None => Ok(true),
             Some(model) => Err(Error::Verification(format!(
-                "A reference could possibly be null:\n{:?}",
+                "Reference {:?} could possibly be null:\n{:?}",
+                self.get().0,
                 model
             ))),
         }
@@ -105,7 +115,7 @@ impl LazyReference {
             return Ok(Some(self.r));
         };
 
-        let feasible = self.is_never_null( solver, pc, sizes, sym_memory)?;
+        let feasible = self.is_never_null(solver, pc, sizes, eval_refs, sym_memory)?;
 
         if feasible {
             // insert fresh lazy object into heap
@@ -128,14 +138,15 @@ impl LazyReference {
         pc: &PathConstraints,
         sizes: &ArrSizes,
         eval_refs: &mut EvaluatedRefs,
-        sym_memory: &SymMemory
+        sym_memory: &SymMemory,
     ) -> Result<Option<Reference>, Error> {
-        // try to add ref to hashset, and if it was already present return
+
+        // try to add ref to hashseta, and ifi it is already present we return
         if eval_refs.insert(self.r) {
             return Ok(Some(self.r));
         };
 
-        let feasible = self.is_never_null( solver, pc, sizes, sym_memory)?;
+        let feasible = self.is_never_null(solver, pc, sizes, eval_refs, sym_memory)?;
 
         if feasible {
             Ok(Some(self.r))
@@ -301,7 +312,7 @@ impl ArrSizes {
     }
 
     pub fn update_inference(&mut self, expr: SymExpression) {
-        self.narrow(&infer_new_ranges(&expr.simplify(None)));
+        self.narrow(&infer_new_ranges(&expr.simplify(None, None)));
 
         fn infer_new_ranges(expr: &SymExpression) -> ArrSizes {
             match expr {
@@ -356,7 +367,7 @@ impl ArrSizes {
                 // if sizeof equals some literal we set all boundarys and size to that literal
                 // else if sizeof equals some other expression we set all boundaries to unknown
                 SymExpression::EQ(l, r) => match (&**l, &**r) {
-                    (SymExpression::SizeOf( r1, _), SymExpression::SizeOf( r2, _)) => {
+                    (SymExpression::SizeOf(r1, _), SymExpression::SizeOf(r2, _)) => {
                         let mut ar_s = FxHashMap::default();
                         ar_s.insert(
                             r1.clone(),
@@ -368,20 +379,18 @@ impl ArrSizes {
                         );
                         ArrSizes(ar_s)
                     }
-                    (
-                        SymExpression::SizeOf( r, _),
-                        SymExpression::Literal(Literal::Integer(n)),
-                    ) => ArrSizes::new(r.clone(), ArrSize::Point(*n)),
-                    (
-                        SymExpression::Literal(Literal::Integer(n)),
-                        SymExpression::SizeOf( r, _),
-                    ) => ArrSizes::new(r.clone(), ArrSize::Point(*n)),
-                    (SymExpression::SizeOf( r, size_expr), _) => ArrSizes::new(
+                    (SymExpression::SizeOf(r, _), SymExpression::Literal(Literal::Integer(n))) => {
+                        ArrSizes::new(r.clone(), ArrSize::Point(*n))
+                    }
+                    (SymExpression::Literal(Literal::Integer(n)), SymExpression::SizeOf(r, _)) => {
+                        ArrSizes::new(r.clone(), ArrSize::Point(*n))
+                    }
+                    (SymExpression::SizeOf(r, size_expr), _) => ArrSizes::new(
                         r.clone(),
                         ArrSize::Range(Boundary::Unknown, Boundary::Unknown),
                     ),
 
-                    (_, SymExpression::SizeOf( r, size_expr)) => ArrSizes::new(
+                    (_, SymExpression::SizeOf(r, size_expr)) => ArrSizes::new(
                         r.clone(),
                         ArrSize::Range(Boundary::Unknown, Boundary::Unknown),
                     ),
@@ -392,7 +401,7 @@ impl ArrSizes {
                 // if sizeof is LT or GT some literal we set min or max to that literal - 1
                 // else if sizOf is LT or GT some freevar we set min or max to unknown
                 SymExpression::LT(l, r) => match (&**l, &**r) {
-                    (SymExpression::SizeOf( r1, _), SymExpression::SizeOf( r2, _)) => {
+                    (SymExpression::SizeOf(r1, _), SymExpression::SizeOf(r2, _)) => {
                         let mut ar_s = FxHashMap::default();
                         ar_s.insert(
                             r1.clone(),
@@ -404,32 +413,30 @@ impl ArrSizes {
                         );
                         ArrSizes(ar_s)
                     }
-                    (
-                        SymExpression::SizeOf( r, _),
-                        SymExpression::Literal(Literal::Integer(n)),
-                    ) => ArrSizes::new(
-                        r.clone(),
-                        ArrSize::Range(Boundary::None, Boundary::Known(*n - 1)),
-                    ),
-                    (
-                        SymExpression::Literal(Literal::Integer(n)),
-                        SymExpression::SizeOf( r, _),
-                    ) => ArrSizes::new(
-                        r.clone(),
-                        ArrSize::Range(Boundary::Known(*n + 1), Boundary::None),
-                    ),
-                    (_, SymExpression::SizeOf( r, _)) => {
+                    (SymExpression::SizeOf(r, _), SymExpression::Literal(Literal::Integer(n))) => {
+                        ArrSizes::new(
+                            r.clone(),
+                            ArrSize::Range(Boundary::None, Boundary::Known(*n - 1)),
+                        )
+                    }
+                    (SymExpression::Literal(Literal::Integer(n)), SymExpression::SizeOf(r, _)) => {
+                        ArrSizes::new(
+                            r.clone(),
+                            ArrSize::Range(Boundary::Known(*n + 1), Boundary::None),
+                        )
+                    }
+                    (_, SymExpression::SizeOf(r, _)) => {
                         ArrSizes::new(r.clone(), ArrSize::Range(Boundary::Unknown, Boundary::None))
                     }
 
-                    (SymExpression::SizeOf( r, _), _) => {
+                    (SymExpression::SizeOf(r, _), _) => {
                         ArrSizes::new(r.clone(), ArrSize::Range(Boundary::None, Boundary::Unknown))
                     }
 
                     _ => ArrSizes::default(),
                 },
                 SymExpression::GT(l, r) => match (&**l, &**r) {
-                    (SymExpression::SizeOf( r1, _), SymExpression::SizeOf( r2, _)) => {
+                    (SymExpression::SizeOf(r1, _), SymExpression::SizeOf(r2, _)) => {
                         let mut ar_s = FxHashMap::default();
                         ar_s.insert(
                             r1.clone(),
@@ -441,24 +448,22 @@ impl ArrSizes {
                         );
                         ArrSizes(ar_s)
                     }
-                    (
-                        SymExpression::SizeOf( r, _),
-                        SymExpression::Literal(Literal::Integer(n)),
-                    ) => ArrSizes::new(
-                        r.clone(),
-                        ArrSize::Range(Boundary::Known(*n + 1), Boundary::None),
-                    ),
-                    (
-                        SymExpression::Literal(Literal::Integer(n)),
-                        SymExpression::SizeOf( r, _),
-                    ) => ArrSizes::new(
-                        r.clone(),
-                        ArrSize::Range(Boundary::None, Boundary::Known(*n - 1)),
-                    ),
-                    (_, SymExpression::SizeOf( r, _)) => {
+                    (SymExpression::SizeOf(r, _), SymExpression::Literal(Literal::Integer(n))) => {
+                        ArrSizes::new(
+                            r.clone(),
+                            ArrSize::Range(Boundary::Known(*n + 1), Boundary::None),
+                        )
+                    }
+                    (SymExpression::Literal(Literal::Integer(n)), SymExpression::SizeOf(r, _)) => {
+                        ArrSizes::new(
+                            r.clone(),
+                            ArrSize::Range(Boundary::None, Boundary::Known(*n - 1)),
+                        )
+                    }
+                    (_, SymExpression::SizeOf(r, _)) => {
                         ArrSizes::new(r.clone(), ArrSize::Range(Boundary::None, Boundary::Unknown))
                     }
-                    (SymExpression::SizeOf( r, _), _) => {
+                    (SymExpression::SizeOf(r, _), _) => {
                         ArrSizes::new(r.clone(), ArrSize::Range(Boundary::Unknown, Boundary::None))
                     }
                     _ => ArrSizes::default(),
@@ -467,7 +472,7 @@ impl ArrSizes {
                 // if sizeof is LEQ or GEQ some literal we set min or max to that literal
                 // else if sizOf is LT or GT some freevar we set min or max to unknown
                 SymExpression::GEQ(l, r) => match (&**l, &**r) {
-                    (SymExpression::SizeOf( r1, _), SymExpression::SizeOf( r2, _)) => {
+                    (SymExpression::SizeOf(r1, _), SymExpression::SizeOf(r2, _)) => {
                         let mut ar_s = FxHashMap::default();
                         ar_s.insert(
                             r1.clone(),
@@ -479,30 +484,28 @@ impl ArrSizes {
                         );
                         ArrSizes(ar_s)
                     }
-                    (
-                        SymExpression::SizeOf( r, _),
-                        SymExpression::Literal(Literal::Integer(n)),
-                    ) => ArrSizes::new(
-                        r.clone(),
-                        ArrSize::Range(Boundary::Known(*n), Boundary::None),
-                    ),
-                    (
-                        SymExpression::Literal(Literal::Integer(n)),
-                        SymExpression::SizeOf( r, _),
-                    ) => ArrSizes::new(
-                        r.clone(),
-                        ArrSize::Range(Boundary::None, Boundary::Known(*n)),
-                    ),
-                    (_, SymExpression::SizeOf( r, _)) => {
+                    (SymExpression::SizeOf(r, _), SymExpression::Literal(Literal::Integer(n))) => {
+                        ArrSizes::new(
+                            r.clone(),
+                            ArrSize::Range(Boundary::Known(*n), Boundary::None),
+                        )
+                    }
+                    (SymExpression::Literal(Literal::Integer(n)), SymExpression::SizeOf(r, _)) => {
+                        ArrSizes::new(
+                            r.clone(),
+                            ArrSize::Range(Boundary::None, Boundary::Known(*n)),
+                        )
+                    }
+                    (_, SymExpression::SizeOf(r, _)) => {
                         ArrSizes::new(r.clone(), ArrSize::Range(Boundary::None, Boundary::Unknown))
                     }
-                    (SymExpression::SizeOf( r, _), _) => {
+                    (SymExpression::SizeOf(r, _), _) => {
                         ArrSizes::new(r.clone(), ArrSize::Range(Boundary::Unknown, Boundary::None))
                     }
                     _ => ArrSizes::default(),
                 },
                 SymExpression::LEQ(l, r) => match (&**l, &**r) {
-                    (SymExpression::SizeOf( r1, _), SymExpression::SizeOf( r2, _)) => {
+                    (SymExpression::SizeOf(r1, _), SymExpression::SizeOf(r2, _)) => {
                         let mut ar_s = FxHashMap::default();
                         ar_s.insert(
                             r1.clone(),
@@ -514,25 +517,23 @@ impl ArrSizes {
                         );
                         ArrSizes(ar_s)
                     }
-                    (
-                        SymExpression::SizeOf( r, _),
-                        SymExpression::Literal(Literal::Integer(n)),
-                    ) => ArrSizes::new(
-                        r.clone(),
-                        ArrSize::Range(Boundary::None, Boundary::Known(*n)),
-                    ),
-                    (
-                        SymExpression::Literal(Literal::Integer(n)),
-                        SymExpression::SizeOf( r, _),
-                    ) => ArrSizes::new(
-                        r.clone(),
-                        ArrSize::Range(Boundary::Known(*n), Boundary::None),
-                    ),
-                    (_, SymExpression::SizeOf( r, _)) => {
+                    (SymExpression::SizeOf(r, _), SymExpression::Literal(Literal::Integer(n))) => {
+                        ArrSizes::new(
+                            r.clone(),
+                            ArrSize::Range(Boundary::None, Boundary::Known(*n)),
+                        )
+                    }
+                    (SymExpression::Literal(Literal::Integer(n)), SymExpression::SizeOf(r, _)) => {
+                        ArrSizes::new(
+                            r.clone(),
+                            ArrSize::Range(Boundary::Known(*n), Boundary::None),
+                        )
+                    }
+                    (_, SymExpression::SizeOf(r, _)) => {
                         ArrSizes::new(r.clone(), ArrSize::Range(Boundary::Unknown, Boundary::None))
                     }
 
-                    (SymExpression::SizeOf( r, _), _) => {
+                    (SymExpression::SizeOf(r, _), _) => {
                         ArrSizes::new(r.clone(), ArrSize::Range(Boundary::None, Boundary::Unknown))
                     }
 
