@@ -13,7 +13,7 @@ use crate::see::utils::*;
 use crate::shared::{Config};
 use crate::shared::ExitCode;
 use crate::shared::{panic_with_diagnostics, Depth, Diagnostics, Error};
-use crate::smt_solver::Solver;
+use crate::smt_solver::SolverEnv;
 use crate::symbolic::expression::{PathConstraints, SymExpression, SymType};
 use crate::symbolic::memory::SymMemory;
 use crate::symbolic::ref_values::{ArrSizes,  SymRefType, LazyReference, Reference, EvaluatedRefs};
@@ -143,11 +143,8 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
     let prune_coefficient = f64::from(config.prune_ratio) / f64::from(i8::MAX);
     let prune_depth = (f64::from(d) - f64::from(d) * prune_coefficient) as i32;
 
-    //init diagnostic info
-    let mut diagnostics = Diagnostics::default();
-
-    //init solver
-    let mut solver = Solver::new(&config);
+    //init solver, config & diagnostics 
+    let mut solver_env = SolverEnv::new(&config);
 
     // init retval and this such that it outlives env
     let retval_id = &"retval".to_string();
@@ -242,9 +239,8 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                             &mut pc,
                             &mut sizes,
                             d > prune_depth,
-                            &mut solver,
+                            &mut solver_env,
                             assumption,
-                            &mut diagnostics,
                         ) {
                             continue;
                         }
@@ -253,9 +249,8 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                         &mut sym_memory,
                         &mut pc,
                         &mut sizes,
-                        &mut solver,
+                        &mut solver_env,
                         assertion,
-                        &mut diagnostics,
                     )?,
                     Statement::Assignment((lhs, rhs)) => {
                         // try assignment, stop exploring path if it's infeasible
@@ -264,8 +259,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                             &pc,
                             &mut sizes,
                             &mut eval_refs,
-                            &mut solver,
-                            &mut diagnostics,
+                            &mut solver_env,
                             lhs,
                             rhs,
                         )? {continue};
@@ -286,7 +280,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                 }
             }
             Node::End => {
-                diagnostics.paths_explored = diagnostics.paths_explored + 1;
+                solver_env.diagnostics.paths_explored = solver_env.diagnostics.paths_explored + 1;
                 continue 'q_states;
             }
             _ => (),
@@ -353,7 +347,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                             }
                         }
                         Lhs::AccessField(obj_name, field) => {
-                            match sym_memory.heap_access_object(&pc, &sizes, &mut eval_refs, &mut solver, &mut diagnostics, obj_name, field, None)? {
+                            match sym_memory.heap_access_object(&pc, &sizes, &mut eval_refs, &mut solver_env,  obj_name, field, None)? {
                                 Some(SymExpression::Reference(r)) => sym_memory.stack_insert(this_id.to_string(), SymExpression::Reference(r)),
                                 None => continue 'q_edges,                
                                 _ => panic_with_diagnostics(&format!("Can't access field {}.{}", obj_name, field), &sym_memory),
@@ -363,8 +357,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                             let expr = sym_memory.heap_access_array(
                                 &pc,
                                 &sizes,
-                                &mut solver,
-                                &mut diagnostics,
+                                &mut solver_env,
                                 arr_name,
                                 index.clone(),
                                 None,
@@ -390,7 +383,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                                     },
                                     Some(SymExpression::LazyReference(lr)) => {
                                         // release lazy reference and initialize object
-                                        let r = match lr.release(&mut diagnostics, &mut solver,  &pc, &sizes, &mut eval_refs, &sym_memory)? {
+                                        let r = match lr.release(&mut solver_env,  &pc, &sizes, &mut eval_refs, &sym_memory)? {
                                             Some(r) => r,
                                             _ => continue 'q_edges
                                         };
@@ -401,7 +394,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                                 },
                             
                             Lhs::AccessField(obj_name, field) => {
-                                match sym_memory.heap_access_object(&pc, &sizes, &mut eval_refs, &mut solver, &mut diagnostics, obj_name, field, None)? {
+                                match sym_memory.heap_access_object(&pc, &sizes, &mut eval_refs, &mut solver_env,  obj_name, field, None)? {
                                     Some(SymExpression::Reference(r)) => {
                                         // make an empty object and insert into heap
                                         let obj = sym_memory.init_object( from_class.clone());
@@ -415,8 +408,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                                 let expr = sym_memory.heap_access_array(
                                     &pc,
                                     &sizes,
-                                    &mut solver,
-                                    &mut diagnostics,
+                                    &mut solver_env,
                                     arr_name,
                                     index.clone(),
                                     None,
@@ -467,9 +459,8 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                                     &mut sym_memory,
                                     &mut pc,
                                     &mut sizes,
-                                    &mut solver,
+                                    &mut solver_env,
                                     assertion,
-                                    &mut diagnostics,
                                 )?,
                                 // otherwise process we assume
                                 (spec, _) => {
@@ -482,9 +473,8 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                                         &mut pc,
                                         &mut sizes,
                                         prune_depth < d,
-                                        &mut solver,
+                                        &mut solver_env,
                                         assumption,
-                                        &mut diagnostics,
                                     ) {
                                         continue;
                                     };
@@ -499,7 +489,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
             q.push_back((sym_memory, pc.clone(), sizes.clone(), eval_refs.clone(), d - 1, next, trace.clone()));
         }
     }
-    return Ok(diagnostics);
+    return Ok(solver_env.diagnostics);
 }
 
 /// Contains parser tests since parser mod is auto-generated

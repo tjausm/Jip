@@ -1,7 +1,7 @@
 //! Encode expressions into the smt-lib format to test satisfiability using the chosen backend
 
 use crate::ast::{Literal, Identifier};
-use crate::shared::{panic_with_diagnostics, Config,  SolverType};
+use crate::shared::{panic_with_diagnostics, Config,  SolverType, Diagnostics};
 use crate::symbolic::expression::{ SymExpression, SymType};
 use crate::symbolic::memory::SymMemory;
 use crate::symbolic::ref_values::{ArrSize, Boundary,  Reference, SymRefType, ArrSizes};
@@ -66,15 +66,16 @@ impl<'a> ModelParser<String, SymType, (Identifier, Literal), &'a str> for Parser
     }
 }
 
-pub struct Solver {
-    s: rsmt2::Solver<Parser>,
+pub struct SolverEnv {
+    solver: rsmt2::Solver<Parser>,
     pub config: Config,
+    pub diagnostics: Diagnostics
 }
 
-impl Solver {
+impl SolverEnv {
     /// Creates a new solver using the configured backend.
     /// For both Yices and Cvc we pas a set of flags to make them work with the rust interface
-    pub fn new(config: &Config) -> Solver {
+    pub fn new(config: &Config) -> SolverEnv {
         let conf = match &config.solver_type {
             SolverType::Z3(arg) => SmtConf::z3(arg),
             SolverType::Yices2(arg) => {
@@ -96,15 +97,19 @@ impl Solver {
         solver.set_option(":print-success", "false").unwrap(); //turn off automatic succes printing in yices2
         solver.produce_models().unwrap();
         solver.set_logic(rsmt2::Logic::QF_NIA).unwrap(); //set logic to quantifier free non-linear arithmetics
-        Solver {
-            s: solver,
+        SolverEnv {
+            solver,
             config: config.clone(),
+            diagnostics: Diagnostics::default()
         }
     }
 
     /// returns a satisfying model of an expression if one was found
     pub fn verify_expr(&mut self, expr: &SymExpression, sym_memory: &SymMemory, sizes: Option<&ArrSizes>) -> Option<Model> {
-        self.s.push(1).unwrap();
+
+        self.diagnostics.z3_calls += 1;
+
+        self.solver.push(1).unwrap();
 
         let (expr_str, fvs, assertions) = expr_to_smtlib(expr, &sym_memory, sizes);
 
@@ -123,17 +128,17 @@ impl Solver {
 
         for fv in fvs {
             match fv {
-                (SymType::Bool, id) => self.s.declare_const(id, "Bool").unwrap(),
-                (SymType::Int, id) => self.s.declare_const(id, "Int").unwrap(),
-                (SymType::Ref(_), id) => self.s.declare_const(id, "Int").unwrap(),
+                (SymType::Bool, id) => self.solver.declare_const(id, "Bool").unwrap(),
+                (SymType::Int, id) => self.solver.declare_const(id, "Int").unwrap(),
+                (SymType::Ref(_), id) => self.solver.declare_const(id, "Int").unwrap(),
             }
         }
         for assertion in assertions {
-            self.s.assert(assertion).unwrap();
+            self.solver.assert(assertion).unwrap();
         }
 
-        self.s.assert(expr_str.clone()).unwrap();
-        let satisfiable = match self.s.check_sat() {
+        self.solver.assert(expr_str.clone()).unwrap();
+        let satisfiable = match self.solver.check_sat() {
             Ok(b) => b,
             Err(err) => panic_with_diagnostics(
                 &format!(
@@ -144,8 +149,8 @@ impl Solver {
             ),
         };
 
-        let rsmt2_model = self.s.get_model();
-        self.s.pop(1).unwrap();
+        let rsmt2_model = self.solver.get_model();
+        self.solver.pop(1).unwrap();
         //either return Sat(model) or Unsat
         if satisfiable {
             let mut model: Vec<(Identifier, Literal)> = vec![];

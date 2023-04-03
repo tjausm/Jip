@@ -8,8 +8,8 @@ use super::ref_values::{
     ArrSize, ArrSizes, Array, EvaluatedRefs, LazyReference, Reference, ReferenceValue, SymRefType,
 };
 use crate::ast::*;
-use crate::shared::{panic_with_diagnostics, Diagnostics, Error, Scope};
-use crate::smt_solver::Solver;
+use crate::shared::{panic_with_diagnostics,  Error, Scope};
+use crate::smt_solver::SolverEnv;
 
 #[derive(Debug, Clone)]
 struct Frame {
@@ -110,8 +110,7 @@ impl<'a> SymMemory {
         pc: &PathConstraints,
         arr_sizes: &ArrSizes,
         eval_refs: &mut EvaluatedRefs,
-        solver: &mut Solver,
-        diagnostics: &mut Diagnostics,
+        solver: &mut SolverEnv,
         obj_name: &String,
         field_name: &'a String,
         var: Option<SymExpression>,
@@ -120,7 +119,7 @@ impl<'a> SymMemory {
             Some(SymExpression::LazyReference(lr)) =>
             // if path is infeasible return nothing otherwise initialize obj and return ref
             {
-                match lr.initialize(diagnostics, solver, self, pc, arr_sizes, eval_refs)? {
+                match lr.initialize( solver, self, pc, arr_sizes, eval_refs)? {
                     Some(r) => r,
                     _ => return Ok(None),
                 }
@@ -185,8 +184,7 @@ impl<'a> SymMemory {
         &mut self,
         pc: &PathConstraints,
         sizes: &ArrSizes,
-        solver: &mut Solver,
-        diagnostics: &mut Diagnostics,
+        solver: &mut SolverEnv,
         arr_name: &Identifier,
         index: Expression,
         var: Option<SymExpression>,
@@ -221,7 +219,6 @@ impl<'a> SymMemory {
                 let index_is_val1 = SymExpression::And(pc_expr.clone(), Box::new(SymExpression::EQ(Box::new(simple_index.clone()), Box::new(val1))));
                 match solver.verify_expr(&index_is_val1, &self, Some(sizes)) {
                     Some(model) => {
-                        println!("Double verifying");
 
                         let val2_id = "!val2".to_string();
                         let val2 = Box::new(SymExpression::FreeVariable(SymType::Int, val2_id.clone()));
@@ -259,7 +256,6 @@ impl<'a> SymMemory {
                 ()
             }
             _ => {
-                diagnostics.z3_calls += 1;
                 let size_of = SymExpression::SizeOf(r, Box::new(size_expr.clone()));
 
                 //append length > index to PathConstraints and try to falsify

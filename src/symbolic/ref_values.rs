@@ -6,8 +6,8 @@ use super::{
 };
 use crate::{
     ast::*,
-    shared::{panic_with_diagnostics, Diagnostics, Error},
-    smt_solver::Solver,
+    shared::{panic_with_diagnostics, Error},
+    smt_solver::SolverEnv,
 };
 use core::fmt;
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -60,8 +60,7 @@ impl LazyReference {
 
     fn is_never_null(
         &self,
-        diagnostics: &mut Diagnostics,
-        solver: &mut Solver,
+        solver: &mut SolverEnv,
         pc: &PathConstraints,
         sizes: &ArrSizes,
         sym_memory: &SymMemory
@@ -72,7 +71,6 @@ impl LazyReference {
             pc = pc.simplify(Some(sizes));
         }
 
-        diagnostics.z3_calls += 1;
         if solver.verify_expr(&pc, sym_memory, Some(sizes)).is_none() {
             return Ok(false);
         }
@@ -84,7 +82,7 @@ impl LazyReference {
         );
         let mut pc_null_check = SymExpression::And(Box::new(pc), Box::new(ref_is_null));
 
-        diagnostics.z3_calls += 1;
+
         match solver.verify_expr(&pc_null_check, sym_memory, Some(sizes)) {
             None => Ok(true),
             Some(model) => Err(Error::Verification(format!(
@@ -96,8 +94,7 @@ impl LazyReference {
 
     pub fn initialize(
         &self,
-        diagnostics: &mut Diagnostics,
-        solver: &mut Solver,
+        solver: &mut SolverEnv,
         sym_memory: &mut SymMemory,
         pc: &PathConstraints,
         sizes: &ArrSizes,
@@ -108,7 +105,7 @@ impl LazyReference {
             return Ok(Some(self.r));
         };
 
-        let feasible = self.is_never_null(diagnostics, solver, pc, sizes, sym_memory)?;
+        let feasible = self.is_never_null( solver, pc, sizes, sym_memory)?;
 
         if feasible {
             // insert fresh lazy object into heap
@@ -127,8 +124,7 @@ impl LazyReference {
     /// todo: what if we duplicate lazy ref and instantiate lazy object on 1 ref and new object on other?
     pub fn release(
         &self,
-        diagnostics: &mut Diagnostics,
-        solver: &mut Solver,
+        solver: &mut SolverEnv,
         pc: &PathConstraints,
         sizes: &ArrSizes,
         eval_refs: &mut EvaluatedRefs,
@@ -139,7 +135,7 @@ impl LazyReference {
             return Ok(Some(self.r));
         };
 
-        let feasible = self.is_never_null(diagnostics, solver, pc, sizes, sym_memory)?;
+        let feasible = self.is_never_null( solver, pc, sizes, sym_memory)?;
 
         if feasible {
             Ok(Some(self.r))

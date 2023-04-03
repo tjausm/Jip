@@ -1,6 +1,6 @@
 use crate::ast::*;
-use crate::shared::{panic_with_diagnostics, Diagnostics, Feasible, Error};
-use crate::smt_solver::Solver;
+use crate::shared::{panic_with_diagnostics, Feasible, Error};
+use crate::smt_solver::SolverEnv;
 use crate::symbolic::expression::{PathConstraints, SymExpression, SymType};
 use crate::symbolic::memory::SymMemory;
 use crate::symbolic::ref_values::{ArrSizes, EvaluatedRefs, SymRefType};
@@ -11,8 +11,7 @@ pub fn parse_rhs<'a, 'b>(
     pc: &PathConstraints,
     sizes: &mut ArrSizes,
     eval_refs: &mut EvaluatedRefs,
-    solver: &mut Solver,
-    diagnostics: &mut Diagnostics,
+    solver: &mut SolverEnv,
     rhs: &'a Rhs,
 ) -> Result<Option<SymExpression>, Error> {
     match rhs {
@@ -22,7 +21,6 @@ pub fn parse_rhs<'a, 'b>(
                 sizes,
                 eval_refs,
                 solver,
-                diagnostics,
                 obj_name,
                 field_name,
                 None,
@@ -50,7 +48,6 @@ pub fn parse_rhs<'a, 'b>(
             &pc,
             sizes,
             solver,
-            diagnostics,
             arr_name,
             index.clone(),
             None,
@@ -70,8 +67,7 @@ pub fn lhs_from_rhs<'a>(
     pc: &PathConstraints,
     sizes: &mut ArrSizes,
     eval_refs: &mut EvaluatedRefs,
-    solver: &mut Solver,
-    diagnostics: &mut Diagnostics,
+    solver: &mut SolverEnv,
     lhs: &'a Lhs,
     rhs: &'a Rhs,
 ) -> Result<Feasible, Error> {
@@ -81,7 +77,6 @@ pub fn lhs_from_rhs<'a>(
         sizes,
         eval_refs,
         solver,
-        diagnostics,
         rhs,
     )? {
         Some(var) => var,
@@ -97,7 +92,6 @@ pub fn lhs_from_rhs<'a>(
             sizes,
             eval_refs,
             solver,
-            diagnostics,
             obj_name,
             field_name,
             Some(var),
@@ -111,7 +105,6 @@ pub fn lhs_from_rhs<'a>(
                 &pc,
                 sizes,
                 solver,
-                diagnostics,
                 arr_name,
                 index.clone(),
                 Some(var),
@@ -125,9 +118,8 @@ pub fn assert(
     sym_memory: &mut SymMemory,
     pc: &mut PathConstraints,
     sizes: &mut ArrSizes,
-    solver: &mut Solver,
+    solver: &mut SolverEnv,
     assertion: &Expression,
-    diagnostics: &mut Diagnostics,
 ) -> Result<(), Error> {
     let sym_assertion = SymExpression::new(&sym_memory, assertion.clone());
     let config = &solver.config;
@@ -157,8 +149,6 @@ pub fn assert(
         SymExpression::Literal(Literal::Boolean(true)) => return Ok(()),
         _ => (),
     }
-    // if we have not solved by now, invoke z3
-    diagnostics.z3_calls = diagnostics.z3_calls + 1;
 
     match solver.verify_expr(&SymExpression::Not(Box::new(constraints)), sym_memory, Some(sizes)) {
         Some(model) => {
@@ -178,9 +168,8 @@ pub fn assume(
     pc: &mut PathConstraints,
     sizes: &mut ArrSizes,
     use_z3: bool,
-    solver: &mut Solver,
+    solver: &mut SolverEnv,
     assumption: &Expression,
-    diagnostics: &mut Diagnostics,
 ) -> bool {
     let sym_assumption = SymExpression::new(&sym_memory, assumption.clone());
     let config = &solver.config;
@@ -211,7 +200,6 @@ pub fn assume(
         (_, SymExpression::Literal(Literal::Boolean(false))) => return false,
         // if z3 finds a satisfying model return true, otherwise return false
         (true, _) => {
-            diagnostics.z3_calls = diagnostics.z3_calls + 1;
             solver.verify_expr(&constraints, sym_memory, Some(sizes)).is_some()
         }
         // if either not proved or z3 is turned off we just return true and go on
