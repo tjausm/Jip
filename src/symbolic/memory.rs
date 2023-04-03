@@ -184,33 +184,61 @@ impl<'a> SymMemory {
     pub fn heap_access_array(
         &mut self,
         pc: &PathConstraints,
-        arr_sizes: &ArrSizes,
+        sizes: &ArrSizes,
         solver: &mut Solver,
         diagnostics: &mut Diagnostics,
         arr_name: &Identifier,
         index: Expression,
         var: Option<SymExpression>,
     ) -> Result<SymExpression, Error> {
-        //get mutable HashMap representing array
-        let (r, size_expr, is_lazy) = match self.stack_get(&arr_name){
+
+        //get information about array
+        let (r, size_expr, size, is_lazy) = match self.stack_get(&arr_name){
             Some(SymExpression::Reference(r)) => match self.heap.get(&r){
-                Some(ReferenceValue::Array((_, _, length, is_lazy))) => (r, length, *is_lazy),
+                Some(ReferenceValue::Array((_, _, size_expr, is_lazy))) => (r, size_expr, sizes.get(&r),  *is_lazy),
                 otherwise => panic_with_diagnostics(&format!("{:?} is not an array and can't be assigned to in assignment '{}[{:?}] := {:?}'", otherwise, arr_name, index, var), &self),
             },
             _ => panic_with_diagnostics(&format!("{} is not a reference", arr_name), &self),
         };
 
-        // substitute expr and simplify
+        // substitute index and try to simplify it to a literal using simplifier and / or z3
+        // to prevent from values being indexed twice in the array
         let sym_index = SymExpression::new(self, index);
+        let simple_index = sym_index.clone().simplify(Some(sizes)); // simplify to prevent simplified see from having different results
+        let evaluated_index = match simple_index {
+            SymExpression::Literal(_) => simple_index,
+            _ => {
+                let pc_expr = Box::new(pc.conjunct());
 
-        //get ArrSize if it's inferred
-        let (size) = arr_sizes.get(&r);
+                // check if z3 can find a value for index
+                let val1_id = "!val1".to_string();
+                let val1 = SymExpression::FreeVariable(SymType::Int, val1_id.clone());
 
-        // always simplify index, otherwise unsimplified SE could return different results than simplified SE
-        let simple_index = sym_index.clone().simplify(Some(arr_sizes));
+                // check if there is a literal value for `index: pc && val1 == index` 
+                let index_is_val1 = SymExpression::And(pc_expr.clone(), Box::new(SymExpression::EQ(Box::new(simple_index.clone()), Box::new(val1))));
+                match solver.verify_expr(&index_is_val1, &self, Some(sizes)) {
+                    Some(model) => {
+                        let val2_id = "!val2".to_string();
+                        let val2 = Box::new(SymExpression::FreeVariable(SymType::Int, val2_id.clone()));
+
+                        // check if there is another literal value for index: `pc && val2 != val1 && val2 == index`
+                        let val1_lit = model.find(&val1_id);
+                        let val1 = Box::new(SymExpression::Literal(val1_lit.clone()));
+                        let index_is_val2 = SymExpression::And(pc_expr, Box::new(SymExpression::And(Box::new(SymExpression::NE(val1, val2.clone())), Box::new(SymExpression::EQ(val2, Box::new(simple_index.clone()))))));
+
+                        match solver.verify_expr(&index_is_val2, &self, Some(sizes)){
+                            Some(_) => simple_index,
+                            None => SymExpression::Literal(val1_lit),
+                        }
+                    
+                    },
+                    None => simple_index,
+                }
+            }
+        };
 
         // check if index is always < length
-        match (&simple_index, &size_expr, &size) {
+        match (&evaluated_index, &size_expr, &size) {
             (
                 SymExpression::Literal(Literal::Integer(lit_i)),
                 SymExpression::Literal(Literal::Integer(lit_l)),
@@ -227,12 +255,12 @@ impl<'a> SymMemory {
 
                 //append length > index to PathConstraints and try to falsify
                 let length_gt_index =
-                    SymExpression::GT(Box::new(size_of.clone()), Box::new(simple_index.clone()));
+                    SymExpression::GT(Box::new(size_of.clone()), Box::new(evaluated_index.clone()));
                 let mut pc = pc.clone();
                 pc.push_assertion(length_gt_index);
                 let constraints = pc.combine_over_true();
 
-                match solver.verify_expr(&SymExpression::Not(Box::new(constraints)), &self, Some(arr_sizes)) {
+                match solver.verify_expr(&SymExpression::Not(Box::new(constraints)), &self, Some(sizes)) {
                     None => (),
                     Some(model) => {
                         return Err(Error::Verification(format!(
@@ -255,10 +283,10 @@ impl<'a> SymMemory {
 
         // if we insert var or var is already in arr then return
         if let Some(var) = var {
-            arr.insert(simple_index, var.clone());
+            arr.insert(evaluated_index, var.clone());
             return Ok(var);
         }
-        if let Some(v) = arr.get(&simple_index) {
+        if let Some(v) = arr.get(&evaluated_index) {
             return Ok(v.clone());
         }
 
@@ -268,7 +296,7 @@ impl<'a> SymMemory {
                 // generate and insert reference
                 let r = Reference::new();
                 let sym_r = SymExpression::Reference(r);
-                arr.insert(simple_index, sym_r.clone());
+                arr.insert(evaluated_index, sym_r.clone());
 
                 // instantiate object and insert under reference afterwards (to please borrowchecker)
                 let class = class.clone();
@@ -282,7 +310,7 @@ impl<'a> SymMemory {
                 // generate and insert reference
                 let lr = LazyReference::new(class.clone());
                 let sym_lr = SymExpression::LazyReference(lr);
-                arr.insert(simple_index, sym_lr.clone());
+                arr.insert(evaluated_index, sym_lr.clone());
 
                 Ok(sym_lr)
             }
@@ -292,18 +320,18 @@ impl<'a> SymMemory {
 
             (false, SymType::Int) => {
                 let lit = SymExpression::Literal(Literal::Integer(0));
-                arr.insert(simple_index, lit.clone());
+                arr.insert(evaluated_index, lit.clone());
                 Ok(lit)
             }
             (false, SymType::Bool) => {
                 let lit = SymExpression::Literal(Literal::Boolean(false));
-                arr.insert(simple_index, lit.clone());
+                arr.insert(evaluated_index, lit.clone());
                 Ok(lit)
             }
             _ => {
-                let fv_id = format!("{}[{:?}]", arr_name.clone(), simple_index);
+                let fv_id = format!("{}[{:?}]", arr_name.clone(), evaluated_index);
                 let fv = SymExpression::FreeVariable(ty.clone(), fv_id);
-                arr.insert(simple_index, fv.clone());
+                arr.insert(evaluated_index, fv.clone());
                 Ok(fv)
             }
         }

@@ -20,7 +20,7 @@ impl Model {
 
     /// given the identifier of one of the free variables, return it's value or panic
     pub fn find(&self, fv_id: &Identifier) -> Literal{
-        self.0.into_iter().find(|(e, _)| e == fv_id).unwrap().1
+        self.0.as_slice().into_iter().find(|(e, _)| e == fv_id).unwrap().1.clone()
     }
 }
 

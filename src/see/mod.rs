@@ -169,14 +169,14 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
     ));
 
     // enque all connected nodes, till d=0 or we reach end of cfg
-    'q_states: while let Some((mut sym_memory, mut pc, mut arr_sizes, mut eval_refs, d, curr_node, mut trace)) = q.pop_front() {
+    'q_states: while let Some((mut sym_memory, mut pc, mut sizes, mut eval_refs, d, curr_node, mut trace)) = q.pop_front() {
         if d == 0 {
             continue;
         }
 
         if config.verbose {
             trace.push(&cfg[curr_node]);
-            print_debug(&cfg[curr_node], &sym_memory, &pc, &arr_sizes, &trace);
+            print_debug(&cfg[curr_node], &sym_memory, &pc, &sizes, &trace);
         };
 
         match &cfg[curr_node] {
@@ -240,7 +240,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                         if !assume(
                             &mut sym_memory,
                             &mut pc,
-                            &mut arr_sizes,
+                            &mut sizes,
                             d > prune_depth,
                             &mut solver,
                             assumption,
@@ -252,7 +252,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                     Statement::Assert(assertion) => assert(
                         &mut sym_memory,
                         &mut pc,
-                        &mut arr_sizes,
+                        &mut sizes,
                         &mut solver,
                         assertion,
                         &mut diagnostics,
@@ -262,7 +262,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                         if !lhs_from_rhs(
                             &mut sym_memory,
                             &pc,
-                            &mut arr_sizes,
+                            &mut sizes,
                             &mut eval_refs,
                             &mut solver,
                             &mut diagnostics,
@@ -353,7 +353,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                             }
                         }
                         Lhs::AccessField(obj_name, field) => {
-                            match sym_memory.heap_access_object(&pc, &arr_sizes, &mut eval_refs, &mut solver, &mut diagnostics, obj_name, field, None)? {
+                            match sym_memory.heap_access_object(&pc, &sizes, &mut eval_refs, &mut solver, &mut diagnostics, obj_name, field, None)? {
                                 Some(SymExpression::Reference(r)) => sym_memory.stack_insert(this_id.to_string(), SymExpression::Reference(r)),
                                 None => continue 'q_edges,                
                                 _ => panic_with_diagnostics(&format!("Can't access field {}.{}", obj_name, field), &sym_memory),
@@ -362,7 +362,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                         Lhs::AccessArray(arr_name, index) => {
                             let expr = sym_memory.heap_access_array(
                                 &pc,
-                                &arr_sizes,
+                                &sizes,
                                 &mut solver,
                                 &mut diagnostics,
                                 arr_name,
@@ -390,7 +390,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                                     },
                                     Some(SymExpression::LazyReference(lr)) => {
                                         // release lazy reference and initialize object
-                                        let r = match lr.release(&mut diagnostics, &mut solver,  &pc, &arr_sizes, &mut eval_refs, &sym_memory)? {
+                                        let r = match lr.release(&mut diagnostics, &mut solver,  &pc, &sizes, &mut eval_refs, &sym_memory)? {
                                             Some(r) => r,
                                             _ => continue 'q_edges
                                         };
@@ -401,7 +401,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                                 },
                             
                             Lhs::AccessField(obj_name, field) => {
-                                match sym_memory.heap_access_object(&pc, &arr_sizes, &mut eval_refs, &mut solver, &mut diagnostics, obj_name, field, None)? {
+                                match sym_memory.heap_access_object(&pc, &sizes, &mut eval_refs, &mut solver, &mut diagnostics, obj_name, field, None)? {
                                     Some(SymExpression::Reference(r)) => {
                                         // make an empty object and insert into heap
                                         let obj = sym_memory.init_object( from_class.clone());
@@ -414,7 +414,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                             Lhs::AccessArray(arr_name, index) => {
                                 let expr = sym_memory.heap_access_array(
                                     &pc,
-                                    &arr_sizes,
+                                    &sizes,
                                     &mut solver,
                                     &mut diagnostics,
                                     arr_name,
@@ -466,7 +466,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                                 (Specification::Requires(assertion), false) => assert(
                                     &mut sym_memory,
                                     &mut pc,
-                                    &mut arr_sizes,
+                                    &mut sizes,
                                     &mut solver,
                                     assertion,
                                     &mut diagnostics,
@@ -480,7 +480,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                                     if !assume(
                                         &mut sym_memory,
                                         &mut pc,
-                                        &mut arr_sizes,
+                                        &mut sizes,
                                         prune_depth < d,
                                         &mut solver,
                                         assumption,
@@ -496,7 +496,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                 }
             }
             let next = edge.target();
-            q.push_back((sym_memory, pc.clone(), arr_sizes.clone(), eval_refs.clone(), d - 1, next, trace.clone()));
+            q.push_back((sym_memory, pc.clone(), sizes.clone(), eval_refs.clone(), d - 1, next, trace.clone()));
         }
     }
     return Ok(diagnostics);
