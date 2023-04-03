@@ -173,7 +173,7 @@ impl<'a> SymMemory {
     pub fn heap_get(&self, r: Reference) -> &ReferenceValue {
         match self.heap.get(&r) {
             Some(ref_val) => ref_val,
-            otherwise => panic_with_diagnostics(
+            _ => panic_with_diagnostics(
                 &format!("{:?} does not reference anything on the heap", r),
                 &self,
             ),
@@ -205,6 +205,9 @@ impl<'a> SymMemory {
         // to prevent from values being indexed twice in the array
         let sym_index = SymExpression::new(self, index);
         let simple_index = sym_index.clone().simplify(Some(sizes)); // simplify to prevent simplified see from having different results
+        
+
+
         let evaluated_index = match simple_index {
             SymExpression::Literal(_) => simple_index,
             _ => {
@@ -218,6 +221,8 @@ impl<'a> SymMemory {
                 let index_is_val1 = SymExpression::And(pc_expr.clone(), Box::new(SymExpression::EQ(Box::new(simple_index.clone()), Box::new(val1))));
                 match solver.verify_expr(&index_is_val1, &self, Some(sizes)) {
                     Some(model) => {
+                        println!("Double verifying");
+
                         let val2_id = "!val2".to_string();
                         let val2 = Box::new(SymExpression::FreeVariable(SymType::Int, val2_id.clone()));
 
@@ -230,12 +235,16 @@ impl<'a> SymMemory {
                             Some(_) => simple_index,
                             None => SymExpression::Literal(val1_lit),
                         }
+
+
                     
                     },
                     None => simple_index,
                 }
             }
         };
+
+
 
         // check if index is always < length
         match (&evaluated_index, &size_expr, &size) {
