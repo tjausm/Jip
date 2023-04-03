@@ -13,51 +13,6 @@ class Point {
 class Main
 {
 
-    static void foo1(Point[] a, int i, int k)
-          requires(a != null && #a > 1
-                   && 0 <= i && i < #a
-                   && 0 <= k && k < #a)
-    {
-       Point o := a[i] ;
-       o.x := 0 ;
-       Point p := a[0] ;
-       p.x := 1 ;
-       Point r := a[0] ;
-       int v := r.x ;
-       assert v == 1 ;
-    }
-
-    static void foo1Invalid(Point[] a, int i, int k)
-          requires(a != null && #a > 1
-                   && 0 <= i && i < #a
-                   && 0 <= k && k < #a)
-    {
-       Point o := a[i] ;
-       o.x := 0 ;
-       Point p := a[0] ;
-       p.x := 1 ;
-       Point r := a[i] ;
-       int v := r.x ;
-       assert v == 0 ;
-    }
-
-    static void foo2(Point[] a, int i, int k)
-          requires(a != null && #a > 1
-                   && 0 <= i && i < #a
-                   && 0 <= k && k < #a)
-    {
-       Point o := a[i] ;
-       o.x := 0 ;
-       int m := 0;
-       while (m < #a) {
-          o := a[m] ;
-          int v := o.x ;
-          assert v == 0 ;
-          m := m+1 ;
-       }
-    }
-
-
     // A Bubblesort algorithm.
     static void main(Point[] array)
         requires(array != null)

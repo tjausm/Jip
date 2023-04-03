@@ -1,0 +1,51 @@
+//
+// For testing oox against arrays of objects.
+//
+class Point {
+    -int x ;
+    -int y ;
+    Point(int x, int y) {
+       this.x := x ;
+       this.y := y ;
+    }
+}
+
+class Main
+{
+
+    // A Bubblesort algorithm.
+    static void main(Point[] array)
+        requires(array != null)
+    {
+        bool sorted := false;
+        while (!sorted) {
+            sorted := true;
+            int i := 1;
+            while (i < #array) {
+                Point u := array[i];
+                Point v := array[i - 1];
+                assume u != null ;
+                assume v != null ;
+                int a := u.x ;
+                int b := v.x ;
+                if (a < b) { // bug should be a<b
+                    array[i] := v;
+                    array[i - 1] := u;
+                    sorted := false;
+                } ;
+                i := i + 1;
+            }
+        }
+        int k := 1 ;
+        while (k < #array) {
+           Point u := array[k];
+           Point v := array[k - 1];
+           int a := u.x ;
+           int b := v.x ;
+           assert b <= a ;
+           k := k+1 ;
+        }
+    }
+
+
+}
