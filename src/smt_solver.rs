@@ -1,6 +1,6 @@
 //! Encode expressions into the smt-lib format to test satisfiability using the chosen backend
 
-use crate::ast::Literal;
+use crate::ast::{Literal, Identifier};
 use crate::shared::{panic_with_diagnostics, Config,  SolverType};
 use crate::symbolic::expression::{ SymExpression, SymType};
 use crate::symbolic::memory::SymMemory;
@@ -14,8 +14,15 @@ use std::str::FromStr;
 type Formula = String;
 type Declarations = FxHashSet<(SymType, String)>;
 type Assertions = FxHashSet<String>;
-pub struct Model(Vec<(SymExpression, Literal)>);
+pub struct Model(Vec<(Identifier, Literal)>);
 
+impl Model {
+
+    /// given the identifier of one of the free variables, return it's value or panic
+    pub fn find(&self, fv_id: &Identifier) -> Literal{
+        self.0.into_iter().find(|(e, _)| e == fv_id).unwrap().1
+    }
+}
 
 #[derive(Clone, Copy)]
 struct Parser;
@@ -33,19 +40,18 @@ impl<'a> rsmt2::print::IdentParser<String, SymType, &'a str> for Parser {
     }
 }
 
-impl<'a> ModelParser<String, SymType, (SymExpression, Literal), &'a str> for Parser {
+impl<'a> ModelParser<String, SymType, (Identifier, Literal), &'a str> for Parser {
     fn parse_value(
         self,
         input: &'a str,
         id: &String,
         _: &[(String, SymType)],
         ty: &SymType,
-    ) -> SmtRes<(SymExpression, Literal)> {
+    ) -> SmtRes<(Identifier, Literal)> {
         // remove spaces & braces from input
         let clean_input = input.replace(&['(', ')', ' '][..], "");
         let clean_id = id.replace("|", "");
 
-        let fv = SymExpression::FreeVariable(ty.clone(), clean_id);
         let lit = match ty {
             SymType::Bool => Literal::Boolean(bool::from_str(&clean_input).unwrap()),
             _ => match i64::from_str(&clean_input) {
@@ -56,7 +62,7 @@ impl<'a> ModelParser<String, SymType, (SymExpression, Literal), &'a str> for Par
             },
         };
 
-        Ok((fv, lit))
+        Ok((clean_id, lit))
     }
 }
 
@@ -142,7 +148,7 @@ impl Solver {
         self.s.pop(1).unwrap();
         //either return Sat(model) or Unsat
         if satisfiable {
-            let mut model: Vec<(SymExpression, Literal)> = vec![];
+            let mut model: Vec<(Identifier, Literal)> = vec![];
             match rsmt2_model {
                 Ok(rsmt2_model) => {
                     for var in rsmt2_model {
