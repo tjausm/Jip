@@ -28,7 +28,7 @@ impl Reference {
         REF_COUNTER.inc();
         Reference(i)
     }
-    /// generates unique reference using a global counter
+    /// returns the null reference
     pub fn null() -> Reference {
         Reference(0)
     }
@@ -144,29 +144,6 @@ impl LazyReference {
         }
     }
 
-    /// todo: what if we duplicate lazy ref and instantiate lazy object on 1 ref and new object on other?
-    pub fn release(
-        &self,
-        solver: &mut SolverEnv,
-        pc: &PathConstraints,
-        sizes: &ArrSizes,
-        eval_refs: &mut EvaluatedRefs,
-        sym_memory: &SymMemory,
-    ) -> Result<Option<Reference>, Error> {
-
-        // try to add ref to hashseta, and ifi it is already present we return
-        if eval_refs.insert(self.r) {
-            return Ok(Some(self.r));
-        };
-
-        let feasible = self.is_never_null(solver, pc, sizes, eval_refs, sym_memory)?;
-
-        if feasible {
-            Ok(Some(self.r))
-        } else {
-            Ok(None)
-        }
-    }
 }
 
 /// Consists of `identifier` (= classname) and a hashmap describing it's fields

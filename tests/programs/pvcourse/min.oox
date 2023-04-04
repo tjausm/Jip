@@ -17,7 +17,7 @@ class Main {
       int k := 0 ;
       while (k < #a) {
           int kval :=  a[k] ;
-          u := new Num(kval) ;
+          Num u := new Num(kval) ;
           if (k==0) {m := u ; };
           int uv := u.val ;
           int mv := m.val ;

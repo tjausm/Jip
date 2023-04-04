@@ -10,13 +10,13 @@ use crate::ast::*;
 use crate::cfg::types::{Action, Node};
 use crate::cfg::{generate_cfg, generate_dot_cfg};
 use crate::see::utils::*;
-use crate::shared::{Config};
+use crate::shared::Config;
 use crate::shared::ExitCode;
 use crate::shared::{panic_with_diagnostics, Depth, Diagnostics, Error};
 use crate::smt_solver::SolverEnv;
 use crate::symbolic::expression::{PathConstraints, SymExpression, SymType};
 use crate::symbolic::memory::SymMemory;
-use crate::symbolic::ref_values::{ArrSizes,  SymRefType, LazyReference, Reference, EvaluatedRefs};
+use crate::symbolic::ref_values::{ArrSizes, EvaluatedRefs, LazyReference, Reference, SymRefType};
 
 use colored::Colorize;
 use petgraph::stable_graph::NodeIndex;
@@ -115,7 +115,14 @@ pub fn print_verification(program: &str, d: Depth, config: &Config) -> (ExitCode
 }
 
 /// prints the verbose debug info
-fn print_debug(node: &Node, sym_memory: &SymMemory, pc: &PathConstraints, sizes: &ArrSizes, eval_refs: &EvaluatedRefs, trace: &Trace) {
+fn print_debug(
+    node: &Node,
+    sym_memory: &SymMemory,
+    pc: &PathConstraints,
+    sizes: &ArrSizes,
+    eval_refs: &EvaluatedRefs,
+    trace: &Trace,
+) {
     let print_eval_refs = format!("Evaluated refs: {:?}", eval_refs);
     let print_trace = format!("trace: {:?}", trace);
 
@@ -141,7 +148,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
     let prune_coefficient = f64::from(config.prune_ratio) / f64::from(i8::MAX);
     let prune_depth = (f64::from(d) - f64::from(d) * prune_coefficient) as i32;
 
-    //init solver, config & diagnostics 
+    //init solver, config & diagnostics
     let mut solver_env = SolverEnv::new(&config);
 
     // init retval and this such that it outlives env
@@ -152,7 +159,15 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
     let (start_node, cfg) = generate_cfg(prog.clone());
 
     //init our bfs through the cfg
-    let mut q: VecDeque<(SymMemory, PathConstraints, ArrSizes, EvaluatedRefs, Depth, NodeIndex, Trace)> = VecDeque::new();
+    let mut q: VecDeque<(
+        SymMemory,
+        PathConstraints,
+        ArrSizes,
+        EvaluatedRefs,
+        Depth,
+        NodeIndex,
+        Trace,
+    )> = VecDeque::new();
     q.push_back((
         SymMemory::new(prog.clone()),
         PathConstraints::default(),
@@ -160,18 +175,34 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
         FxHashSet::default(),
         d,
         start_node,
-        vec![]
+        vec![],
     ));
 
     // enque all connected nodes, till d=0 or we reach end of cfg
-    'q_states: while let Some((mut sym_memory, mut pc, mut sizes, mut eval_refs, d, curr_node, mut trace)) = q.pop_front() {
+    'q_states: while let Some((
+        mut sym_memory,
+        mut pc,
+        mut sizes,
+        mut eval_refs,
+        d,
+        curr_node,
+        mut trace,
+    )) = q.pop_front()
+    {
         if d == 0 {
             continue;
         }
 
         if config.verbose {
             trace.push(&cfg[curr_node]);
-            print_debug(&cfg[curr_node], &sym_memory, &pc, &sizes, &eval_refs, &trace);
+            print_debug(
+                &cfg[curr_node],
+                &sym_memory,
+                &pc,
+                &sizes,
+                &eval_refs,
+                &trace,
+            );
         };
 
         match &cfg[curr_node] {
@@ -229,7 +260,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                             sym_memory.stack_insert(id.clone(), SymExpression::Uninitialized)
                         }
                         _ => sym_memory
-                            .stack_insert(id.clone(), SymExpression::Reference(Reference::new())),
+                            .stack_insert(id.clone(), SymExpression::Reference(Reference::null())),
                     },
                     Statement::Assume(assumption) => {
                         if !assume(
@@ -262,7 +293,9 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                             &mut solver_env,
                             lhs,
                             rhs,
-                        )? {continue};
+                        )? {
+                            continue;
+                        };
                     }
                     Statement::Return(expr) => {
                         // stop path if current scope `id == None`, indicating we are in main scope
@@ -324,14 +357,15 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                     Action::DeclareThis { class, obj } => match obj {
                         Lhs::Identifier(id) => {
                             // possibly fork
-                            let val = sym_memory
-                                .stack_get(id);
+                            let val = sym_memory.stack_get(id);
 
                             match val {
-                                Some(SymExpression::Reference(_)) => sym_memory
-                                    .stack_insert(this_id.clone(), val.unwrap()),
-                                Some(SymExpression::LazyReference(_)) => sym_memory
-                                    .stack_insert(this_id.clone(), val.unwrap()),
+                                Some(SymExpression::Reference(_)) => {
+                                    sym_memory.stack_insert(this_id.clone(), val.unwrap())
+                                }
+                                Some(SymExpression::LazyReference(_)) => {
+                                    sym_memory.stack_insert(this_id.clone(), val.unwrap())
+                                }
 
                                 Some(ty) => panic_with_diagnostics(
                                     &format!(
@@ -347,10 +381,22 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                             }
                         }
                         Lhs::AccessField(obj_name, field) => {
-                            match sym_memory.heap_access_object(&pc, &sizes, &mut eval_refs, &mut solver_env,  obj_name, field, None)? {
-                                Some(SymExpression::Reference(r)) => sym_memory.stack_insert(this_id.to_string(), SymExpression::Reference(r)),
-                                None => continue 'q_edges,                
-                                _ => panic_with_diagnostics(&format!("Can't access field {}.{}", obj_name, field), &sym_memory),
+                            match sym_memory.heap_access_object(
+                                &pc,
+                                &sizes,
+                                &mut eval_refs,
+                                &mut solver_env,
+                                obj_name,
+                                field,
+                                None,
+                            )? {
+                                Some(SymExpression::Reference(r)) => sym_memory
+                                    .stack_insert(this_id.to_string(), SymExpression::Reference(r)),
+                                None => continue 'q_edges,
+                                _ => panic_with_diagnostics(
+                                    &format!("Can't access field {}.{}", obj_name, field),
+                                    &sym_memory,
+                                ),
                             };
                         }
                         Lhs::AccessArray(arr_name, index) => {
@@ -372,65 +418,42 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                         from_class,
                         to: lhs,
                     } => {
-                        // get reference r, init object, and insert into heap under reference
+                        // initialize object and insert into heap
+                        let obj = sym_memory.init_object(from_class.clone());
+                        let r = SymExpression::Reference(sym_memory.heap_insert(None, obj));
+
                         match lhs {
-                            Lhs::Identifier(id) => 
-                                match sym_memory.stack_get(id) {
-                                    Some(SymExpression::Reference(r)) => {
-                                        // make an empty object and insert into heap
-                                        let obj = sym_memory.init_object(from_class.clone());
-                                        sym_memory.heap_insert(Some(r), obj);
-                                    },
-                                    Some(SymExpression::LazyReference(lr)) => {
-                                        // release lazy reference and initialize object
-                                        let r = match lr.release(&mut solver_env,  &pc, &sizes, &mut eval_refs, &sym_memory)? {
-                                            Some(r) => r,
-                                            _ => continue 'q_edges
-                                        };
-                                        let obj = sym_memory.init_object(from_class.clone());
-                                        sym_memory.heap_insert(Some(r), obj);
-                                    },
-                                    _ => panic_with_diagnostics(&format!("Can't initialize '{} {}' because it has not been declared yet", from_class, id), &sym_memory),
-                                },
-                            
+                            Lhs::Identifier(id) => sym_memory.stack_insert_below(id.to_string(), r),
+
                             Lhs::AccessField(obj_name, field) => {
-                                match sym_memory.heap_access_object(&pc, &sizes, &mut eval_refs, &mut solver_env,  obj_name, field, None)? {
-                                    Some(SymExpression::Reference(r)) => {
-                                        // make an empty object and insert into heap
-                                        let obj = sym_memory.init_object( from_class.clone());
-                                        sym_memory.heap_insert(Some(r), obj);
-                                    },
-                                    None => continue 'q_edges,
-                                    _ => panic_with_diagnostics(&format!("Can't initialize '{}' because there is no reference at {}.{}", from_class, obj_name, field), &sym_memory),
-                                };
+                                sym_memory.heap_access_object(
+                                    &pc,
+                                    &sizes,
+                                    &mut eval_refs,
+                                    &mut solver_env,
+                                    obj_name,
+                                    field,
+                                    Some(r),
+                                )?;
                             }
                             Lhs::AccessArray(arr_name, index) => {
-                                let expr = sym_memory.heap_access_array(
+                                sym_memory.heap_access_array(
                                     &pc,
                                     &sizes,
                                     &mut solver_env,
                                     arr_name,
                                     index.clone(),
-                                    None,
+                                    Some(r),
                                 )?;
-                                match expr {
-                                    SymExpression::Reference(r) => {
-                                        // make an empty object and insert into heap
-                                        let obj = sym_memory.init_object(from_class.clone());
-                                        sym_memory.heap_insert(Some(r), obj);
-                                    },
-                                    _ => panic_with_diagnostics(&format!("Can't initialize '{}' because there is no reference at {}[{:?}]", from_class, arr_name, index), &sym_memory),
-                                };
                             }
-                        };
+                        }
                     }
                     // lift retval 1 scope up
                     Action::LiftRetval => {
-                        let expr = sym_memory
-                            .stack_get(retval_id);
+                        let expr = sym_memory.stack_get(retval_id);
 
                         match expr {
-                            Some(retval) => sym_memory.stack_insert_below(retval_id, retval),
+                            Some(retval) => sym_memory.stack_insert_below(retval_id.clone(), retval),
                             None => panic_with_diagnostics(
                                 "Can't lift retval to a higher scope",
                                 &sym_memory,
@@ -488,7 +511,15 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                 }
             }
             let next = edge.target();
-            q.push_back((sym_memory, pc.clone(), sizes.clone(), eval_refs.clone(), d - 1, next, trace.clone()));
+            q.push_back((
+                sym_memory,
+                pc.clone(),
+                sizes.clone(),
+                eval_refs.clone(),
+                d - 1,
+                next,
+                trace.clone(),
+            ));
         }
     }
     return Ok(solver_env.diagnostics);

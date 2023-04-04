@@ -42,18 +42,18 @@ impl<'a> SymMemory {
     /// Insert mapping `Identifier |-> SymbolicExpression` in top most frame of stack
     pub fn stack_insert(&mut self, id: Identifier, sym_expr: SymExpression) -> () {
         if let Some(s) = self.stack.last_mut() {
-            s.env.insert(id.clone(), sym_expr);
+            s.env.insert(id, sym_expr);
         }
     }
 
     /// Insert mapping `Identifier |-> SymbolicExpression` in frame below top most frame of stack
-    pub fn stack_insert_below(&mut self, id: &'a Identifier, sym_expr: SymExpression) -> () {
+    pub fn stack_insert_below(&mut self, id: Identifier, sym_expr: SymExpression) -> () {
         let below_index = self.stack.len() - 2;
         match self.stack.get_mut(below_index) {
             Some(frame) => {
-                frame.env.insert(id.clone(), sym_expr);
+                frame.env.insert(id, sym_expr);
             }
-            _ => (),
+            _ => panic_with_diagnostics(&format!("No frame below"), &self),
         }
     }
 
