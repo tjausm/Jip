@@ -1,26 +1,34 @@
 //! Encode expressions into the smt-lib format to test satisfiability using the chosen backend
 
-use crate::ast::{Literal, Identifier};
-use crate::shared::{panic_with_diagnostics, Config,  SolverType, Diagnostics};
-use crate::symbolic::expression::{ SymExpression, SymType};
+use crate::ast::{Identifier, Literal};
+use crate::shared::{panic_with_diagnostics, Config, Diagnostics, SolverType};
+use crate::symbolic::expression::{SymExpression, SymType};
 use crate::symbolic::memory::SymMemory;
-use crate::symbolic::ref_values::{ArrSize, Boundary,  Reference, SymRefType, ArrSizes};
+use crate::symbolic::ref_values::{ArrSize, ArrSizes, Boundary, Reference, SymRefType};
 use core::fmt;
 use rsmt2::print::ModelParser;
 use rsmt2::{self, SmtConf, SmtRes};
-use rustc_hash::FxHashSet;
+use rustc_hash::{FxHashMap, FxHashSet};
 use std::str::FromStr;
 
 type Formula = String;
 type Declarations = FxHashSet<(SymType, String)>;
 type Assertions = FxHashSet<String>;
+
+#[derive(Clone)]
 pub struct Model(Vec<(Identifier, Literal)>);
 
-impl Model {
 
+impl Model {
     /// given the identifier of one of the free variables, return it's value or panic
-    pub fn find(&self, fv_id: &Identifier) -> Literal{
-        self.0.as_slice().into_iter().find(|(e, _)| e == fv_id).unwrap().1.clone()
+    pub fn find(&self, fv_id: &Identifier) -> Literal {
+        self.0
+            .as_slice()
+            .into_iter()
+            .find(|(e, _)| e == fv_id)
+            .unwrap()
+            .1
+            .clone()
     }
 }
 
@@ -66,10 +74,13 @@ impl<'a> ModelParser<String, SymType, (Identifier, Literal), &'a str> for Parser
     }
 }
 
+type FormulaCache = FxHashMap<SymExpression, Option<Model>>;
+
 pub struct SolverEnv {
     solver: rsmt2::Solver<Parser>,
+    formula_cache: FormulaCache,
     pub config: Config,
-    pub diagnostics: Diagnostics
+    pub diagnostics: Diagnostics,
 }
 
 impl SolverEnv {
@@ -99,18 +110,30 @@ impl SolverEnv {
         solver.set_logic(rsmt2::Logic::QF_NIA).unwrap(); //set logic to quantifier free non-linear arithmetics
         SolverEnv {
             solver,
+            formula_cache: FxHashMap::default(),
             config: config.clone(),
-            diagnostics: Diagnostics::default()
+            diagnostics: Diagnostics::default(),
         }
     }
 
     /// returns a satisfying model of an expression if one was found
-    pub fn verify_expr(&mut self, expr: &SymExpression, sym_memory: &SymMemory, sizes: Option<&ArrSizes>) -> Option<Model> {
+    pub fn verify_expr(
+        &mut self,
+        expr: &SymExpression,
+        sym_memory: &SymMemory,
+        sizes: Option<&ArrSizes>,
+    ) -> Option<Model> {
+
+        // check formula cache
+        if self.config.formula_caching {
+            match self.formula_cache.get(expr) {
+                Some(res) => return res.clone(),
+                None => (),
+            };
+        };
 
         self.diagnostics.z3_calls += 1;
-
         self.solver.push(1).unwrap();
-
         let (expr_str, fvs, assertions) = expr_to_smtlib(expr, &sym_memory, sizes);
 
         if self.config.verbose {
@@ -151,6 +174,7 @@ impl SolverEnv {
 
         let rsmt2_model = self.solver.get_model();
         self.solver.pop(1).unwrap();
+
         //either return Sat(model) or Unsat
         if satisfiable {
             let mut model: Vec<(Identifier, Literal)> = vec![];
@@ -165,8 +189,17 @@ impl SolverEnv {
                 }
             };
 
-            Some(Model(model))
+            // update formula cache and return
+            let res = Some(Model(model));
+            if self.config.formula_caching {
+                self.formula_cache.insert(expr.clone(), res.clone());
+            };
+            res
         } else {
+            // update formula cache and return
+            if self.config.formula_caching {
+                self.formula_cache.insert(expr.clone(), None);
+            };
             None
         }
     }
@@ -189,7 +222,7 @@ impl fmt::Debug for Model {
 fn expr_to_smtlib<'a>(
     expr: &SymExpression,
     sym_memory: &SymMemory,
-    sizes: Option<&ArrSizes>
+    sizes: Option<&ArrSizes>,
 ) -> (Formula, Declarations, Assertions) {
     match expr {
         SymExpression::Forall(forall) => {
@@ -310,10 +343,12 @@ fn expr_to_smtlib<'a>(
             fv.insert((ty.clone(), closed_id.clone()));
             (format!("{}", closed_id), fv, FxHashSet::default())
         }
-        SymExpression::SizeOf(r, size_expr) => match sizes.map(|s|s.get(r)).flatten() {
-            Some(ArrSize::Point(n)) => {
-                expr_to_smtlib(&SymExpression::Literal(Literal::Integer(n)), &sym_memory, sizes)
-            }
+        SymExpression::SizeOf(r, size_expr) => match sizes.map(|s| s.get(r)).flatten() {
+            Some(ArrSize::Point(n)) => expr_to_smtlib(
+                &SymExpression::Literal(Literal::Integer(n)),
+                &sym_memory,
+                sizes,
+            ),
             Some(ArrSize::Range(Boundary::Known(min), Boundary::Known(max))) => {
                 let (expr, fv, mut a) = expr_to_smtlib(size_expr, &sym_memory, sizes);
                 a.insert(format!("(<= {} {})", min, expr));

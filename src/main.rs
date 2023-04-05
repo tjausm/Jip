@@ -37,6 +37,10 @@ struct Cli {
     #[clap(short, long)]
     infer_size: bool,
 
+    /// Turns on formula caching 
+    #[clap(short, long)]
+    formula_caching: bool,
+
     /// number between 0 and 127 denoting how deep we should prune
     /// , 0 = no pruning, 63 = prune to 50% of depth and so on
     #[clap(default_value_t = 0)]
@@ -108,6 +112,7 @@ fn main(){
             let config = Config {
                 simplify: cli.simplifier || cli.infer_size,
                 infer_size: cli.infer_size,
+                formula_caching: cli.formula_caching,
                 prune_ratio: cli.prune_ratio,
                 solver_type: solver_type,
                 verbose: verbose,
@@ -122,6 +127,7 @@ fn main(){
             let config = Config {
                 simplify: cli.simplifier || cli.infer_size,
                 infer_size: cli.infer_size,
+                formula_caching: cli.formula_caching,
                 prune_ratio: cli.prune_ratio,
                 solver_type: solver_type,
                 verbose: false,

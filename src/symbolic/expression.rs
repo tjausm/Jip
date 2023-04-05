@@ -623,7 +623,6 @@ pub struct Forall {
     value: Identifier,
     inner_expr: Expression,
     captured_memory: SymMemory,
-    pub sizes: Option<ArrSizes>,
 }
 
 impl Forall {
@@ -640,7 +639,6 @@ impl Forall {
             value,
             inner_expr,
             captured_memory,
-            sizes: None,
         }
     }
 
@@ -705,7 +703,6 @@ impl Forall {
             Box::new(SymExpression::Literal(Literal::Integer(0))),
         );
 
-        let size = self.sizes.as_ref().map(|s| s.get(&r)).flatten();
         let i_lt_size = SymExpression::LT(
             Box::new(index_id.clone()),
             Box::new(SymExpression::SizeOf(r, Box::new(size_expr.clone()))),
@@ -747,6 +744,20 @@ enum HashExpression {
     FreeVariable(SymType, Identifier),
     SizeOf(Reference),
     Reference(Reference),
+    Forall(u64),
+    Exists(u64),
+    Implies(u64, u64),
+    And(u64, u64),
+    Or(u64, u64),
+    EQ(u64, u64),
+    NE(u64, u64),
+    LT(u64, u64),
+    GT(u64, u64),
+    GEQ(u64, u64),
+    LEQ(u64, u64),
+    Not(u64),
+    LazyReference(u64),
+    Uninitialized
 }
 
 fn calculate_hash<T: Hash>(t: &T) -> u64 {
@@ -822,7 +833,40 @@ impl Hash for SymExpression {
             }
             SymExpression::Reference(r) => HashExpression::Reference(r.clone()).hash(state),
             SymExpression::Literal(lit) => lit.hash(state),
-            _ => panic_with_diagnostics(&format!("Cannot hash expression {:?}", self), &()),
+            SymExpression::Implies(l_expr, r_expr) => {
+                HashExpression::Implies(calculate_hash(&*l_expr), calculate_hash(&*r_expr)).hash(state)
+            }
+            SymExpression::Forall(_) => todo!(),
+            SymExpression::Exists(_, _, _, _) => todo!(),
+            SymExpression::And(l_expr, r_expr) => {
+                HashExpression::Mod(calculate_hash(&*l_expr), calculate_hash(&*r_expr)).hash(state)
+            }
+            SymExpression::Or(l_expr, r_expr) => {
+                HashExpression::Or(calculate_hash(&*l_expr), calculate_hash(&*r_expr)).hash(state)
+            }
+            SymExpression::EQ(l_expr, r_expr) => {
+                HashExpression::EQ(calculate_hash(&*l_expr), calculate_hash(&*r_expr)).hash(state)
+            }
+            SymExpression::NE(l_expr, r_expr) => {
+                HashExpression::NE(calculate_hash(&*l_expr), calculate_hash(&*r_expr)).hash(state)
+            }
+            SymExpression::LT(l_expr, r_expr) => {
+                HashExpression::LT(calculate_hash(&*l_expr), calculate_hash(&*r_expr)).hash(state)
+            }
+            SymExpression::GT(l_expr, r_expr) => {
+                HashExpression::GT(calculate_hash(&*l_expr), calculate_hash(&*r_expr)).hash(state)
+            }
+            SymExpression::GEQ(l_expr, r_expr) => {
+                HashExpression::GEQ(calculate_hash(&*l_expr), calculate_hash(&*r_expr)).hash(state)
+            }
+            SymExpression::LEQ(l_expr, r_expr) => {
+                HashExpression::LEQ(calculate_hash(&*l_expr), calculate_hash(&*r_expr)).hash(state)
+            }
+            SymExpression::Not(expr) => {
+                HashExpression::Not(calculate_hash(&*expr)).hash(state)
+            }
+            SymExpression::LazyReference(_) => todo!(),
+            SymExpression::Uninitialized => todo!(),
         }
     }
 }

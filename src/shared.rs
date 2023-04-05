@@ -39,6 +39,7 @@ pub enum SolverType {
 pub struct Config {
     pub simplify: bool,
     pub infer_size: bool,
+    pub formula_caching: bool,
     pub prune_ratio: i8,
     pub solver_type: SolverType,
     pub verbose: bool,
