@@ -2,6 +2,7 @@
 //!
 
 use core::fmt;
+use rand::prelude::*;
 use std::{
     collections::hash_map::DefaultHasher,
     hash::{Hash, Hasher},
@@ -744,8 +745,8 @@ enum HashExpression {
     FreeVariable(SymType, Identifier),
     SizeOf(Reference),
     Reference(Reference),
-    Forall(u64),
-    Exists(u64),
+    Forall(Reference, Identifier, Identifier, SymExpression),
+    Exists(Reference, Identifier, Identifier, SymExpression),
     Implies(u64, u64),
     And(u64, u64),
     Or(u64, u64),
@@ -835,9 +836,7 @@ impl Hash for SymExpression {
             SymExpression::Literal(lit) => lit.hash(state),
             SymExpression::Implies(l_expr, r_expr) => {
                 HashExpression::Implies(calculate_hash(&*l_expr), calculate_hash(&*r_expr)).hash(state)
-            }
-            SymExpression::Forall(_) => todo!(),
-            SymExpression::Exists(_, _, _, _) => todo!(),
+            },
             SymExpression::And(l_expr, r_expr) => {
                 HashExpression::Mod(calculate_hash(&*l_expr), calculate_hash(&*r_expr)).hash(state)
             }
@@ -865,8 +864,12 @@ impl Hash for SymExpression {
             SymExpression::Not(expr) => {
                 HashExpression::Not(calculate_hash(&*expr)).hash(state)
             }
-            SymExpression::LazyReference(_) => todo!(),
-            SymExpression::Uninitialized => todo!(),
+            SymExpression::LazyReference(lr) => lr.hash(state),
+            SymExpression::Uninitialized => {
+                HashExpression::Uninitialized.hash(state)
+            }
+            SymExpression::Forall(_) => rand::random::<u64>().hash(state),
+            SymExpression::Exists(_, _, _, _) => rand::random::<u64>().hash(state),
         }
     }
 }

@@ -5,9 +5,7 @@ edition = "2021"
 build = "build.rs" # LALRPOP preprocessing
 resolver = "1" #solves issue with lexer (https://github.com/lalrpop/lalrpop/issues/616)
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[build-dependencies] # <-- We added this and everything after!
+[build-dependencies]
 lalrpop = "0.19.7"
 
 [dependencies]
@@ -19,6 +17,7 @@ assert_cmd = "2.0.4" #integration testing through cmd line
 rustc-hash = "1.1.0" #more efficient hashmap/hashset
 colored = "2.0.0" # pretty prenting in terminal
 rsmt2 = "0.16.2"
+rand = "0.8.5" # random number generation
 global_counter = "0.2.2" # reference generation
 
 [profile.release]

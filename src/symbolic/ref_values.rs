@@ -39,7 +39,7 @@ impl Reference {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Hash)]
 pub struct LazyReference {
     r: Reference,
     class: Identifier,
