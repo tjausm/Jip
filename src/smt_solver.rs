@@ -611,20 +611,15 @@ fn expr_to_dynamic<'ctx, 'a>(
         SymExpression::Reference(r) => {
             z3::ast::Dynamic::from(z3::ast::Int::from_i64(ctx, r.get().into()))
         }
-        SymExpression::Forall(_) => todo!(),
-        SymExpression::Exists(_, _, _, _) => todo!(),
-        SymExpression::SizeOf(_, _) => todo!(),
-        SymExpression::LazyReference(_) => todo!(),
-        SymExpression::Uninitialized => todo!(),
-        // otherwise => {
-        //     panic_with_diagnostics(
-        //         &format!(
-        //             "Expressions of the form {:?} are not parseable to a z3 ast",
-        //             otherwise
-        //         ),
-        //         &()
-        //     );
-        // }
+        otherwise => {
+            panic_with_diagnostics(
+                &format!(
+                    "Expressions of the form {:?} are not parseable to a z3 ast",
+                    otherwise
+                ),
+                &()
+            );
+        }
     }
 }
 

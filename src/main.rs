@@ -55,6 +55,9 @@ struct Cli {
     /// Passes the custom argument to call yices2
     #[clap(long)]
     yices2_arg: Option<String>,
+    /// Use z3's c++ api
+    #[clap(long)]
+    z3_api: bool,
 }
 
 #[derive(Subcommand)]
@@ -92,11 +95,12 @@ fn main(){
         exit(exit_code as i32);
     };
 
-    let solver_type = match (cli.z3_arg, cli.cvc4_arg, cli.yices2_arg) {
-        (Some(arg), _, _) => SolverType::Z3(arg),
-        (_, Some(arg), _) => SolverType::CVC4(arg),
-        (_, _, Some(arg)) => SolverType::Yices2(arg),
-        (_, _, _) => SolverType::Default,
+    let solver_type = match (cli.z3_arg, cli.cvc4_arg, cli.yices2_arg, cli.z3_api) {
+        (Some(arg), _, _, _) => SolverType::Z3(arg),
+        (_, Some(arg), _, _) => SolverType::CVC4(arg),
+        (_, _, Some(arg), _) => SolverType::Yices2(arg),
+        (_,_,_,true) => SolverType::Z3Api,
+        (_, _, _, _) => SolverType::Default,
     };
 
     // attempt to load program, and exit with exitcode and error if fails

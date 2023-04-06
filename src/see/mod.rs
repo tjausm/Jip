@@ -52,7 +52,7 @@ pub fn bench(
 
         // format duration to string of length 5
         let dur = now.elapsed();
-        let time = format!("{:?},{:0<3}", dur.as_secs(), dur.as_millis());
+        let time = format!("{:?},{:0>3}", dur.as_secs(), dur.as_millis());
         println!(
             "{:<12}{:<12}{:<12}{:<12}",
             depth,
