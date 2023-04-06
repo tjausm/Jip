@@ -32,6 +32,7 @@ pub enum SolverType {
     Z3(String),
     Yices2(String),
     CVC4(String),
+    Z3Api,
     Default,
 }
 

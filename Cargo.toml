@@ -17,6 +17,7 @@ assert_cmd = "2.0.4" #integration testing through cmd line
 rustc-hash = "1.1.0" #more efficient hashmap/hashset
 colored = "2.0.0" # pretty prenting in terminal
 rsmt2 = "0.16.2"
+z3 = {version="0.11.2", features = ["static-link-z3"]}
 rand = "0.8.5" # random number generation
 global_counter = "0.2.2" # reference generation
 

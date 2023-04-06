@@ -1,0 +1,5 @@
+assume 1 < x;
+int x;
+while (0 < x) x := x - 1;
+int y := x;
+assert y < 1;
