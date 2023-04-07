@@ -7,7 +7,8 @@ use crate::symbolic::memory::SymMemory;
 use crate::symbolic::ref_values::{ArrSize, ArrSizes, Boundary, Reference, SymRefType};
 use core::fmt;
 use rsmt2::print::ModelParser;
-use rsmt2::{self, SmtConf, SmtRes};
+use rsmt2;
+use z3;
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::str::FromStr;
 
@@ -41,8 +42,8 @@ impl<'a> rsmt2::print::IdentParser<String, SymType, &'a str> for Parser {
     }
     fn parse_type(self, ty: &'a str) -> rsmt2::SmtRes<SymType> {
         match ty {
-            ty if ty == "Int" => SmtRes::Ok(SymType::Int),
-            ty if ty == "Bool" => SmtRes::Ok(SymType::Bool),
+            ty if ty == "Int" => rsmt2::SmtRes::Ok(SymType::Int),
+            ty if ty == "Bool" => rsmt2::SmtRes::Ok(SymType::Bool),
             _ => panic_with_diagnostics(&format!("Error shouldn't happen"), &()),
         }
     }
@@ -55,7 +56,7 @@ impl<'a> ModelParser<String, SymType, (Identifier, Literal), &'a str> for Parser
         id: &String,
         _: &[(String, SymType)],
         ty: &SymType,
-    ) -> SmtRes<(Identifier, Literal)> {
+    ) -> rsmt2::SmtRes<(Identifier, Literal)> {
         // remove spaces & braces from input
         let clean_input = input.replace(&['(', ')', ' '][..], "");
         let clean_id = id.replace("|", "");
@@ -76,38 +77,70 @@ impl<'a> ModelParser<String, SymType, (Identifier, Literal), &'a str> for Parser
 
 type FormulaCache = FxHashMap<SymExpression, Option<Model>>;
 
-pub struct SolverEnv {
-    solver: rsmt2::Solver<Parser>,
+enum Solver<'a> {
+    Rsmt2(rsmt2::Solver<Parser>),
+    Z3Api(z3::Solver<'a>)
+}
+
+pub struct SolverEnv<'a> {
+    solver: Solver<'a>,
     formula_cache: FormulaCache,
     pub config: Config,
     pub diagnostics: Diagnostics,
 }
 
-impl SolverEnv {
+impl SolverEnv<'_> {
+
+    pub fn build_ctx() -> z3::Context {
+        let z3_cfg = z3::Config::new();
+        let ctx = z3::Context::new(&z3_cfg);
+        ctx
+    }
+
     /// Creates a new solver using the configured backend.
     /// For both Yices and Cvc we pas a set of flags to make them work with the rust interface
-    pub fn new(config: &Config) -> SolverEnv {
-        let conf = match &config.solver_type {
-            SolverType::Z3(arg) => SmtConf::z3(arg),
+    pub fn new<'ctx>(config: &'ctx Config, ctx: &'ctx z3::Context) -> SolverEnv<'ctx> {
+        let mut solver = match &config.solver_type {
+            SolverType::Z3(arg) => {
+                let conf = rsmt2::SmtConf::z3(arg);
+                let solver =  rsmt2::Solver::new(conf, Parser).unwrap();
+                Solver::Rsmt2(solver)
+            },
             SolverType::Yices2(arg) => {
-                let mut conf = SmtConf::yices_2(arg);
+                let mut conf = rsmt2::SmtConf::yices_2(arg);
                 conf.option("--incremental"); //add support for scope popping and pushing from solver
                 conf.option("--interactive"); //add support for scope popping and pushing from solvercargo
-                conf
+                let solver = rsmt2::Solver::new(conf, Parser).unwrap();
+                Solver::Rsmt2(solver)
             }
             SolverType::CVC4(arg) => {
-                let mut conf = SmtConf::cvc4(arg);
+                let mut conf = rsmt2::SmtConf::cvc4(arg);
                 conf.option("--incremental"); //add support for scope popping and pushing from solver
                 conf.option("--rewrite-divk"); //add support for `div` and `mod` operators (not working)
-                conf
+                let solver = rsmt2::Solver::new(conf, Parser).unwrap();
+                Solver::Rsmt2(solver)
             }
-            SolverType::Default => SmtConf::default_z3(),
+            SolverType::Default => {
+                let conf = rsmt2::SmtConf::default_z3();
+                let solver =  rsmt2::Solver::new(conf, Parser).unwrap();
+                Solver::Rsmt2(solver)
+            },
+            SolverType::Z3Api => {
+                Solver::Z3Api(z3::Solver::new(&ctx))    
+            }
         };
 
-        let mut solver = rsmt2::Solver::new(conf, Parser).unwrap();
-        solver.set_option(":print-success", "false").unwrap(); //turn off automatic succes printing in yices2
-        solver.produce_models().unwrap();
-        solver.set_logic(rsmt2::Logic::QF_NIA).unwrap(); //set logic to quantifier free non-linear arithmetics
+        // configure rsmt2 solvers
+        match solver {
+            Solver::Rsmt2(mut s) => {
+                s.set_option(":print-success", "false").unwrap(); //turn off automatic succes printing in yices2
+                s.produce_models().unwrap();
+                s.set_logic(rsmt2::Logic::QF_NIA).unwrap(); //set logic to quantifier free non-linear arithmetics
+                solver = Solver::Rsmt2(s);
+            }
+            _ => (),
+        };
+
         SolverEnv {
             solver,
             formula_cache: FxHashMap::default(),
@@ -133,10 +166,27 @@ impl SolverEnv {
         };
 
         self.diagnostics.z3_calls += 1;
-        self.solver.push(1).unwrap();
+        match &mut self.solver{
+            Solver::Rsmt2(solver) => SolverEnv::verify_with_rsmt2(&self.config, solver, &mut self.formula_cache, expr, sym_memory, sizes),
+            Solver::Z3Api(solver) => SolverEnv::verify_with_z3api(&self.config, solver, &mut self.formula_cache, expr, sym_memory, sizes),
+        }
+
+
+    }
+
+    fn verify_with_rsmt2(
+        config: &Config,
+        solver: &mut rsmt2::Solver<Parser>,
+        formula_cache: &mut FormulaCache,
+        expr: &SymExpression,
+        sym_memory: &SymMemory,
+        sizes: Option<&ArrSizes>,
+    )-> Option<Model>{
+
+        solver.push(1).unwrap();
         let (expr_str, fvs, assertions) = expr_to_smtlib(expr, &sym_memory, sizes);
 
-        if self.config.verbose {
+        if config.verbose {
             println!("\nInvoking z3");
             println!("SymExpression: {:?}", &expr);
             println!("  Declarations: {:?}", fvs);
@@ -151,17 +201,17 @@ impl SolverEnv {
 
         for fv in fvs {
             match fv {
-                (SymType::Bool, id) => self.solver.declare_const(id, "Bool").unwrap(),
-                (SymType::Int, id) => self.solver.declare_const(id, "Int").unwrap(),
-                (SymType::Ref(_), id) => self.solver.declare_const(id, "Int").unwrap(),
+                (SymType::Bool, id) => solver.declare_const(id, "Bool").unwrap(),
+                (SymType::Int, id) => solver.declare_const(id, "Int").unwrap(),
+                (SymType::Ref(_), id) => solver.declare_const(id, "Int").unwrap(),
             }
         }
         for assertion in assertions {
-            self.solver.assert(assertion).unwrap();
+            solver.assert(assertion).unwrap();
         }
 
-        self.solver.assert(expr_str.clone()).unwrap();
-        let satisfiable = match self.solver.check_sat() {
+        solver.assert(expr_str.clone()).unwrap();
+        let satisfiable = match solver.check_sat() {
             Ok(b) => b,
             Err(err) => panic_with_diagnostics(
                 &format!(
@@ -172,8 +222,8 @@ impl SolverEnv {
             ),
         };
 
-        let rsmt2_model = self.solver.get_model();
-        self.solver.pop(1).unwrap();
+        let rsmt2_model = solver.get_model();
+        solver.pop(1).unwrap();
 
         //either return Sat(model) or Unsat
         if satisfiable {
@@ -191,17 +241,51 @@ impl SolverEnv {
 
             // update formula cache and return
             let res = Some(Model(model));
-            if self.config.formula_caching {
-                self.formula_cache.insert(expr.clone(), res.clone());
+            if config.formula_caching {
+                formula_cache.insert(expr.clone(), res.clone());
             };
             res
         } else {
             // update formula cache and return
-            if self.config.formula_caching {
-                self.formula_cache.insert(expr.clone(), None);
+            if config.formula_caching {
+                formula_cache.insert(expr.clone(), None);
             };
             None
         }
+    }
+
+
+    fn verify_with_z3api(
+        config: &Config,
+        solver: &mut z3::Solver,
+        formula_cache: &mut FormulaCache,
+        expr: &SymExpression,
+        sym_memory: &SymMemory,
+        sizes: Option<&ArrSizes>,
+    ) -> Option<Model>{
+        solver.push();
+        let ast = expr_to_bool(solver.get_context(), expr, sym_memory, sizes);
+
+        if config.verbose {
+            println!("\nInvoking z3");
+            println!("SymExpression: {:?}", &expr);
+
+            println!("    Formula: {:?}\n", ast);
+        }
+
+
+        solver.assert(&ast);
+
+        let res = match solver.check(){
+            z3::SatResult::Unsat => None,
+            z3::SatResult::Unknown => panic_with_diagnostics(&format!("Ooh noo, solving expression {:?} gave an unknown result", expr), &()),
+            z3::SatResult::Sat => Some(Model(vec![])),
+        };
+        solver.pop(1);
+        if config.formula_caching {
+            formula_cache.insert(expr.clone(), res.clone());
+        };
+        res
     }
 }
 
@@ -215,6 +299,8 @@ impl fmt::Debug for Model {
         write!(f, "{}", model_str)
     }
 }
+
+
 
 /// returns an expression as RSMT parseable string
 /// with a set of declarations declaring free variables
@@ -408,5 +494,166 @@ fn expr_to_smtlib<'a>(
                 &(),
             );
         }
+    }
+}
+
+/// returns an expression as a Int ast in z3's c++ api
+fn expr_to_int<'ctx, 'a>(
+    ctx: &'ctx z3::Context,
+    expr: &'a SymExpression,
+    sym_memory: &SymMemory,
+    sizes: Option<&ArrSizes>,
+) -> z3::ast::Int<'ctx> {
+    return unwrap_as_int(expr_to_dynamic(&ctx,  expr, sym_memory, sizes));
+}
+
+/// returns an expression as a Bool ast in z3's c++ api
+fn expr_to_bool<'ctx, 'a>(
+    ctx: &'ctx z3::Context,
+    expr: &'a SymExpression,
+    sym_memory: &SymMemory,
+    sizes: Option<&ArrSizes>,
+) -> z3::ast::Bool<'ctx> {
+    return unwrap_as_bool(expr_to_dynamic(&ctx,  expr, sym_memory, sizes));
+}
+
+fn expr_to_dynamic<'ctx, 'a>(
+    ctx: &'ctx z3::Context,
+    expr: &'a SymExpression,
+    sym_memory: &SymMemory,
+    sizes: Option<&ArrSizes>,
+) -> z3::ast::Dynamic<'ctx> {
+    match expr {
+        SymExpression::And(l_expr, r_expr) => {
+            let l = expr_to_bool(ctx,  l_expr, sym_memory, sizes);
+            let r = expr_to_bool(ctx,  r_expr, sym_memory, sizes);
+
+            return z3::ast::Dynamic::from(z3::ast::Bool::and(ctx, &[&l, &r]));
+        }
+        SymExpression::Or(l_expr, r_expr) => {
+            let l = expr_to_bool(ctx,  l_expr, sym_memory, sizes);
+            let r = expr_to_bool(ctx,  r_expr, sym_memory, sizes);
+
+            return z3::ast::Dynamic::from(z3::ast::Bool::or(ctx, &[&l, &r]));
+        }
+        SymExpression::Implies(l_expr, r_expr) => {
+            let l = expr_to_bool(ctx,  l_expr, sym_memory, sizes);
+            let r = expr_to_bool(ctx,  r_expr, sym_memory, sizes);
+
+            return z3::ast::Dynamic::from(l.implies(&r));
+        }
+        SymExpression::EQ(l_expr, r_expr) => {
+            let l = expr_to_dynamic(ctx,  l_expr, sym_memory, sizes);
+            let r = expr_to_dynamic(ctx,  r_expr, sym_memory, sizes);
+
+            return z3::ast::Dynamic::from(z3::ast::Ast::_eq(&l, &r));
+        }
+        SymExpression::NE(l_expr, r_expr) => {
+            let l = expr_to_dynamic(ctx,  l_expr, sym_memory, sizes);
+            let r = expr_to_dynamic(ctx,  r_expr, sym_memory, sizes);
+
+            return z3::ast::Dynamic::from(z3::ast::Ast::_eq(&l, &r).not());
+        }
+        SymExpression::LT(l_expr, r_expr) => {
+            let l = expr_to_int(ctx,  l_expr, sym_memory, sizes);
+            let r = expr_to_int(ctx,  r_expr, sym_memory, sizes);
+
+            return z3::ast::Dynamic::from(l.lt(&r));
+        }
+        SymExpression::GT(l_expr, r_expr) => {
+            let l = expr_to_int(ctx,  l_expr, sym_memory, sizes);
+            let r = expr_to_int(ctx,  r_expr, sym_memory, sizes);
+
+            return z3::ast::Dynamic::from(l.gt(&r));
+        }
+        SymExpression::GEQ(l_expr, r_expr) => {
+            let l = expr_to_int(ctx,  l_expr, sym_memory, sizes);
+            let r = expr_to_int(ctx,  r_expr, sym_memory, sizes);
+
+            return z3::ast::Dynamic::from(l.ge(&r));
+        }
+        SymExpression::LEQ(l_expr, r_expr) => {
+            let l = expr_to_int(ctx,  l_expr, sym_memory, sizes);
+            let r = expr_to_int(ctx,  r_expr, sym_memory, sizes);
+
+            return z3::ast::Dynamic::from(l.le(&r));
+        }
+        SymExpression::Plus(l_expr, r_expr) => {
+            let l = expr_to_int(ctx,  l_expr, sym_memory, sizes);
+            let r = expr_to_int(ctx,  r_expr, sym_memory, sizes);
+
+            return z3::ast::Dynamic::from(z3::ast::Int::add(&ctx, &[&l, &r]));
+        }
+        SymExpression::Minus(l_expr, r_expr) => {
+            let l = expr_to_int(ctx,  l_expr, sym_memory, sizes);
+            let r = expr_to_int(ctx,  r_expr, sym_memory, sizes);
+
+            return z3::ast::Dynamic::from(z3::ast::Int::sub(&ctx, &[&l, &r]));
+        }
+        SymExpression::Multiply(l_expr, r_expr) => {
+            let l = expr_to_int(ctx,  l_expr, sym_memory, sizes);
+            let r = expr_to_int(ctx,  r_expr, sym_memory, sizes);
+
+            return z3::ast::Dynamic::from(z3::ast::Int::mul(&ctx, &[&l, &r]));
+        }
+        SymExpression::Divide(l_expr, r_expr) => {
+            let l = expr_to_int(ctx,  l_expr, sym_memory, sizes);
+            let r = expr_to_int(ctx,  r_expr, sym_memory, sizes);
+
+            return z3::ast::Dynamic::from(l.div(&r));
+        }
+        SymExpression::Mod(l_expr, r_expr) => {
+            let l = expr_to_int(ctx,  l_expr, sym_memory, sizes);
+            let r = expr_to_int(ctx,  r_expr, sym_memory, sizes);
+
+            return z3::ast::Dynamic::from(l.modulo(&r));
+        }
+        SymExpression::Negative(expr) => {
+            let e = expr_to_int(ctx,  expr, sym_memory, sizes);
+
+            return z3::ast::Dynamic::from(e.unary_minus());
+        }
+        SymExpression::Not(expr) => {
+            let expr = expr_to_bool(ctx,  expr, sym_memory, sizes);
+
+            return z3::ast::Dynamic::from(expr.not());
+        }
+        SymExpression::FreeVariable(ty, id) => match ty {
+            SymType::Bool => z3::ast::Dynamic::from(z3::ast::Bool::new_const(ctx, id.clone())),
+            SymType::Int => z3::ast::Dynamic::from(z3::ast::Int::new_const(ctx, id.clone())),
+            SymType::Ref(_) => z3::ast::Dynamic::from(z3::ast::Int::new_const(ctx, id.clone())),
+        },
+        SymExpression::Literal(Literal::Integer(n)) => z3::ast::Dynamic::from(z3::ast::Int::from_i64(ctx, *n)),
+        SymExpression::Literal(Literal::Boolean(b)) => z3::ast::Dynamic::from(z3::ast::Bool::from_bool(ctx, *b)),
+        SymExpression::Reference(r) => {
+            z3::ast::Dynamic::from(z3::ast::Int::from_i64(ctx, r.get().into()))
+        }
+        otherwise => {
+            panic_with_diagnostics(
+                &format!(
+                    "Expressions of the form {:?} are not parseable to a z3 ast",
+                    otherwise
+                ),
+                &()
+            );
+        }
+    }
+}
+
+
+
+fn unwrap_as_bool(d: z3::ast::Dynamic) -> z3::ast::Bool {
+    match d.as_bool() {
+        Some(b) => b,
+        None => panic_with_diagnostics(&format!("{} is not of type Bool", d), &()),
+    }
+}
+
+
+
+fn unwrap_as_int(d: z3::ast::Dynamic) -> z3::ast::Int {
+    match d.as_int() {
+        Some(b) => b,
+        None => panic_with_diagnostics(&format!("{} is not of type Int", d), &()),
     }
 }
