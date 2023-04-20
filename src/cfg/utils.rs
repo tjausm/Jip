@@ -42,10 +42,10 @@ impl fmt::Debug for Node {
         match self {
             Node::EnteringMain(_) => write!(f, "Entering Main.main"),
             Node::Statement(stmt) => write!(f, "{:?}", stmt),
-            Node::EnterRoutine(r) => {
+            Node::EnterProcedure(r) => {
                 write!(f, "Entering {:?}", r)
             }
-            Node::LeaveRoutine(r) => {
+            Node::LeaveProcedure(r) => {
                 write!(f, "Leaving {:?}", r)
             }
             Node::End => {

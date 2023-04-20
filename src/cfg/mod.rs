@@ -506,9 +506,9 @@ fn routinebody_to_cfg<'a>(
     // if constructor get_constructorbody
     let (_, _, body) = get_routine_content(prog, &routine);
 
-    let enter_function = cfg.add_node(Node::EnterRoutine(routine.clone()));
+    let enter_function = cfg.add_node(Node::EnterProcedure(routine.clone()));
 
-    let leave_function = cfg.add_node(Node::LeaveRoutine(routine.clone()));
+    let leave_function = cfg.add_node(Node::LeaveProcedure(routine.clone()));
 
     //update environments
     ty_env.push();

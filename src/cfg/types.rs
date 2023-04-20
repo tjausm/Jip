@@ -8,9 +8,9 @@ pub enum Node {
     EnteringMain(Parameters),
     Statement(Statement),
     /// classname, methodname and list of expressions we assign to parameters
-    EnterRoutine(Routine),
+    EnterProcedure(Routine),
     /// classname, methodname and variable name we assign retval to
-    LeaveRoutine(Routine),
+    LeaveProcedure(Routine),
     End,
 }
 
