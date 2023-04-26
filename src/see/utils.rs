@@ -203,7 +203,8 @@ pub fn assume(
         (_, SymExpression::Literal(Literal::Boolean(false))) => return false,
         // if z3 finds a satisfying model return true, otherwise return false
         (true, _) => {
-            solver.verify_expr(&constraints, sym_memory, Some(sizes)).is_some()
+            let res = solver.verify_expr(&constraints, sym_memory, Some(sizes));
+            res.is_some()
         }
         // if either not proved or z3 is turned off we just return true and go on
         (false, _) => true,

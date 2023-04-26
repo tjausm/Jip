@@ -77,22 +77,29 @@ impl<'a> ModelParser<String, SymType, (Identifier, Literal), &'a str> for Parser
 
 type FormulaCache = FxHashMap<SymExpression, Option<Model>>;
 
-enum Solver {
+enum Solver<'a> {
     Rsmt2(rsmt2::Solver<Parser>),
-    Z3Api(z3::Context)
+    Z3Api(z3::Solver<'a>)
 }
 
-pub struct SolverEnv {
-    solver: Solver,
+pub struct SolverEnv<'a> {
+    solver: Solver<'a>,
     formula_cache: FormulaCache,
     pub config: Config,
     pub diagnostics: Diagnostics,
 }
 
-impl SolverEnv {
+impl SolverEnv<'_> {
+
+    pub fn build_ctx() -> z3::Context {
+        let z3_cfg = z3::Config::new();
+        let ctx = z3::Context::new(&z3_cfg);
+        ctx
+    }
+
     /// Creates a new solver using the configured backend.
     /// For both Yices and Cvc we pas a set of flags to make them work with the rust interface
-    pub fn new(config: &Config) -> SolverEnv {
+    pub fn new<'ctx>(config: &'ctx Config, ctx: &'ctx z3::Context) -> SolverEnv<'ctx> {
         let mut solver = match &config.solver_type {
             SolverType::Z3(arg) => {
                 let conf = rsmt2::SmtConf::z3(arg);
@@ -119,8 +126,7 @@ impl SolverEnv {
                 Solver::Rsmt2(solver)
             },
             SolverType::Z3Api => {
-                let z3_cfg = z3::Config::new();
-                Solver::Z3Api(z3::Context::new(&z3_cfg))    
+                Solver::Z3Api(z3::Solver::new(&ctx))    
             }
         };
 
@@ -162,7 +168,7 @@ impl SolverEnv {
         self.diagnostics.z3_calls += 1;
         match &mut self.solver{
             Solver::Rsmt2(solver) => SolverEnv::verify_with_rsmt2(&self.config, solver, &mut self.formula_cache, expr, sym_memory, sizes),
-            Solver::Z3Api(ctx) => SolverEnv::verify_with_z3api(&self.config, ctx, &mut self.formula_cache, expr, sym_memory, sizes),
+            Solver::Z3Api(solver) => SolverEnv::verify_with_z3api(&self.config, solver, &mut self.formula_cache, expr, sym_memory, sizes),
         }
 
 
@@ -251,20 +257,31 @@ impl SolverEnv {
 
     fn verify_with_z3api(
         config: &Config,
-        ctx: &z3::Context,
+        solver: &mut z3::Solver,
         formula_cache: &mut FormulaCache,
         expr: &SymExpression,
         sym_memory: &SymMemory,
         sizes: Option<&ArrSizes>,
     ) -> Option<Model>{
-        let solver = z3::Solver::new(&ctx);
-        let ast = expr_to_bool(&ctx, expr, sym_memory, sizes);
+        solver.push();
+        let ast = expr_to_bool(solver.get_context(), expr, sym_memory, sizes);
+
+        if config.verbose {
+            println!("\nInvoking z3");
+            println!("SymExpression: {:?}", &expr);
+
+            println!("    Formula: {:?}\n", ast);
+        }
+
+
         solver.assert(&ast);
+
         let res = match solver.check(){
             z3::SatResult::Unsat => None,
             z3::SatResult::Unknown => panic_with_diagnostics(&format!("Ooh noo, solving expression {:?} gave an unknown result", expr), &()),
             z3::SatResult::Sat => Some(Model(vec![])),
         };
+        solver.pop(1);
         if config.formula_caching {
             formula_cache.insert(expr.clone(), res.clone());
         };

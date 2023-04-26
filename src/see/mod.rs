@@ -149,7 +149,8 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
     let prune_depth = (f64::from(d) - f64::from(d) * prune_coefficient) as i32;
 
     //init solver, config & diagnostics
-    let mut solver_env = SolverEnv::new(&config);
+    let ctx = SolverEnv::build_ctx();
+    let mut solver_env = SolverEnv::new(&config, &ctx);
 
     // init retval and this such that it outlives env
     let retval_id = &"retval".to_string();
