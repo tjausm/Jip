@@ -16,7 +16,7 @@ use crate::shared::{panic_with_diagnostics, Depth, Diagnostics, Error};
 use crate::smt_solver::SolverEnv;
 use crate::symbolic::expression::{PathConstraints, SymExpression, SymType};
 use crate::symbolic::memory::SymMemory;
-use crate::symbolic::ref_values::{ArrSizes, EvaluatedRefs, LazyReference, Reference, SymRefType};
+use crate::symbolic::ref_values::{IntervalMap, EvaluatedRefs, LazyReference, Reference, SymRefType};
 
 use colored::Colorize;
 use petgraph::stable_graph::NodeIndex;
@@ -119,7 +119,7 @@ fn print_debug(
     node: &Node,
     sym_memory: &SymMemory,
     pc: &PathConstraints,
-    sizes: &ArrSizes,
+    i: &IntervalMap,
     eval_refs: &EvaluatedRefs,
     trace: &Trace,
 ) {
@@ -137,7 +137,7 @@ fn print_debug(
     if dump_state {
         println!(
             "{:?}\n\n{}\n\n{}\n\n{:?}\n\n{}\n\n{:?}",
-            node, print_trace, print_pc, sizes, print_eval_refs, sym_memory
+            node, print_trace, print_pc, i, print_eval_refs, sym_memory
         );
     } else {
         println!("{:?}", node);
@@ -163,7 +163,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
     let mut q: VecDeque<(
         SymMemory,
         PathConstraints,
-        ArrSizes,
+        IntervalMap,
         EvaluatedRefs,
         Depth,
         NodeIndex,
@@ -172,7 +172,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
     q.push_back((
         SymMemory::new(prog.clone()),
         PathConstraints::default(),
-        ArrSizes::default(),
+        IntervalMap::default(),
         FxHashSet::default(),
         d,
         start_node,
@@ -183,7 +183,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
     'q_states: while let Some((
         mut sym_memory,
         mut pc,
-        mut sizes,
+        mut i,
         mut eval_refs,
         d,
         curr_node,
@@ -200,7 +200,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                 &cfg[curr_node],
                 &sym_memory,
                 &pc,
-                &sizes,
+                &i,
                 &eval_refs,
                 &trace,
             );
@@ -267,7 +267,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                         if !assume(
                             &mut sym_memory,
                             &mut pc,
-                            &mut sizes,
+                            &mut i,
                             &eval_refs,
                             d > prune_depth,
                             &mut solver_env,
@@ -279,7 +279,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                     Statement::Assert(assertion) => assert(
                         &mut sym_memory,
                         &mut pc,
-                        &mut sizes,
+                        &mut i,
                         &eval_refs,
                         &mut solver_env,
                         assertion,
@@ -289,9 +289,8 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                         if !lhs_from_rhs(
                             &mut sym_memory,
                             &pc,
-                            &mut sizes,
+                            &mut i,
                             &mut eval_refs,
-                            &config,
                             &mut solver_env,
                             lhs,
                             rhs,
@@ -385,7 +384,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                         Lhs::AccessField(obj_name, field) => {
                             match sym_memory.heap_access_object(
                                 &pc,
-                                &sizes,
+                                &i,
                                 &mut eval_refs,
                                 &mut solver_env,
                                 obj_name,
@@ -404,7 +403,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                         Lhs::AccessArray(arr_name, index) => {
                             let expr = sym_memory.heap_access_array(
                                 &pc,
-                                &sizes,
+                                &i,
                                 &mut solver_env,
                                 arr_name,
                                 index.clone(),
@@ -430,7 +429,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                             Lhs::AccessField(obj_name, field) => {
                                 sym_memory.heap_access_object(
                                     &pc,
-                                    &sizes,
+                                    &i,
                                     &mut eval_refs,
                                     &mut solver_env,
                                     obj_name,
@@ -441,7 +440,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                             Lhs::AccessArray(arr_name, index) => {
                                 sym_memory.heap_access_array(
                                     &pc,
-                                    &sizes,
+                                    &i,
                                     &mut solver_env,
                                     arr_name,
                                     index.clone(),
@@ -483,7 +482,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                                 (Specification::Requires(assertion), false) => assert(
                                     &mut sym_memory,
                                     &mut pc,
-                                    &mut sizes,
+                                    &mut i,
                                     &eval_refs,
                                     &mut solver_env,
                                     assertion,
@@ -497,7 +496,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                                     if !assume(
                                         &mut sym_memory,
                                         &mut pc,
-                                        &mut sizes,
+                                        &mut i,
                                         &eval_refs,
                                         prune_depth < d,
                                         &mut solver_env,
@@ -516,7 +515,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
             q.push_back((
                 sym_memory,
                 pc.clone(),
-                sizes.clone(),
+                i.clone(),
                 eval_refs.clone(),
                 d - 1,
                 next,

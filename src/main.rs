@@ -33,9 +33,9 @@ struct Cli {
     #[clap(short, long)]
     simplifier: bool,
 
-    /// Turns on array size inference & simplifier
-    #[clap(short, long)]
-    infer_size: bool,
+    /// The maximum number of iterations that the interval inference algorithm performs 
+    #[clap(short, long, default_value_t = 0)]
+    infer_size: i8,
 
     /// Turns on formula caching 
     #[clap(short, long)]
@@ -114,7 +114,7 @@ fn main(){
         Mode::PrintCFG => exit(see::print_cfg(&program)),
         Mode::Verify { depth, verbose } => {
             let config = Config {
-                simplify: cli.simplifier || cli.infer_size,
+                simplify: cli.simplifier || cli.infer_size > 0,
                 infer_size: cli.infer_size,
                 formula_caching: cli.formula_caching,
                 prune_ratio: cli.prune_ratio,
@@ -129,7 +129,7 @@ fn main(){
             interval,
         } => {
             let config = Config {
-                simplify: cli.simplifier || cli.infer_size,
+                simplify: cli.simplifier || cli.infer_size > 0,
                 infer_size: cli.infer_size,
                 formula_caching: cli.formula_caching,
                 prune_ratio: cli.prune_ratio,

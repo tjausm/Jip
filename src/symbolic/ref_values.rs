@@ -71,7 +71,7 @@ impl LazyReference {
         &self,
         solver: &mut SolverEnv,
         pc: &PathConstraints,
-        sizes: &ArrSizes,
+        i: &IntervalMap,
         eval_refs: &EvaluatedRefs,
         sym_memory: &SymMemory,
     ) -> Result<bool, Error> {
@@ -81,13 +81,13 @@ impl LazyReference {
         // check if path is feasible
         let mut pc = pc.conjunct();
         if simplify {
-            pc = pc.simplify(Some(sizes), Some(eval_refs));
+            pc = pc.simplify(i, Some(eval_refs));
             match pc {
                 SymExpression::Literal(Literal::Boolean(false)) => return Ok(false),
                 _ => ()
             }
         }
-        if solver.verify_expr(&pc, sym_memory, Some(sizes)).is_none() {
+        if solver.verify_expr(&pc, sym_memory, i).is_none() {
             return Ok(false);
         }
 
@@ -98,14 +98,14 @@ impl LazyReference {
         );
         let mut pc_null_check = SymExpression::And(Box::new(pc), Box::new(ref_is_null));
         if simplify {
-            pc_null_check = pc_null_check.simplify(Some(sizes), Some(eval_refs));
+            pc_null_check = pc_null_check.simplify(i, Some(eval_refs));
             match pc_null_check {
                 SymExpression::Literal(Literal::Boolean(true)) => return Ok(true),
                 _ => ()
             }
         }
 
-        match solver.verify_expr(&pc_null_check, sym_memory, Some(sizes)) {
+        match solver.verify_expr(&pc_null_check, sym_memory, i) {
             None => Ok(true),
             Some(model) => Err(Error::Verification(format!(
                 "Reference {:?} could possibly be null:\n{:?}",
@@ -120,7 +120,7 @@ impl LazyReference {
         solver: &mut SolverEnv,
         sym_memory: &mut SymMemory,
         pc: &PathConstraints,
-        sizes: &ArrSizes,
+        i: &IntervalMap,
         eval_refs: &mut EvaluatedRefs,
     ) -> Result<Option<Reference>, Error> {
         // try to add ref to hashset, and if it was already present return
@@ -128,7 +128,7 @@ impl LazyReference {
             return Ok(Some(self.r));
         };
 
-        let feasible = self.is_never_null(solver, pc, sizes, eval_refs, sym_memory)?;
+        let feasible = self.is_never_null(solver, pc, i, eval_refs, sym_memory)?;
 
         if feasible {
             // insert fresh lazy object into heap
@@ -170,6 +170,31 @@ pub type Array = (
     SymExpression,
     IsLazy,
 );
+
+
+pub struct Interval;
+
+#[derive(Debug, Clone)]
+pub struct IntervalMap;
+
+impl Default for IntervalMap {
+    fn default() -> Self {
+        todo!()
+    }
+}
+
+impl IntervalMap {
+ /// make an empty set intervalmap
+pub fn get(id: &Identifier) -> Interval {
+    todo!()
+}
+
+    // An iterative inference algorithm to update the IntervalMap with given expression
+    pub fn iterative_inference<'a>(&'a mut self, e: &SymExpression, d: i8){
+        todo!();
+    }
+}
+
 
 #[derive(Clone, Copy)]
 pub enum Boundary {
@@ -302,7 +327,7 @@ impl ArrSizes {
     }
 
     pub fn update_inference(&mut self, expr: SymExpression) {
-        self.narrow(&infer_new_ranges(&expr.simplify(None, None)));
+        //self.narrow(&infer_new_ranges(&expr.simplify(None, None)));
 
         fn infer_new_ranges(expr: &SymExpression) -> ArrSizes {
             match expr {

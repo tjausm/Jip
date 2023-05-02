@@ -5,7 +5,7 @@ use std::fmt;
 
 use super::expression::{PathConstraints, SymExpression, SymType};
 use super::ref_values::{
-    ArrSize, ArrSizes, Array, EvaluatedRefs, LazyReference, Reference, ReferenceValue, SymRefType,
+    ArrSize, ArrSizes, Array, EvaluatedRefs, LazyReference, Reference, ReferenceValue, SymRefType, IntervalMap,
 };
 use crate::ast::*;
 use crate::shared::{panic_with_diagnostics,  Error, Scope};
@@ -108,7 +108,7 @@ impl<'a> SymMemory {
     pub fn heap_access_object(
         &mut self,
         pc: &PathConstraints,
-        arr_sizes: &ArrSizes,
+        i: &IntervalMap,
         eval_refs: &mut EvaluatedRefs,
         solver: &mut SolverEnv,
         obj_name: &String,
@@ -119,7 +119,7 @@ impl<'a> SymMemory {
             Some(SymExpression::LazyReference(lr)) =>
             // if path is infeasible return nothing otherwise initialize obj and return ref
             {
-                match lr.initialize( solver, self, pc, arr_sizes, eval_refs)? {
+                match lr.initialize( solver, self, pc, i, eval_refs)? {
                     Some(r) => r,
                     _ => return Ok(None),
                 }
@@ -183,7 +183,7 @@ impl<'a> SymMemory {
     pub fn heap_access_array(
         &mut self,
         pc: &PathConstraints,
-        sizes: &ArrSizes,
+        i: &IntervalMap,
         solver: &mut SolverEnv,
         arr_name: &Identifier,
         index: Expression,
@@ -191,9 +191,9 @@ impl<'a> SymMemory {
     ) -> Result<SymExpression, Error> {
 
         //get information about array
-        let (r, size_expr, size, is_lazy) = match self.stack_get(&arr_name){
+        let (r, size_expr, is_lazy) = match self.stack_get(&arr_name){
             Some(SymExpression::Reference(r)) => match self.heap.get(&r){
-                Some(ReferenceValue::Array((_, _, size_expr, is_lazy))) => (r, size_expr, sizes.get(&r),  *is_lazy),
+                Some(ReferenceValue::Array((_, _, size_expr, is_lazy))) => (r, size_expr,  *is_lazy),
                 otherwise => panic_with_diagnostics(&format!("{:?} is not an array and can't be assigned to in assignment '{}[{:?}] := {:?}'", otherwise, arr_name, index, var), &self),
             },
             _ => panic_with_diagnostics(&format!("{} is not a reference", arr_name), &self),
@@ -202,10 +202,11 @@ impl<'a> SymMemory {
         // substitute index and try to simplify it to a literal using simplifier and / or z3
         // to prevent from values being indexed twice in the array
         let sym_index = SymExpression::new(self, index);
-        let simple_index = sym_index.clone().simplify(Some(sizes), None); // simplify to prevent simplified see from having different results
+        let simple_index = sym_index.clone().simplify(i, None); // simplify to prevent simplified see from having different results
         
 
 
+        todo!("Encode as a symexpression and try to simplify index");
         let evaluated_index = match simple_index {
             SymExpression::Literal(_) => simple_index,
             _ => {
@@ -217,7 +218,7 @@ impl<'a> SymMemory {
 
                 // check if there is a literal value for `index: pc && val1 == index` 
                 let index_is_val1 = SymExpression::And(pc_expr.clone(), Box::new(SymExpression::EQ(Box::new(simple_index.clone()), Box::new(val1))));
-                match solver.verify_expr(&index_is_val1, &self, Some(sizes)) {
+                match solver.verify_expr(&index_is_val1, &self, i) {
                     Some(model) => {
 
                         let val2_id = "!val2".to_string();
@@ -228,7 +229,7 @@ impl<'a> SymMemory {
                         let val1 = Box::new(SymExpression::Literal(val1_lit.clone()));
                         let index_is_val2 = SymExpression::And(pc_expr, Box::new(SymExpression::And(Box::new(SymExpression::NE(val1, val2.clone())), Box::new(SymExpression::EQ(val2, Box::new(simple_index.clone()))))));
 
-                        match solver.verify_expr(&index_is_val2, &self, Some(sizes)){
+                        match solver.verify_expr(&index_is_val2, &self, i){
                             Some(_) => simple_index,
                             None => SymExpression::Literal(val1_lit),
                         }
@@ -244,17 +245,12 @@ impl<'a> SymMemory {
 
 
         // check if index is always < length
-        match (&evaluated_index, &size_expr, &size) {
+        todo!("Encode as a symexpression and try to simplify");
+        match (&evaluated_index, &size_expr) {
             (
                 SymExpression::Literal(Literal::Integer(lit_i)),
                 SymExpression::Literal(Literal::Integer(lit_l)),
-                _,
             ) if lit_i < lit_l => (),
-            (SymExpression::Literal(Literal::Integer(lit_i)), _, Some(s))
-                if ArrSize::Point(*lit_i).lt(s) == Some(true) =>
-            {
-                ()
-            }
             _ => {
                 let size_of = SymExpression::SizeOf(r, Box::new(size_expr.clone()));
 
@@ -265,7 +261,7 @@ impl<'a> SymMemory {
                 pc.push_assertion(length_gt_index);
                 let constraints = pc.combine_over_true();
 
-                match solver.verify_expr(&SymExpression::Not(Box::new(constraints)), &self, Some(sizes)) {
+                match solver.verify_expr(&SymExpression::Not(Box::new(constraints)), &self, i) {
                     None => (),
                     Some(model) => {
                         return Err(Error::Verification(format!(

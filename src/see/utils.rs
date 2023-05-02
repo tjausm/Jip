@@ -3,13 +3,13 @@ use crate::shared::{panic_with_diagnostics, Feasible, Error, Config};
 use crate::smt_solver::SolverEnv;
 use crate::symbolic::expression::{PathConstraints, SymExpression, SymType};
 use crate::symbolic::memory::SymMemory;
-use crate::symbolic::ref_values::{ArrSizes, EvaluatedRefs, SymRefType};
+use crate::symbolic::ref_values::{ArrSizes, EvaluatedRefs, SymRefType, IntervalMap};
 
 /// returns the symbolic expression rhs refers to, or None if we encounter a lazy object on an infeasible path
 pub fn parse_rhs<'a, 'b>(
     sym_memory: &mut SymMemory,
     pc: &PathConstraints,
-    sizes: &mut ArrSizes,
+    i: &mut IntervalMap,
     eval_refs: &mut EvaluatedRefs,
     solver: &mut SolverEnv,
     rhs: &'a Rhs,
@@ -18,7 +18,7 @@ pub fn parse_rhs<'a, 'b>(
         Rhs::AccessField(obj_name, field_name) => sym_memory
             .heap_access_object(
                 pc,
-                sizes,
+                i,
                 eval_refs,
                 solver,
                 obj_name,
@@ -46,7 +46,7 @@ pub fn parse_rhs<'a, 'b>(
 
         Rhs::AccessArray(arr_name, index) => sym_memory.heap_access_array(
             &pc,
-            sizes,
+            i,
             solver,
             arr_name,
             index.clone(),
@@ -65,17 +65,17 @@ pub fn parse_rhs<'a, 'b>(
 pub fn lhs_from_rhs<'a>(
     sym_memory: &mut SymMemory,
     pc: &PathConstraints,
-    sizes: &mut ArrSizes,
+    i: &mut IntervalMap,
     eval_refs: &mut EvaluatedRefs,
-    config: &Config,
     solver: &mut SolverEnv,
     lhs: &'a Lhs,
     rhs: &'a Rhs,
 ) -> Result<Feasible, Error> {
+
     let mut var = match parse_rhs(
         sym_memory,
         pc,
-        sizes,
+        i,
         eval_refs,
         solver,
         rhs,
@@ -84,8 +84,8 @@ pub fn lhs_from_rhs<'a>(
         _ => return Ok(false),
     };
 
-    if config.simplify {
-        var = var.simplify(Some(sizes), Some(eval_refs));
+    if solver.config.simplify {
+        var = var.simplify(i, Some(eval_refs));
     }
 
     match lhs {
@@ -95,7 +95,7 @@ pub fn lhs_from_rhs<'a>(
         }
         Lhs::AccessField(obj_name, field_name) => match sym_memory.heap_access_object(
             pc,
-            sizes,
+            i,
             eval_refs,
             solver,
             obj_name,
@@ -109,7 +109,7 @@ pub fn lhs_from_rhs<'a>(
         Lhs::AccessArray(arr_name, index) => sym_memory
             .heap_access_array(
                 &pc,
-                sizes,
+                i,
                 solver,
                 arr_name,
                 index.clone(),
@@ -123,7 +123,7 @@ pub fn lhs_from_rhs<'a>(
 pub fn assert(
     sym_memory: &mut SymMemory,
     pc: &mut PathConstraints,
-    sizes: &mut ArrSizes,
+    i: &mut IntervalMap,
     eval_refs: &EvaluatedRefs,
     solver: &mut SolverEnv,
     assertion: &Expression,
@@ -131,13 +131,12 @@ pub fn assert(
     let sym_assertion = SymExpression::new(&sym_memory, assertion.clone());
     let config = &solver.config;
     // update sizes
-    if config.infer_size {
-        sizes.update_inference(sym_assertion.clone());
-    }
+
+    i.iterative_inference(&sym_assertion, config.infer_size);
 
     // add (inferred  and / orsimplified) assertion
     if config.simplify {
-        let simple_assertion = sym_assertion.simplify(Some(&sizes), Some(eval_refs));
+        let simple_assertion = sym_assertion.simplify(i, Some(eval_refs));
         //let simple_assertion = assertion;
         match simple_assertion {
             SymExpression::Literal(Literal::Boolean(true)) => (),
@@ -150,14 +149,14 @@ pub fn assert(
     // calculate (inferred and / or simplified) constraints
     let mut constraints = pc.combine_over_true();
     if config.simplify {
-        constraints = constraints.simplify(Some(sizes), Some(eval_refs))
+        constraints = constraints.simplify(i, Some(eval_refs))
     };
     match constraints {
         SymExpression::Literal(Literal::Boolean(true)) => return Ok(()),
         _ => (),
     }
 
-    match solver.verify_expr(&SymExpression::Not(Box::new(constraints)), sym_memory, Some(sizes)) {
+    match solver.verify_expr(&SymExpression::Not(Box::new(constraints)), sym_memory, i) {
         Some(model) => {
             return Err(Error::Verification(format!(
                 "Following input violates one of the assertion:\n{:?}",
@@ -174,7 +173,7 @@ pub fn assert(
 pub fn assume(
     sym_memory: &mut SymMemory,
     pc: &mut PathConstraints,
-    sizes: &mut ArrSizes,
+    i: &mut IntervalMap,
     eval_refs: &EvaluatedRefs,
     prune: bool,
     solver: &mut SolverEnv,
@@ -182,12 +181,12 @@ pub fn assume(
 ) -> bool {
     let sym_assumption = SymExpression::new(&sym_memory, assumption.clone());
     let config = &solver.config;
-    // update sizes if it's turned on
-    if config.infer_size {
-        sizes.update_inference(sym_assumption.clone());
-    }
+
+    // update intervals from assumption
+    &mut i.iterative_inference(&sym_assumption, config.infer_size);
+
     if config.simplify {
-        let simple_assumption = sym_assumption.simplify(Some(sizes), Some(eval_refs));
+        let simple_assumption = sym_assumption.simplify(i, Some(eval_refs));
 
         match simple_assumption {
             SymExpression::Literal(Literal::Boolean(false)) => return false,
@@ -200,7 +199,7 @@ pub fn assume(
 
     let mut constraints = pc.conjunct();
     if config.simplify {
-        constraints = constraints.simplify(Some(sizes), Some(eval_refs))
+        constraints = constraints.simplify(i, Some(eval_refs))
     };
 
     // return false if expression always evaluates to false
@@ -209,7 +208,7 @@ pub fn assume(
         (_, SymExpression::Literal(Literal::Boolean(false))) => return false,
         // if z3 finds a satisfying model return true, otherwise return false
         (true, _) => {
-            let res = solver.verify_expr(&constraints, sym_memory, Some(sizes));
+            let res = solver.verify_expr(&constraints, sym_memory, i);
             res.is_some()
         }
         // if either not proved or z3 is turned off we just return true and go on
