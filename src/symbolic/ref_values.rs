@@ -13,7 +13,7 @@ use core::fmt;
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::cmp::Ordering;
 
-/// tracks whether
+/// tracks if lazy reference is already evaluated
 pub type EvaluatedRefs = FxHashSet<Reference>;
 
 global_counter!(REF_COUNTER, i32, 1);

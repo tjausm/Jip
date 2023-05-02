@@ -291,6 +291,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                             &pc,
                             &mut sizes,
                             &mut eval_refs,
+                            &config,
                             &mut solver_env,
                             lhs,
                             rhs,
