@@ -109,7 +109,6 @@ pub enum SymExpression {
     Not(Box<SymExpression>),
     Literal(Literal),
     FreeVariable(SymType, Identifier),
-    SizeOf(Reference, Box<SymExpression>),
     Reference(Reference),
     LazyReference(LazyReference),
     Uninitialized,
@@ -151,20 +150,7 @@ impl SymExpression {
                 Some(sym_expr) => sym_expr,
                 _ => panic_with_diagnostics(&format!("{} was not declared", id), &sym_memory),
             },
-            Expression::SizeOf(arr_name) => {
-                let r = match sym_memory.stack_get(&arr_name) {
-                    Some(SymExpression::Reference(r)) => r,
-                    _ => panic_with_diagnostics(
-                        &format!(
-                            "identifier {} in expression #{:?} does not refer to an array",
-                            arr_name,
-                            Expression::SizeOf(arr_name.clone())
-                        ),
-                        &sym_memory,
-                    ),
-                };
-                SymExpression::SizeOf(r, Box::new(sym_memory.heap_get_arr_length(&arr_name)))
-            }
+            Expression::SizeOf(arr_name) => sym_memory.heap_get_arr_length(&arr_name),
             Expression::Implies(l, r) => SymExpression::Implies(
                 Box::new(SymExpression::new(sym_memory, *l)),
                 Box::new(SymExpression::new(sym_memory, *r)),
@@ -408,7 +394,6 @@ impl SymExpression {
                 }
                 simple_expr => SymExpression::Not(Box::new(simple_expr)),
             },
-            SymExpression::SizeOf(r, expr) => todo!(),
             SymExpression::Negative(expr) => match expr.clone().eval(i, eval_refs) {
                 SymExpression::Negative(inner_expr) => inner_expr.clone().eval(i, eval_refs),
                 SymExpression::Literal(Literal::Integer(n)) => {
@@ -527,9 +512,15 @@ impl Forall {
             Box::new(SymExpression::Literal(Literal::Integer(0))),
         );
 
+        // get size from heap and make i < size expression
+        let size = match current_memory.heap_get(r) {
+            ReferenceValue::Array((_,_,size,_)) => size,
+            _ => todo!()
+        };
+
         let i_lt_size = SymExpression::LT(
             Box::new(index_id.clone()),
-            Box::new(SymExpression::SizeOf(r, Box::new(size_expr.clone()))),
+            Box::new(size.clone()),
         );
 
         // build inner expression with index and value as freevars
@@ -651,7 +642,6 @@ impl Hash for SymExpression {
             SymExpression::Negative(expr) => {
                 HashExpression::Negative(calculate_hash(&*expr)).hash(state)
             }
-            SymExpression::SizeOf(r, _) => HashExpression::SizeOf(r.clone()).hash(state),
             SymExpression::FreeVariable(ty, id) => {
                 HashExpression::FreeVariable(ty.clone(), id.clone()).hash(state)
             }
@@ -744,7 +734,6 @@ impl fmt::Debug for SymExpression {
             SymExpression::Literal(Literal::Boolean(val)) => write!(f, "{:?}", val),
             SymExpression::Literal(Literal::Integer(val)) => write!(f, "{:?}", val),
             SymExpression::FreeVariable(_, fv) => write!(f, "{}", fv),
-            SymExpression::SizeOf(r, _) => write!(f, "#{:?}", r),
             SymExpression::Reference(r) => write!(f, "{:?}", r),
             SymExpression::LazyReference(lr) => write!(f, "{:?}", lr),
             SymExpression::Uninitialized => write!(f, "Uninitialized"),

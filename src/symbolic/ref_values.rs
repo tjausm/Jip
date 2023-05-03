@@ -249,7 +249,6 @@ impl Interval {
                 Interval::new(Infinitable::Finite(-1), Infinitable::Finite(-1))
                     * Interval::infer(expr, i)
             }
-            SymExpression::SizeOf(_, _) => todo!(),
             _ => Interval::default(),
         }
     }
@@ -405,7 +404,6 @@ impl IntervalMap {
 
                 _ => (),
             },
-            SymExpression::SizeOf(_, _) => todo!(),
             _ => (),
         }
     }

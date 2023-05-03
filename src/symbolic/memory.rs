@@ -252,11 +252,10 @@ impl<'a> SymMemory {
                 SymExpression::Literal(Literal::Integer(lit_l)),
             ) if lit_i < lit_l => (),
             _ => {
-                let size_of = SymExpression::SizeOf(r, Box::new(size_expr.clone()));
 
                 //append length > index to PathConstraints and try to falsify
                 let length_gt_index =
-                    SymExpression::GT(Box::new(size_of.clone()), Box::new(evaluated_index.clone()));
+                    SymExpression::GT(Box::new(size_expr.clone()), Box::new(evaluated_index.clone()));
                 let mut pc = pc.clone();
                 pc.push_assertion(length_gt_index);
                 let constraints = pc.combine_over_true();
