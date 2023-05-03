@@ -1,0 +1,6 @@
+class Main {
+    static void main(){
+        y := y + 1;
+        x := 2;
+    }
+}

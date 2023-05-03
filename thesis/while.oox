@@ -1,0 +1,8 @@
+class Main {
+    static void main(){
+        while (x) {
+            y := y + 1;
+        }
+        z := z - y;
+    }
+}

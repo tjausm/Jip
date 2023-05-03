@@ -1,0 +1,51 @@
+// This program checks if there are two consecutive elements a[i] and a[i{+}1] such that
+//
+//      2 / (a[i] + a[i+1]) < 1
+//
+// if so, it returns with z=2, and else with z=1.
+// If the division throws an exception, the program returns with z=0.
+
+// The pre-condition that a contains only positive integers is intentionally added.
+// Under this pre-condition the above division will not throw an exception; we'll see
+// if your verifier can exploit this.
+
+// N is an experiment parameter; replace it with a concrete value in [2..10].
+// Below I will use maximum N, namely 10.
+
+class Main {
+
+    static void main(int[] a)
+        requires (a != null)
+    {
+       // N is an experiment parameter
+       // choose max N:
+       int N := 10 ;
+       assume #a>0 && #a==N
+              && (forall v,i : a : v>0)
+              && (forall v,i : a : v==1) ;
+
+       int k := 0 ;
+       int r ;
+       int z := -1 ;
+       while (k<#a && (z<0 || (z==1))) {
+           z := -1 ;
+           try {
+              int x := a[k] ;
+              int next := a[k+1] ;
+              r := x + next ;
+           }
+           catch { z := 1 ; }
+           try {
+              r := 2/r ; // idea: can we first check if r=0 is feasible?
+           }
+           catch { z := 0 ; } ;
+           if (z<0 && r < 1)
+              z := 2 ;
+              else z := 1 ;
+
+           k := k+1 ;
+       }
+       assert z>1 ; // should be >0
+       return z ;
+    }
+}
