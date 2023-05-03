@@ -171,19 +171,27 @@ pub type Array = (
 );
 
 #[derive(Clone, Copy)]
-pub struct Interval(Infinitable<i32>, Infinitable<i32>);
+pub struct Interval(pub Infinitable<i32>, pub Infinitable<i32>);
+
+impl Default for Interval {
+    fn default() -> Self {
+        Interval(Infinitable::NegativeInfinity, Infinitable::Infinity)
+    }
+}
 
 impl Interval {
-    pub fn broaden(self, other:Interval) -> Self{
+    pub fn new(b: Infinitable<i32>, u: Infinitable<i32>) -> Interval {
+        Interval(b, u)
+    }
+    pub fn get(self) -> (Infinitable<i32>, Infinitable<i32>) {
+        (self.0, self.1)
+    }
+    pub fn broaden(self, other: Interval) -> Self {
         Interval(self.0.max(other.0), self.1.min(other.1))
     }
-    
-    pub fn narrow(self, other:Interval) -> Self{
-        Interval(self.0.min(other.0), self.1.max(other.1))
-    }
 
-    pub fn max() -> Interval{
-        Interval(Infinitable::NegativeInfinity, Infinitable::Infinity)
+    pub fn narrow(self, other: Interval) -> Self {
+        Interval(self.0.min(other.0), self.1.max(other.1))
     }
 
     pub fn infer(e: &SymExpression, i: &IntervalMap) -> Interval {
@@ -201,69 +209,158 @@ impl Default for IntervalMap {
 }
 
 impl IntervalMap {
-
     fn broaden(&mut self, other: &IntervalMap) {
-        let mut keys : FxHashSet<Identifier> = self.0.clone().into_keys().collect();
-        keys.extend(other.0.clone().into_keys().collect::<FxHashSet<Identifier>>());
+        let mut keys: FxHashSet<Identifier> = self.0.clone().into_keys().collect();
+        keys.extend(
+            other
+                .0
+                .clone()
+                .into_keys()
+                .collect::<FxHashSet<Identifier>>(),
+        );
         for k in keys {
-            self.0.insert(k.clone(), self.get(&k).broaden(other.get(&k)));
+            self.0
+                .insert(k.clone(), self.get(&k).broaden(other.get(&k)));
         }
     }
 
-    fn narrow(&mut self, other: &IntervalMap){
-        let mut keys : FxHashSet<Identifier> = self.0.clone().into_keys().collect();
-        keys.extend(other.0.clone().into_keys().collect::<FxHashSet<Identifier>>());
+    fn narrow(&mut self, other: &IntervalMap) {
+        let mut keys: FxHashSet<Identifier> = self.0.clone().into_keys().collect();
+        keys.extend(
+            other
+                .0
+                .clone()
+                .into_keys()
+                .collect::<FxHashSet<Identifier>>(),
+        );
         for k in keys {
             self.0.insert(k.clone(), self.get(&k).narrow(other.get(&k)));
         }
     }
 
-    pub fn get(&self, id: &Identifier) -> Interval{
-        match self.0.get(id){
+    pub fn get(&self, id: &Identifier) -> Interval {
+        match self.0.get(id) {
             Some(i) => *i,
-            None => Interval::max(),
+            None => Interval::default(),
         }
     }
 
-    fn infer(self, e: &SymExpression) -> Self{
+    // updates IntervalMap with information from passed expression
+    fn infer(&mut self, e: &SymExpression) {
         match e {
             SymExpression::And(l_expr, r_expr) => {
-                let mut i = self.infer(l_expr);
-                i.narrow(&self.infer(r_expr));
-                i
-            },
+                let mut i1 = self.clone();
+                i1.infer(r_expr);
+                self.infer(l_expr);
+                self.narrow(&i1);
+            }
             SymExpression::Or(l_expr, r_expr) => {
-                let mut i = self.infer(l_expr);
-                i.broaden(&self.infer(r_expr));
-                i
-            },
-            SymExpression::EQ(l_expr, r_expr) => match (&**l_expr, &**r_expr){
-                (SymExpression::FreeVariable(SymType::Int, x1), SymExpression::FreeVariable(SymType::Int, x2)) => {
+                let mut i1 = self.clone();
+                i1.infer(r_expr);
+                self.infer(l_expr);
+                self.broaden(&i1);
+            }
+            SymExpression::EQ(l_expr, r_expr) => match (&**l_expr, &**r_expr) {
+                (
+                    SymExpression::FreeVariable(SymType::Int, x1),
+                    SymExpression::FreeVariable(SymType::Int, x2),
+                ) => {
                     let i = self.get(x1).narrow(self.get(x2));
                     self.0.insert(x1.clone(), i);
                     self.0.insert(x2.clone(), i);
-                    self
-                },
+                }
                 (SymExpression::FreeVariable(SymType::Int, x1), r_expr) => {
                     let mut i = self.get(x1);
                     i.narrow(Interval::infer(r_expr, &self));
                     self.0.insert(x1.clone(), i);
-                    self
-                },
+                }
                 (l_expr, (SymExpression::FreeVariable(SymType::Int, x2))) => {
                     let mut i = self.get(x2);
                     i.narrow(Interval::infer(l_expr, &self));
                     self.0.insert(x2.clone(), i);
-                    self
-                },
-
+                }
+                _ => (),
             },
-            SymExpression::LT(_, _) => todo!(),
-            SymExpression::GT(_, _) => todo!(),
-            SymExpression::GEQ(_, _) => todo!(),
-            SymExpression::LEQ(_, _) => todo!(),
+            SymExpression::LT(l_expr, r_expr) => match (&**l_expr, &**r_expr) {
+                (SymExpression::FreeVariable(SymType::Int, x), r_expr) => {
+                    let (a, _) = Interval::infer(r_expr, self).get();
+                    let i = self.get(x).narrow(Interval::new(
+                        Infinitable::NegativeInfinity,
+                        a - infinitable::Finite(1),
+                    ));
+                    self.0.insert(x.clone(), i);
+                }
+                (l_expr, (SymExpression::FreeVariable(SymType::Int, x))) => {
+                    let (_, b) = Interval::infer(l_expr, self).get();
+                    let i = self.get(x).narrow(Interval::new(
+                        b + infinitable::Finite(1),
+                        Infinitable::Infinity,
+                    ));
+                    self.0.insert(x.clone(), i);
+                }
+                _ => (),
+            },
+            SymExpression::LEQ(l_expr, r_expr) => match (&**l_expr, &**r_expr) {
+                (SymExpression::FreeVariable(SymType::Int, x), r_expr) => {
+                    let (a, _) = Interval::infer(r_expr, self).get();
+                    let i = self.get(x).narrow(Interval::new(
+                        Infinitable::NegativeInfinity,
+                        a,
+                    ));
+                    self.0.insert(x.clone(), i);
+                }
+                (l_expr, (SymExpression::FreeVariable(SymType::Int, x))) => {
+                    let (_, b) = Interval::infer(l_expr, self).get();
+                    let i = self.get(x).narrow(Interval::new(
+                        b,
+                        Infinitable::Infinity,
+                    ));
+                    self.0.insert(x.clone(), i);
+                }
+                _ => (),
+            },
+            SymExpression::GT(l_expr, r_expr) => match (&**l_expr, &**r_expr) {
+                ((SymExpression::FreeVariable(SymType::Int, x)), r_expr) => {
+                    let (_, b) = Interval::infer(r_expr, self).get();
+                    let i = self.get(x).narrow(Interval::new(
+                        b + infinitable::Finite(1),
+                        Infinitable::Infinity,
+                    ));
+                    self.0.insert(x.clone(), i);
+                }
+                (l_expr, SymExpression::FreeVariable(SymType::Int, x)) => {
+                    let (a, _) = Interval::infer(l_expr, self).get();
+                    let i = self.get(x).narrow(Interval::new(
+                        Infinitable::NegativeInfinity,
+                        a - infinitable::Finite(1),
+                    ));
+                    self.0.insert(x.clone(), i);
+                }
+
+                _ => (),
+            },
+            SymExpression::GEQ(l_expr, r_expr) => match (&**l_expr, &**r_expr) {
+                ((SymExpression::FreeVariable(SymType::Int, x)), r_expr) => {
+                    let (_, b) = Interval::infer(r_expr, self).get();
+                    let i = self.get(x).narrow(Interval::new(
+                        b,
+                        Infinitable::Infinity,
+                    ));
+                    self.0.insert(x.clone(), i);
+                }
+                (l_expr, SymExpression::FreeVariable(SymType::Int, x)) => {
+                    let (a, _) = Interval::infer(l_expr, self).get();
+                    let i = self.get(x).narrow(Interval::new(
+                        Infinitable::NegativeInfinity,
+                        a,
+                    ));
+                    self.0.insert(x.clone(), i);
+                }
+
+                _ => (),
+            },
             SymExpression::SizeOf(_, _) => todo!(),
-            _ => self
+            _ => (),
         }
     }
 
@@ -272,8 +369,6 @@ impl IntervalMap {
         todo!();
     }
 }
-
-
 
 impl fmt::Debug for Reference {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -303,8 +398,6 @@ impl fmt::Debug for IntervalMap {
 
 impl fmt::Debug for Interval {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            write!(f, "⟨{}, {}⟩", self.0, self.1)
-        }
+        write!(f, "⟨{}, {}⟩", self.0, self.1)
     }
-
-
+}
