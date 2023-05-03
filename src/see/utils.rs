@@ -131,12 +131,12 @@ pub fn assert(
     let sym_assertion = SymExpression::new(&sym_memory, assertion.clone());
     let config = &solver.config;
     // update sizes
-
     i.iterative_inference(&sym_assertion, config.infer_size);
 
     // add (inferred  and / orsimplified) assertion
     if config.simplify {
         let simple_assertion = sym_assertion.eval(i, Some(eval_refs));
+        println!("simple assertion = {:?}", simple_assertion);
         //let simple_assertion = assertion;
         match simple_assertion {
             SymExpression::Literal(Literal::Boolean(true)) => (),

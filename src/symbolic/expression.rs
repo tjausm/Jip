@@ -10,7 +10,7 @@ use std::{
 use infinitable::Infinitable;
 
 use super::ref_values::{
-    EvaluatedRefs, IntervalMap, LazyReference, Reference, ReferenceValue, SymRefType,
+    EvaluatedRefs, Interval, IntervalMap, LazyReference, Reference, ReferenceValue, SymRefType,
 };
 use crate::{ast::*, shared::panic_with_diagnostics, symbolic::memory::SymMemory};
 
@@ -281,6 +281,12 @@ impl SymExpression {
                     }
                 }
             }
+            // simplify not equal to equal
+            SymExpression::NE(l, r) => SymExpression::Not(Box::new(SymExpression::EQ(
+                Box::new(*l.clone()),
+                Box::new(*r.clone()),
+            )))
+            .eval(i, eval_refs),
             SymExpression::EQ(l, r) => {
                 match (l.clone().eval(i, eval_refs), r.clone().eval(i, eval_refs)) {
                     // if lit or fv are equal => true
@@ -293,59 +299,51 @@ impl SymExpression {
                     ) if l_fv == r_fv => SymExpression::Literal(Literal::Boolean(true)),
 
                     (l_simple, r_simple) => {
-                        SymExpression::EQ(Box::new(l_simple), Box::new(r_simple))
+                        match (Interval::infer(&l_simple, i), Interval::infer(&r_simple, i)) {
+                            //check if intervals have no intersection
+                            (Interval(a, b), Interval(d, c)) if b < d || c < a => {
+                                SymExpression::Literal(Literal::Boolean(true))
+                            }
+                            _ => SymExpression::EQ(Box::new(l_simple), Box::new(r_simple)),
+                        }
                     }
                 }
             }
-            // if both sides are literal simplify
-            SymExpression::NE(l, r) => {
-                match (l.clone().eval(i, eval_refs), r.clone().eval(i, eval_refs)) {
-                    (SymExpression::Literal(l_lit), SymExpression::Literal(r_lit)) => {
-                        SymExpression::Literal(Literal::Boolean(l_lit != r_lit))
-                    }
-                    (l_simple, r_simple) => {
-                        SymExpression::NE(Box::new(l_simple), Box::new(r_simple))
-                    }
-                }
-            }
+
             // Define LEQ, GT and GEQ in terms of LT
-            SymExpression::LEQ(l, r) => {
-                SymExpression::Not(Box::new(SymExpression::LT(Box::new(*r.clone()), Box::new(*l.clone())))).eval(i, eval_refs)
-            }
-            SymExpression::GT(l, r) => Box::new(SymExpression::LT(Box::new(*r.clone()), Box::new(*l.clone()))).eval(i, eval_refs),
-            SymExpression::GEQ(l, r) => {
-                SymExpression::Not(Box::new(SymExpression::LT(Box::new(*l.clone()), Box::new(*r.clone())))).eval(i, eval_refs)
-            }
+            SymExpression::LEQ(l, r) => SymExpression::Not(Box::new(SymExpression::LT(
+                Box::new(*r.clone()),
+                Box::new(*l.clone()),
+            )))
+            .eval(i, eval_refs),
+            SymExpression::GT(l, r) => Box::new(SymExpression::LT(
+                Box::new(*r.clone()),
+                Box::new(*l.clone()),
+            ))
+            .eval(i, eval_refs),
+            SymExpression::GEQ(l, r) => SymExpression::Not(Box::new(SymExpression::LT(
+                Box::new(*l.clone()),
+                Box::new(*r.clone()),
+            )))
+            .eval(i, eval_refs),
             SymExpression::LT(l, r) => {
                 match (l.clone().eval(i, eval_refs), r.clone().eval(i, eval_refs)) {
                     (
                         SymExpression::Literal(Literal::Integer(l_lit)),
                         SymExpression::Literal(Literal::Integer(r_lit)),
                     ) => SymExpression::Literal(Literal::Boolean(l_lit < r_lit)),
-
-                    (
-                        SymExpression::FreeVariable(SymType::Int, x1),
-                        SymExpression::Literal(Literal::Integer(z2)),
-                    ) if i.get(&x1).1 < Infinitable::Finite(z2) => SymExpression::Literal(Literal::Boolean(true)),
-                    (
-                        SymExpression::Literal(Literal::Integer(z1)),
-                        SymExpression::FreeVariable(SymType::Int, x2)
-                        
-                    ) if  Infinitable::Finite(z1) < i.get(&x2).0  => SymExpression::Literal(Literal::Boolean(false)),
-                    (
-                        SymExpression::FreeVariable(SymType::Int, x1),
-                        SymExpression::FreeVariable(SymType::Int, x2)
-                        
-                    ) if  i.get(&x1).1 < i.get(&x2).0  => SymExpression::Literal(Literal::Boolean(true)),
-                    (
-                        SymExpression::FreeVariable(SymType::Int, x1),
-                        SymExpression::FreeVariable(SymType::Int, x2)
-                        
-                    ) if  i.get(&x2).1 < i.get(&x1).0  => SymExpression::Literal(Literal::Boolean(false)),
                     (l_simple, r_simple) => {
-                        SymExpression::LT(Box::new(l_simple), Box::new(r_simple))
+                        match (Interval::infer(&l_simple, i), Interval::infer(&r_simple, i)) {
+                            //check if intervals have no intersection
+                            (Interval(a, b), Interval(d, c)) if b < c => {
+                                SymExpression::Literal(Literal::Boolean(true))
+                            }
+                            (Interval(a, b), Interval(d, c)) if d < a => {
+                                SymExpression::Literal(Literal::Boolean(false))
+                            }
+                            _ => SymExpression::LT(Box::new(l_simple), Box::new(r_simple)),
+                        }
                     }
-                    
                 }
             }
             SymExpression::Plus(l, r) => {
@@ -426,7 +424,11 @@ impl SymExpression {
                 None => self,
             },
             SymExpression::Literal(_) => self,
-            SymExpression::FreeVariable(_, _) => self,
+            //evaluate point interval
+            SymExpression::FreeVariable(_, x) =>  match Interval::infer(&self, i) {
+                Interval(a,b) if a == b => SymExpression::Literal(Literal::Integer(a.finite().unwrap())),
+                _ => self
+            } ,
             SymExpression::Reference(_) => self,
             SymExpression::Forall(_) => self,
             SymExpression::Exists(_, _, _, _) => self,
