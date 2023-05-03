@@ -10,6 +10,7 @@ use crate::{
     smt_solver::SolverEnv,
 };
 use core::fmt;
+use infinitable::Infinitable;
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::cmp::Ordering;
 
@@ -75,7 +76,6 @@ impl LazyReference {
         eval_refs: &EvaluatedRefs,
         sym_memory: &SymMemory,
     ) -> Result<bool, Error> {
-
         let simplify = solver.config.simplify;
 
         // check if path is feasible
@@ -84,7 +84,7 @@ impl LazyReference {
             pc = pc.simplify(i, Some(eval_refs));
             match pc {
                 SymExpression::Literal(Literal::Boolean(false)) => return Ok(false),
-                _ => ()
+                _ => (),
             }
         }
         if solver.verify_expr(&pc, sym_memory, i).is_none() {
@@ -101,7 +101,7 @@ impl LazyReference {
             pc_null_check = pc_null_check.simplify(i, Some(eval_refs));
             match pc_null_check {
                 SymExpression::Literal(Literal::Boolean(true)) => return Ok(true),
-                _ => ()
+                _ => (),
             }
         }
 
@@ -143,7 +143,6 @@ impl LazyReference {
             Ok(None)
         }
     }
-
 }
 
 /// Consists of `identifier` (= classname) and a hashmap describing it's fields
@@ -171,30 +170,62 @@ pub type Array = (
     IsLazy,
 );
 
+#[derive(Debug, Clone, Copy)]
+pub struct Interval(Infinitable<i32>, Infinitable<i32>);
 
-pub struct Interval;
+impl Interval {
+    pub fn broaden(self, other:Interval) -> Self{
+        Interval(self.0.max(other.0), self.1.min(other.1))
+    }
+    
+    pub fn narrow(self, other:Interval) -> Self{
+        Interval(self.0.min(other.0), self.1.max(other.1))
+    }
+
+    pub fn max() -> Interval{
+        Interval(Infinitable::NegativeInfinity, Infinitable::Infinity)
+    }
+}
 
 #[derive(Debug, Clone)]
-pub struct IntervalMap;
+pub struct IntervalMap(FxHashMap<Identifier, Interval>);
 
 impl Default for IntervalMap {
     fn default() -> Self {
-        todo!()
+        Self(FxHashMap::default())
     }
 }
 
 impl IntervalMap {
- /// make an empty set intervalmap
-pub fn get(id: &Identifier) -> Interval {
-    todo!()
-}
+
+    fn broaden(&mut self, other: &IntervalMap) {
+        let mut keys : FxHashSet<Identifier> = self.0.clone().into_keys().collect();
+        keys.extend(other.0.clone().into_keys().collect::<FxHashSet<Identifier>>());
+        for k in keys {
+            self.0.insert(k.clone(), self.get(&k).broaden(other.get(&k)));
+        }
+    }
+
+    fn narrow(&mut self, other: IntervalMap){
+        let mut keys : FxHashSet<Identifier> = self.0.clone().into_keys().collect();
+        keys.extend(other.0.clone().into_keys().collect::<FxHashSet<Identifier>>());
+        for k in keys {
+            self.0.insert(k.clone(), self.get(&k).narrow(other.get(&k)));
+        }
+    }
+
+    pub fn get(&self, id: &Identifier) -> Interval{
+        match self.0.get(id){
+            Some(i) => *i,
+            None => Interval::max(),
+        }
+    }
 
     // An iterative inference algorithm to update the IntervalMap with given expression
-    pub fn iterative_inference<'a>(&'a mut self, e: &SymExpression, d: i8){
+    pub fn iterative_inference<'a>(&'a mut self, e: &SymExpression, d: i8) {
         todo!();
     }
 }
-
 
 #[derive(Clone, Copy)]
 pub enum Boundary {
