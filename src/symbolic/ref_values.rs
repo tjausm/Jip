@@ -12,7 +12,7 @@ use crate::{
 use core::fmt;
 use infinitable::Infinitable;
 use rustc_hash::{FxHashMap, FxHashSet};
-use std::cmp::Ordering;
+use std::{cmp::Ordering, ops::{Mul, Sub, Add}};
 
 /// tracks if lazy reference is already evaluated
 pub type EvaluatedRefs = FxHashSet<Reference>;
@@ -171,7 +171,7 @@ pub type Array = (
 );
 
 #[derive(Clone, Copy)]
-pub struct Interval(pub Infinitable<i32>, pub Infinitable<i32>);
+pub struct Interval(Infinitable<i64>, Infinitable<i64>);
 
 impl Default for Interval {
     fn default() -> Self {
@@ -179,11 +179,41 @@ impl Default for Interval {
     }
 }
 
+impl Add for Interval {
+    // The multiplication of rational numbers is a closed operation.
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self {
+        let ((a,b), (c,d)) = (self.get(), rhs.get());
+        Interval::new(a+c, b+d)
+    }
+}
+impl Sub for Interval {
+    // The multiplication of rational numbers is a closed operation.
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self {
+        let ((a,b), (c,d)) = (self.get(), rhs.get());
+        Interval::new(a-c, b-d)
+    }
+}
+
+impl Mul for Interval {
+    // The multiplication of rational numbers is a closed operation.
+    type Output = Self;
+
+    fn mul(self, rhs: Self) -> Self {
+        let ((a,b), (c,d)) = (self.get(), rhs.get());
+        let products = [a*c, a*d, b*c, b*d];
+        Interval::new(*products.iter().min().unwrap(), *products.iter().max().unwrap())
+    }
+}
+
 impl Interval {
-    pub fn new(b: Infinitable<i32>, u: Infinitable<i32>) -> Interval {
+    pub fn new(b: Infinitable<i64>, u: Infinitable<i64>) -> Interval {
         Interval(b, u)
     }
-    pub fn get(self) -> (Infinitable<i32>, Infinitable<i32>) {
+    pub fn get(self) -> (Infinitable<i64>, Infinitable<i64>) {
         (self.0, self.1)
     }
     pub fn broaden(self, other: Interval) -> Self {
@@ -195,7 +225,20 @@ impl Interval {
     }
 
     pub fn infer(e: &SymExpression, i: &IntervalMap) -> Interval {
-        todo!()
+        match e {
+            SymExpression::Literal(Literal::Integer(z)) => Interval::new(Infinitable::Finite(*z), Infinitable::Finite(*z)),
+            SymExpression::FreeVariable(SymType::Int, x) => i.get(x),
+            SymExpression::Plus(l_expr, r_expr) => 
+                Interval::infer(l_expr, i) + Interval::infer(r_expr, i),
+            SymExpression::Minus(l_expr, r_expr) => 
+            Interval::infer(l_expr, i) - Interval::infer(r_expr, i),
+            SymExpression::Multiply(l_expr, r_expr)=> 
+            Interval::infer(l_expr, i) * Interval::infer(r_expr, i),
+            SymExpression::Negative(expr) => 
+            Interval::new(Infinitable::Finite(-1), Infinitable::Finite(-1)) * Interval::infer(expr, i),
+            SymExpression::SizeOf(_, _) => todo!(),
+            _ => Interval::default()
+        }
     }
 }
 
