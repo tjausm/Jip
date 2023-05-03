@@ -303,7 +303,6 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                         if sym_memory.get_scope(0).id == None {
                             continue;
                         };
-
                         // add return value to stack
                         sym_memory.stack_insert(
                             retval_id.clone(),
@@ -334,8 +333,8 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                         loop {
                             match (params_iter.next(), args_iter.next()) {
                                 (Some((_, arg_id)), Some(expr)) => {
-                                    let sym_expr = SymExpression::new(&sym_memory, expr.clone());
-                                    sym_memory.stack_insert(arg_id.clone(), sym_expr);
+                                    
+                                    sym_memory.stack_insert(arg_id.clone(), SymExpression::new(&sym_memory, expr.clone()));
                                 },
                                 (Some((_, param)), None) => panic_with_diagnostics(
                                     &format!(

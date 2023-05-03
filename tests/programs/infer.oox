@@ -1,0 +1,9 @@
+class Main{
+static void main(int x, int y){
+    assume x > 0 && x < 6;
+    assume y == x;
+    assume y == 4;
+    assert x == 4;
+}
+}
+

@@ -14,6 +14,7 @@ fn {name}() {{
     let assert_simple = cmd_simple
         .arg("-f")
         .arg("-i")
+        .arg("2")
         .arg(r#"{path}"#)
         .arg("verify")
         .assert();

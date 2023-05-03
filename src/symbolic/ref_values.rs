@@ -12,7 +12,10 @@ use crate::{
 use core::fmt;
 use infinitable::Infinitable;
 use rustc_hash::{FxHashMap, FxHashSet};
-use std::{cmp::Ordering, ops::{Mul, Sub, Add}};
+use std::{
+    cmp::Ordering,
+    ops::{Add, Mul, Sub},
+};
 
 /// tracks if lazy reference is already evaluated
 pub type EvaluatedRefs = FxHashSet<Reference>;
@@ -81,7 +84,7 @@ impl LazyReference {
         // check if path is feasible
         let mut pc = pc.conjunct();
         if simplify {
-            pc = pc.simplify(i, Some(eval_refs));
+            pc = pc.eval(i,Some(eval_refs));
             match pc {
                 SymExpression::Literal(Literal::Boolean(false)) => return Ok(false),
                 _ => (),
@@ -98,7 +101,7 @@ impl LazyReference {
         );
         let mut pc_null_check = SymExpression::And(Box::new(pc), Box::new(ref_is_null));
         if simplify {
-            pc_null_check = pc_null_check.simplify(i, Some(eval_refs));
+            pc_null_check = pc_null_check.eval(i,Some(eval_refs));
             match pc_null_check {
                 SymExpression::Literal(Literal::Boolean(true)) => return Ok(true),
                 _ => (),
@@ -171,7 +174,7 @@ pub type Array = (
 );
 
 #[derive(Clone, Copy, PartialEq)]
-pub struct Interval(Infinitable<i64>, Infinitable<i64>);
+pub struct Interval(pub Infinitable<i64>, pub Infinitable<i64>);
 
 impl Default for Interval {
     fn default() -> Self {
@@ -184,8 +187,8 @@ impl Add for Interval {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self {
-        let ((a,b), (c,d)) = (self.get(), rhs.get());
-        Interval::new(a+c, b+d)
+        let ((a, b), (c, d)) = (self.get(), rhs.get());
+        Interval::new(a + c, b + d)
     }
 }
 impl Sub for Interval {
@@ -193,8 +196,8 @@ impl Sub for Interval {
     type Output = Self;
 
     fn sub(self, rhs: Self) -> Self {
-        let ((a,b), (c,d)) = (self.get(), rhs.get());
-        Interval::new(a-c, b-d)
+        let ((a, b), (c, d)) = (self.get(), rhs.get());
+        Interval::new(a - c, b - d)
     }
 }
 
@@ -203,9 +206,12 @@ impl Mul for Interval {
     type Output = Self;
 
     fn mul(self, rhs: Self) -> Self {
-        let ((a,b), (c,d)) = (self.get(), rhs.get());
-        let products = [a*c, a*d, b*c, b*d];
-        Interval::new(*products.iter().min().unwrap(), *products.iter().max().unwrap())
+        let ((a, b), (c, d)) = (self.get(), rhs.get());
+        let products = [a * c, a * d, b * c, b * d];
+        Interval::new(
+            *products.iter().min().unwrap(),
+            *products.iter().max().unwrap(),
+        )
     }
 }
 
@@ -217,27 +223,34 @@ impl Interval {
         (self.0, self.1)
     }
     pub fn broaden(self, other: Interval) -> Self {
-        Interval(self.0.max(other.0), self.1.min(other.1))
+        Interval(self.0.min(other.0), self.1.max(other.1))
     }
 
     pub fn narrow(self, other: Interval) -> Self {
-        Interval(self.0.min(other.0), self.1.max(other.1))
+        Interval(self.0.max(other.0), self.1.min(other.1))
     }
 
     pub fn infer(e: &SymExpression, i: &IntervalMap) -> Interval {
         match e {
-            SymExpression::Literal(Literal::Integer(z)) => Interval::new(Infinitable::Finite(*z), Infinitable::Finite(*z)),
+            SymExpression::Literal(Literal::Integer(z)) => {
+                Interval::new(Infinitable::Finite(*z), Infinitable::Finite(*z))
+            }
             SymExpression::FreeVariable(SymType::Int, x) => i.get(x),
-            SymExpression::Plus(l_expr, r_expr) => 
-                Interval::infer(l_expr, i) + Interval::infer(r_expr, i),
-            SymExpression::Minus(l_expr, r_expr) => 
-            Interval::infer(l_expr, i) - Interval::infer(r_expr, i),
-            SymExpression::Multiply(l_expr, r_expr)=> 
-            Interval::infer(l_expr, i) * Interval::infer(r_expr, i),
-            SymExpression::Negative(expr) => 
-            Interval::new(Infinitable::Finite(-1), Infinitable::Finite(-1)) * Interval::infer(expr, i),
+            SymExpression::Plus(l_expr, r_expr) => {
+                Interval::infer(l_expr, i) + Interval::infer(r_expr, i)
+            }
+            SymExpression::Minus(l_expr, r_expr) => {
+                Interval::infer(l_expr, i) - Interval::infer(r_expr, i)
+            }
+            SymExpression::Multiply(l_expr, r_expr) => {
+                Interval::infer(l_expr, i) * Interval::infer(r_expr, i)
+            }
+            SymExpression::Negative(expr) => {
+                Interval::new(Infinitable::Finite(-1), Infinitable::Finite(-1))
+                    * Interval::infer(expr, i)
+            }
             SymExpression::SizeOf(_, _) => todo!(),
-            _ => Interval::default()
+            _ => Interval::default(),
         }
     }
 }
@@ -313,13 +326,11 @@ impl IntervalMap {
                     self.0.insert(x2.clone(), i);
                 }
                 (SymExpression::FreeVariable(SymType::Int, x1), r_expr) => {
-                    let mut i = self.get(x1);
-                    i.narrow(Interval::infer(r_expr, &self));
+                    let i = self.get(x1).narrow(Interval::infer(r_expr, &self));
                     self.0.insert(x1.clone(), i);
                 }
                 (l_expr, (SymExpression::FreeVariable(SymType::Int, x2))) => {
-                    let mut i = self.get(x2);
-                    i.narrow(Interval::infer(l_expr, &self));
+                    let i = self.get(x2).narrow(Interval::infer(l_expr, &self));
                     self.0.insert(x2.clone(), i);
                 }
                 _ => (),
@@ -346,18 +357,14 @@ impl IntervalMap {
             SymExpression::LEQ(l_expr, r_expr) => match (&**l_expr, &**r_expr) {
                 (SymExpression::FreeVariable(SymType::Int, x), r_expr) => {
                     let (a, _) = Interval::infer(r_expr, self).get();
-                    let i = self.get(x).narrow(Interval::new(
-                        Infinitable::NegativeInfinity,
-                        a,
-                    ));
+                    let i = self
+                        .get(x)
+                        .narrow(Interval::new(Infinitable::NegativeInfinity, a));
                     self.0.insert(x.clone(), i);
                 }
                 (l_expr, (SymExpression::FreeVariable(SymType::Int, x))) => {
                     let (_, b) = Interval::infer(l_expr, self).get();
-                    let i = self.get(x).narrow(Interval::new(
-                        b,
-                        Infinitable::Infinity,
-                    ));
+                    let i = self.get(x).narrow(Interval::new(b, Infinitable::Infinity));
                     self.0.insert(x.clone(), i);
                 }
                 _ => (),
@@ -385,18 +392,14 @@ impl IntervalMap {
             SymExpression::GEQ(l_expr, r_expr) => match (&**l_expr, &**r_expr) {
                 ((SymExpression::FreeVariable(SymType::Int, x)), r_expr) => {
                     let (_, b) = Interval::infer(r_expr, self).get();
-                    let i = self.get(x).narrow(Interval::new(
-                        b,
-                        Infinitable::Infinity,
-                    ));
+                    let i = self.get(x).narrow(Interval::new(b, Infinitable::Infinity));
                     self.0.insert(x.clone(), i);
                 }
                 (l_expr, SymExpression::FreeVariable(SymType::Int, x)) => {
                     let (a, _) = Interval::infer(l_expr, self).get();
-                    let i = self.get(x).narrow(Interval::new(
-                        Infinitable::NegativeInfinity,
-                        a,
-                    ));
+                    let i = self
+                        .get(x)
+                        .narrow(Interval::new(Infinitable::NegativeInfinity, a));
                     self.0.insert(x.clone(), i);
                 }
 
@@ -413,7 +416,9 @@ impl IntervalMap {
             d -= 1;
             let i = self.clone();
             self.infer(e);
-            if i.0 == self.0 {break;}
+            if i.0 == self.0 {
+                break;
+            }
         }
     }
 }
@@ -438,7 +443,7 @@ impl fmt::Debug for IntervalMap {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut res = "IntervalMap:\n".to_string();
         for (var, interval) in self.0.iter() {
-            res.push_str(&format!("    {:?} -> {:?}\n", var, interval));
+            res.push_str(&format!("    {} -> {:?}\n", var, interval));
         }
         write!(f, "{}", res)
     }

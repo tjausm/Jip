@@ -85,7 +85,7 @@ pub fn lhs_from_rhs<'a>(
     };
 
     if solver.config.simplify {
-        var = var.simplify(i, Some(eval_refs));
+        var = var.eval(i, Some(eval_refs));
     }
 
     match lhs {
@@ -136,7 +136,7 @@ pub fn assert(
 
     // add (inferred  and / orsimplified) assertion
     if config.simplify {
-        let simple_assertion = sym_assertion.simplify(i, Some(eval_refs));
+        let simple_assertion = sym_assertion.eval(i, Some(eval_refs));
         //let simple_assertion = assertion;
         match simple_assertion {
             SymExpression::Literal(Literal::Boolean(true)) => (),
@@ -149,7 +149,7 @@ pub fn assert(
     // calculate (inferred and / or simplified) constraints
     let mut constraints = pc.combine_over_true();
     if config.simplify {
-        constraints = constraints.simplify(i, Some(eval_refs))
+        constraints = constraints.eval(i,Some(eval_refs))
     };
     match constraints {
         SymExpression::Literal(Literal::Boolean(true)) => return Ok(()),
@@ -186,7 +186,7 @@ pub fn assume(
     &mut i.iterative_inference(&sym_assumption, config.infer_size);
 
     if config.simplify {
-        let simple_assumption = sym_assumption.simplify(i, Some(eval_refs));
+        let simple_assumption = sym_assumption.eval(i, Some(eval_refs));
 
         match simple_assumption {
             SymExpression::Literal(Literal::Boolean(false)) => return false,
@@ -199,7 +199,7 @@ pub fn assume(
 
     let mut constraints = pc.conjunct();
     if config.simplify {
-        constraints = constraints.simplify(i, Some(eval_refs))
+        constraints = constraints.eval(i, Some(eval_refs))
     };
 
     // return false if expression always evaluates to false
