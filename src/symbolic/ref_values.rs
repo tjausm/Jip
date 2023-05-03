@@ -170,7 +170,7 @@ pub type Array = (
     IsLazy,
 );
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 pub struct Interval(Infinitable<i64>, Infinitable<i64>);
 
 impl Default for Interval {
@@ -408,8 +408,13 @@ impl IntervalMap {
     }
 
     // An iterative inference algorithm to update the IntervalMap with given expression
-    pub fn iterative_inference<'a>(&'a mut self, e: &SymExpression, d: i8) {
-        todo!();
+    pub fn iterative_inference<'a>(&'a mut self, e: &SymExpression, mut d: i8) {
+        while d > 0 {
+            d -= 1;
+            let i = self.clone();
+            self.infer(e);
+            if i.0 == self.0 {break;}
+        }
     }
 }
 

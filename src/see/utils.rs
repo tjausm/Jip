@@ -1,5 +1,5 @@
 use crate::ast::*;
-use crate::shared::{panic_with_diagnostics, Feasible, Error, Config};
+use crate::shared::{panic_with_diagnostics, Feasible, Error};
 use crate::smt_solver::SolverEnv;
 use crate::symbolic::expression::{PathConstraints, SymExpression, SymType};
 use crate::symbolic::memory::SymMemory;
