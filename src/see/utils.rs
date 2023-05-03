@@ -1,5 +1,5 @@
 use crate::ast::*;
-use crate::shared::{panic_with_diagnostics, Feasible, Error};
+use crate::shared::{panic_with_diagnostics, Feasible, Error, Config};
 use crate::smt_solver::SolverEnv;
 use crate::symbolic::expression::{PathConstraints, SymExpression, SymType};
 use crate::symbolic::memory::SymMemory;
@@ -67,11 +67,12 @@ pub fn lhs_from_rhs<'a>(
     pc: &PathConstraints,
     sizes: &mut ArrSizes,
     eval_refs: &mut EvaluatedRefs,
+    config: &Config,
     solver: &mut SolverEnv,
     lhs: &'a Lhs,
     rhs: &'a Rhs,
 ) -> Result<Feasible, Error> {
-    let var = match parse_rhs(
+    let mut var = match parse_rhs(
         sym_memory,
         pc,
         sizes,
@@ -82,6 +83,11 @@ pub fn lhs_from_rhs<'a>(
         Some(var) => var,
         _ => return Ok(false),
     };
+
+    if config.simplify {
+        var = var.simplify(Some(sizes), Some(eval_refs));
+    }
+
     match lhs {
         Lhs::Identifier(id) => {
             sym_memory.stack_insert(id.to_string(), var);

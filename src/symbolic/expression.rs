@@ -591,6 +591,7 @@ impl SymExpression {
                 _ => self,
             },
             SymExpression::Negative(expr) => match expr.clone().simplify(sizes, eval_refs) {
+                SymExpression::Negative(inner_expr) => inner_expr.clone().simplify(sizes, eval_refs),
                 SymExpression::Literal(Literal::Integer(n)) => {
                     SymExpression::Literal(Literal::Integer(-n))
                 }
