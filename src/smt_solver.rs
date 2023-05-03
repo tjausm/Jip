@@ -4,7 +4,7 @@ use crate::ast::{Identifier, Literal};
 use crate::shared::{panic_with_diagnostics, Config, Diagnostics, SolverType};
 use crate::symbolic::expression::{SymExpression, SymType};
 use crate::symbolic::memory::SymMemory;
-use crate::symbolic::ref_values::{ArrSize, ArrSizes, Boundary, Reference, SymRefType, IntervalMap};
+use crate::symbolic::ref_values::{   Reference, SymRefType, IntervalMap};
 use core::fmt;
 use rsmt2::print::ModelParser;
 use rsmt2;

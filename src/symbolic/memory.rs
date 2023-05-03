@@ -5,7 +5,7 @@ use std::fmt;
 
 use super::expression::{PathConstraints, SymExpression, SymType};
 use super::ref_values::{
-    ArrSize, ArrSizes, Array, EvaluatedRefs, LazyReference, Reference, ReferenceValue, SymRefType, IntervalMap,
+      Array, EvaluatedRefs, LazyReference, Reference, ReferenceValue, SymRefType, IntervalMap,
 };
 use crate::ast::*;
 use crate::shared::{panic_with_diagnostics,  Error, Scope};

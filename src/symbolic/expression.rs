@@ -9,7 +9,7 @@ use std::{
 };
 
 use super::ref_values::{
-    ArrSize, ArrSizes,  LazyReference, Reference, ReferenceValue, SymRefType, EvaluatedRefs, IntervalMap,
+       LazyReference, Reference, ReferenceValue, SymRefType, EvaluatedRefs, IntervalMap,
 };
 use crate::{ast::*, shared::panic_with_diagnostics, symbolic::memory::SymMemory};
 

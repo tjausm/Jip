@@ -3,7 +3,7 @@ use crate::shared::{panic_with_diagnostics, Feasible, Error, Config};
 use crate::smt_solver::SolverEnv;
 use crate::symbolic::expression::{PathConstraints, SymExpression, SymType};
 use crate::symbolic::memory::SymMemory;
-use crate::symbolic::ref_values::{ArrSizes, EvaluatedRefs, SymRefType, IntervalMap};
+use crate::symbolic::ref_values::{EvaluatedRefs, SymRefType, IntervalMap};
 
 /// returns the symbolic expression rhs refers to, or None if we encounter a lazy object on an infeasible path
 pub fn parse_rhs<'a, 'b>(
