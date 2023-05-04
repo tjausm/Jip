@@ -4,8 +4,9 @@ use crate::ast::{Identifier, Literal};
 use crate::shared::{panic_with_diagnostics, Config, Diagnostics, SolverType};
 use crate::symbolic::expression::{SymExpression, SymType};
 use crate::symbolic::memory::SymMemory;
-use crate::symbolic::ref_values::{   Reference, SymRefType, IntervalMap};
+use crate::symbolic::ref_values::{   Reference, SymRefType, IntervalMap, Interval};
 use core::fmt;
+use infinitable::Infinitable;
 use rsmt2::print::ModelParser;
 use rsmt2;
 use z3;
@@ -199,6 +200,7 @@ impl SolverEnv<'_> {
             println!("    Formula: {:?}\n", expr_str);
         }
 
+        // declare free variables 
         for fv in fvs {
             match fv {
                 (SymType::Bool, id) => solver.declare_const(id, "Bool").unwrap(),
@@ -206,6 +208,8 @@ impl SolverEnv<'_> {
                 (SymType::Ref(_), id) => solver.declare_const(id, "Int").unwrap(),
             }
         }
+
+        // perform set of collected assertions
         for assertion in assertions {
             solver.assert(assertion).unwrap();
         }
@@ -427,7 +431,18 @@ fn expr_to_smtlib<'a>(
             let closed_id = format!("|{}|", id);
             let mut fv = FxHashSet::default();
             fv.insert((ty.clone(), closed_id.clone()));
-            (format!("{}", closed_id), fv, FxHashSet::default())
+
+            //encode intervals in assertions
+            let mut a = FxHashSet::default();
+            let Interval(min, max) = i.get(&id);
+            if let Infinitable::Finite(min) = min {
+                a.insert(format!("(<= {} {})", min, closed_id));
+            }
+            if let Infinitable::Finite(max) = max {
+                a.insert(format!("(<= {} {})", closed_id, max));
+            }
+
+            (format!("{}", closed_id), fv, a)
         }
         SymExpression::Literal(Literal::Integer(n)) => {
             (format!("{}", n), FxHashSet::default(), FxHashSet::default())

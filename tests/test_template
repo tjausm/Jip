@@ -5,6 +5,7 @@ fn {name}() {{
     let assert = cmd
         .arg(r#"{path}"#)
         .arg("verify")
+        .arg("30")
         .assert();
     assert
         .code(0);

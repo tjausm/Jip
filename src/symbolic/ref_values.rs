@@ -14,6 +14,7 @@ use infinitable::Infinitable;
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::{
     cmp::Ordering,
+    collections::hash_map::Iter,
     ops::{Add, Mul, Sub},
 };
 
@@ -84,7 +85,7 @@ impl LazyReference {
         // check if path is feasible
         let mut pc = pc.conjunct();
         if simplify {
-            pc = pc.eval(i,Some(eval_refs));
+            pc = pc.eval(i, Some(eval_refs));
             match pc {
                 SymExpression::Literal(Literal::Boolean(false)) => return Ok(false),
                 _ => (),
@@ -101,7 +102,7 @@ impl LazyReference {
         );
         let mut pc_null_check = SymExpression::And(Box::new(pc), Box::new(ref_is_null));
         if simplify {
-            pc_null_check = pc_null_check.eval(i,Some(eval_refs));
+            pc_null_check = pc_null_check.eval(i, Some(eval_refs));
             match pc_null_check {
                 SymExpression::Literal(Literal::Boolean(true)) => return Ok(true),
                 _ => (),
@@ -188,15 +189,15 @@ impl Add for Interval {
 
     fn add(self, rhs: Self) -> Self {
         let ((a, b), (c, d)) = (self.get(), rhs.get());
-        let lower = match (a,c) {
+        let lower = match (a, c) {
             (Infinitable::NegativeInfinity, _) => Infinitable::NegativeInfinity,
             (_, Infinitable::NegativeInfinity) => Infinitable::NegativeInfinity,
-            _ => a + c
+            _ => a + c,
         };
-        let upper = match (b,d) {
+        let upper = match (b, d) {
             (Infinitable::Infinity, _) => Infinitable::Infinity,
             (_, Infinitable::Infinity) => Infinitable::Infinity,
-            _ => b + d
+            _ => b + d,
         };
         Interval::new(lower, upper)
     }
@@ -204,22 +205,21 @@ impl Add for Interval {
 impl Sub for Interval {
     // The multiplication of rational numbers is a closed operation.
     type Output = Self;
-    
+
     fn sub(self, rhs: Self) -> Self {
         let ((a, b), (c, d)) = (self.get(), rhs.get());
-        
-        let lower = match (a,c) {
+
+        let lower = match (a, c) {
             (Infinitable::NegativeInfinity, _) => Infinitable::NegativeInfinity,
             (_, Infinitable::NegativeInfinity) => Infinitable::NegativeInfinity,
-            _ => a - c
+            _ => a - c,
         };
-        let upper = match (b,d) {
+        let upper = match (b, d) {
             (Infinitable::Infinity, _) => Infinitable::Infinity,
             (_, Infinitable::Infinity) => Infinitable::Infinity,
-            _ => b - d
+            _ => b - d,
         };
         Interval::new(lower, upper)
-        
     }
 }
 
@@ -285,7 +285,13 @@ impl Default for IntervalMap {
     }
 }
 
+
 impl IntervalMap {
+
+pub fn iter(self: &Self) -> impl Iterator<Item=(&Identifier, &Interval)>{
+        self.0.iter()
+  }
+
     fn broaden(&mut self, other: &IntervalMap) {
         let mut keys: FxHashSet<Identifier> = self.0.clone().into_keys().collect();
         keys.extend(
