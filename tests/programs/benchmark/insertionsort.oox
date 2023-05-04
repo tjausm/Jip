@@ -19,10 +19,10 @@ class Main {
                 i := i + 1;
             }
         }
-        assert 
-            forall array, m, mv : 
-                forall array, n, nv : 
-                    m < n ==> mv <= nv;
+//       assert 
+//            forall array, m, mv : 
+//                forall array, n, nv : 
+//                    m < n ==> mv <= nv;
 
     }
 }

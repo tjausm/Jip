@@ -78,6 +78,10 @@ impl PathConstraints {
     pub fn push_assumption(&mut self, assumption: SymExpression) {
         self.constraints.push(PathConstraint::Assume(assumption));
     }
+    /// pops top most constraint
+    pub fn pop(&mut self) {
+        self.constraints.pop();
+    }
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
@@ -321,10 +325,10 @@ impl SymExpression {
                     (l_simple, r_simple) => {
                         match (Interval::infer(&l_simple, i), Interval::infer(&r_simple, i)) {
                             //check if intervals have no intersection
-                            (Interval(a, b), Interval(d, c)) if b < c => {
+                            (Interval(a, b), Interval(c, d)) if b < c => {
                                 SymExpression::Literal(Literal::Boolean(true))
                             }
-                            (Interval(a, b), Interval(d, c)) if d < a => {
+                            (Interval(a, b), Interval(c, d)) if d < a => {
                                 SymExpression::Literal(Literal::Boolean(false))
                             }
                             _ => SymExpression::LT(Box::new(l_simple), Box::new(r_simple)),
@@ -411,7 +415,7 @@ impl SymExpression {
             SymExpression::Literal(_) => self,
             //evaluate point interval
             SymExpression::FreeVariable(_, x) =>  match Interval::infer(&self, i) {
-                Interval(a,b) if a == b => SymExpression::Literal(Literal::Integer(a.finite().unwrap())),
+                Interval(a,b) if a == b && a.is_finite() => SymExpression::Literal(Literal::Integer(a.finite().unwrap())),
                 _ => self
             } ,
             SymExpression::Reference(_) => self,

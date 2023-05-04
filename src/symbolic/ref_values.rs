@@ -188,16 +188,38 @@ impl Add for Interval {
 
     fn add(self, rhs: Self) -> Self {
         let ((a, b), (c, d)) = (self.get(), rhs.get());
-        Interval::new(a + c, b + d)
+        let lower = match (a,c) {
+            (Infinitable::NegativeInfinity, _) => Infinitable::NegativeInfinity,
+            (_, Infinitable::NegativeInfinity) => Infinitable::NegativeInfinity,
+            _ => a + c
+        };
+        let upper = match (b,d) {
+            (Infinitable::Infinity, _) => Infinitable::Infinity,
+            (_, Infinitable::Infinity) => Infinitable::Infinity,
+            _ => b + d
+        };
+        Interval::new(lower, upper)
     }
 }
 impl Sub for Interval {
     // The multiplication of rational numbers is a closed operation.
     type Output = Self;
-
+    
     fn sub(self, rhs: Self) -> Self {
         let ((a, b), (c, d)) = (self.get(), rhs.get());
-        Interval::new(a - c, b - d)
+        
+        let lower = match (a,c) {
+            (Infinitable::NegativeInfinity, _) => Infinitable::NegativeInfinity,
+            (_, Infinitable::NegativeInfinity) => Infinitable::NegativeInfinity,
+            _ => a - c
+        };
+        let upper = match (b,d) {
+            (Infinitable::Infinity, _) => Infinitable::Infinity,
+            (_, Infinitable::Infinity) => Infinitable::Infinity,
+            _ => b - d
+        };
+        Interval::new(lower, upper)
+        
     }
 }
 

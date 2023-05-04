@@ -288,7 +288,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                         // try assignment, stop exploring path if it's infeasible
                         if !lhs_from_rhs(
                             &mut sym_memory,
-                            &pc,
+                            &mut pc,
                             &mut i,
                             &mut eval_refs,
                             &mut solver_env,
@@ -401,7 +401,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                         }
                         Lhs::AccessArray(arr_name, index) => {
                             let expr = sym_memory.heap_access_array(
-                                &pc,
+                                &mut pc,
                                 &i,
                                 &mut solver_env,
                                 arr_name,
@@ -427,7 +427,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
 
                             Lhs::AccessField(obj_name, field) => {
                                 sym_memory.heap_access_object(
-                                    &pc,
+                                    &mut pc,
                                     &i,
                                     &mut eval_refs,
                                     &mut solver_env,
@@ -438,7 +438,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                             }
                             Lhs::AccessArray(arr_name, index) => {
                                 sym_memory.heap_access_array(
-                                    &pc,
+                                    &mut pc,
                                     &i,
                                     &mut solver_env,
                                     arr_name,

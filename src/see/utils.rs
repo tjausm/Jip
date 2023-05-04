@@ -8,7 +8,7 @@ use crate::symbolic::ref_values::{EvaluatedRefs, SymRefType, IntervalMap};
 /// returns the symbolic expression rhs refers to, or None if we encounter a lazy object on an infeasible path
 pub fn parse_rhs<'a, 'b>(
     sym_memory: &mut SymMemory,
-    pc: &PathConstraints,
+    pc: &mut PathConstraints,
     i: &mut IntervalMap,
     eval_refs: &mut EvaluatedRefs,
     solver: &mut SolverEnv,
@@ -45,7 +45,7 @@ pub fn parse_rhs<'a, 'b>(
         }
 
         Rhs::AccessArray(arr_name, index) => sym_memory.heap_access_array(
-            &pc,
+            pc,
             i,
             solver,
             arr_name,
@@ -64,7 +64,7 @@ pub fn parse_rhs<'a, 'b>(
 // gets type of lhs, parses expression on rhs and assign value of rhs to lhs on stack / heap
 pub fn lhs_from_rhs<'a>(
     sym_memory: &mut SymMemory,
-    pc: &PathConstraints,
+    pc: &mut PathConstraints,
     i: &mut IntervalMap,
     eval_refs: &mut EvaluatedRefs,
     solver: &mut SolverEnv,
@@ -108,7 +108,7 @@ pub fn lhs_from_rhs<'a>(
 
         Lhs::AccessArray(arr_name, index) => sym_memory
             .heap_access_array(
-                &pc,
+                pc,
                 i,
                 solver,
                 arr_name,
@@ -136,7 +136,6 @@ pub fn assert(
     // add (inferred  and / orsimplified) assertion
     if config.simplify {
         let simple_assertion = sym_assertion.eval(i, Some(eval_refs));
-        println!("simple assertion = {:?}", simple_assertion);
         //let simple_assertion = assertion;
         match simple_assertion {
             SymExpression::Literal(Literal::Boolean(true)) => (),
@@ -183,13 +182,14 @@ pub fn assume(
     let config = &solver.config;
 
     // update intervals from assumption
-    &mut i.iterative_inference(&sym_assumption, config.infer_size);
+    i.iterative_inference(&sym_assumption, config.infer_size);
 
     if config.simplify {
-        let simple_assumption = sym_assumption.eval(i, Some(eval_refs));
+        let simple_assumption = sym_assumption.clone().eval(i, Some(eval_refs));
 
         match simple_assumption {
-            SymExpression::Literal(Literal::Boolean(false)) => return false,
+            SymExpression::Literal(Literal::Boolean(false)) => {
+                return false},
             SymExpression::Literal(Literal::Boolean(true)) => (),
             _ => pc.push_assumption(simple_assumption),
         };
