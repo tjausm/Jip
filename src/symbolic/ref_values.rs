@@ -244,12 +244,18 @@ impl Interval {
     pub fn get(self) -> (Infinitable<i64>, Infinitable<i64>) {
         (self.0, self.1)
     }
+
+    // return most pessimistic interval, return 
     pub fn broaden(self, other: Interval) -> Self {
-        Interval(self.0.min(other.0), self.1.max(other.1))
+        let min = self.0.min(other.0);
+        let max = self.1.max(other.1);
+        Interval(min, max.max(min))
     }
 
     pub fn narrow(self, other: Interval) -> Self {
-        Interval(self.0.max(other.0), self.1.min(other.1))
+        let min = self.0.max(other.0);
+        let max = self.1.min(other.1);
+        Interval(min, max.max(min))
     }
 
     pub fn infer(e: &SymExpression, i: &IntervalMap) -> Interval {

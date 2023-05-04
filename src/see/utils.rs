@@ -130,10 +130,13 @@ pub fn assert(
 ) -> Result<(), Error> {
     let sym_assertion = SymExpression::new(&sym_memory, assertion.clone());
     let config = &solver.config;
-    // update sizes
-    i.iterative_inference(&sym_assertion, config.infer_size);
 
-    // add (inferred  and / orsimplified) assertion
+    // temporarly push assumption and infer updated intervalmap from pathconstraints
+    pc.push_assumption(sym_assertion.clone());
+    i.iterative_inference(&pc.conjunct(), config.infer_size);
+    pc.pop();
+
+    // add (inferred  and / or simplified) assertion
     if config.simplify {
         let simple_assertion = sym_assertion.eval(i, Some(eval_refs));
         //let simple_assertion = assertion;
@@ -181,8 +184,10 @@ pub fn assume(
     let sym_assumption = SymExpression::new(&sym_memory, assumption.clone());
     let config = &solver.config;
 
-    // update intervals from assumption
-    i.iterative_inference(&sym_assumption, config.infer_size);
+    // push assumption and infer updated intervalmap from pathconstraints
+    pc.push_assumption(sym_assumption.clone());
+    i.iterative_inference(&pc.conjunct(), config.infer_size);
+    pc.pop();
 
     if config.simplify {
         let simple_assumption = sym_assumption.clone().eval(i, Some(eval_refs));
