@@ -80,7 +80,7 @@ impl LazyReference {
         eval_refs: &EvaluatedRefs,
         sym_memory: &SymMemory,
     ) -> Result<bool, Error> {
-        let simplify = solver.config.simplify;
+        let simplify = solver.config.expression_evaluation;
 
         // check if path is feasible
         let mut pc = pc.conjunct();

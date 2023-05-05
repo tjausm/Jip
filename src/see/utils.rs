@@ -84,7 +84,7 @@ pub fn lhs_from_rhs<'a>(
         _ => return Ok(false),
     };
 
-    if solver.config.simplify {
+    if solver.config.expression_evaluation {
         var = var.eval(i, Some(eval_refs));
     }
 
@@ -137,7 +137,7 @@ pub fn assert(
     pc.pop();
 
     // add (inferred  and / or simplified) assertion
-    if config.simplify {
+    if config.expression_evaluation {
         let simple_assertion = sym_assertion.eval(i, Some(eval_refs));
         //let simple_assertion = assertion;
         match simple_assertion {
@@ -150,7 +150,7 @@ pub fn assert(
 
     // calculate (inferred and / or simplified) constraints
     let mut constraints = pc.combine_over_true();
-    if config.simplify {
+    if config.expression_evaluation {
         constraints = constraints.eval(i,Some(eval_refs))
     };
     match constraints {
@@ -189,7 +189,7 @@ pub fn assume(
     i.iterative_inference(&pc.conjunct(), config.infer_size);
     pc.pop();
 
-    if config.simplify {
+    if config.expression_evaluation {
         let simple_assumption = sym_assumption.clone().eval(i, Some(eval_refs));
 
         match simple_assumption {
@@ -203,7 +203,7 @@ pub fn assume(
     };
 
     let mut constraints = pc.conjunct();
-    if config.simplify {
+    if config.expression_evaluation {
         constraints = constraints.eval(i, Some(eval_refs))
     };
 

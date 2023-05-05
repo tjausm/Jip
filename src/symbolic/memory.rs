@@ -202,7 +202,7 @@ impl<'a> SymMemory {
         // substitute index and try to simplify it to a literal using simplifier and / or z3
         // to prevent from values being indexed twice in the array
         let mut index = SymExpression::new(self, index);
-        if(solver.config.simplify){
+        if(solver.config.expression_evaluation){
             index = index.clone().eval(i, None); 
         }
         
@@ -244,7 +244,7 @@ impl<'a> SymMemory {
 
         // build expression index < length
         let mut index_lt_size = SymExpression::LT(Box::new(index.clone()), Box::new(size.clone()));
-        if solver.config.simplify{
+        if solver.config.expression_evaluation{
             index_lt_size = index_lt_size.eval(i, None);
         };
 
