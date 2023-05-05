@@ -337,16 +337,26 @@ impl<'a> SymMemory {
         }
     }
 
-    // return the symbolic length of an array
-    pub fn heap_get_arr_length(&self, arr_name: &Identifier) -> SymExpression {
-        match self.stack_get(&arr_name){
-        Some(SymExpression::Reference(r)) => match self.heap.get(&r){
-            Some(ReferenceValue::Array((_, _, length, _))) => length.clone(),
-            otherwise => panic_with_diagnostics(&format!("Can't return length of {} since the value it references to ({:?}) is not an array", arr_name, otherwise), &self),
-        },
-        _ => panic_with_diagnostics(&format!("{} is not a reference", arr_name), &self),
+    // possibly set and then return current length expression of array
+    pub fn heap_get_arr_len(&'a self, r: &Reference) -> &'a SymExpression {
+        match self.heap.get(&r){
+            Some(ReferenceValue::Array((ty,arr,curr_len,l))) => curr_len,
+            otherwise => panic_with_diagnostics(&format!("Can't return length of {:?} since the value it references to ({:?}) is not an array", r, otherwise), &self),
+        }
+        
     }
+
+    // possibly set and then return current length expression of array
+    pub fn heap_set_arr_len(&mut self, r: &Reference, new_len: SymExpression)  {
+        match self.heap.get(&r){
+            Some(ReferenceValue::Array((ty,arr,curr_len,l))) 
+                => {self.heap.insert(r.clone(), ReferenceValue::Array((ty.clone(), arr.clone(), new_len.clone(), *l)));},
+            otherwise => panic_with_diagnostics(&format!("Can't return length of {:?} since the value it references to ({:?}) is not an array", r, otherwise), &self),
+        }
+        
     }
+    
+    
 
     // inits an object with al it's fields uninitialised
     pub fn init_object(&mut self, class: Identifier) -> ReferenceValue {

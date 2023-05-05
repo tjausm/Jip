@@ -223,6 +223,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                             let r = Reference::new();
                             let size =
                                 SymExpression::FreeVariable(SymType::Int, format!("#{:?}", r));
+                            let size = SymExpression::Literal(Literal::Integer(10));
                             let sym_ty = match &**ty {
                                 Type::Int => SymType::Int,
                                 Type::Bool => SymType::Bool,

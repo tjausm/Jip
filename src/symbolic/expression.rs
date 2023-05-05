@@ -154,7 +154,12 @@ impl SymExpression {
                 Some(sym_expr) => sym_expr,
                 _ => panic_with_diagnostics(&format!("{} was not declared", id), &sym_memory),
             },
-            Expression::SizeOf(arr_name) => sym_memory.heap_get_arr_length(&arr_name),
+            Expression::SizeOf(arr_name) => {
+                match sym_memory.stack_get(&arr_name) {
+                    Some(SymExpression::Reference(r)) => sym_memory.heap_get_arr_len(&r).clone(),
+                    _ => panic_with_diagnostics(&format!("{} is not a reference", arr_name), &sym_memory),
+                }
+            }
             Expression::Implies(l, r) => SymExpression::Implies(
                 Box::new(SymExpression::new(sym_memory, *l)),
                 Box::new(SymExpression::new(sym_memory, *r)),
@@ -414,10 +419,12 @@ impl SymExpression {
             },
             SymExpression::Literal(_) => self,
             //evaluate point interval
-            SymExpression::FreeVariable(_, x) =>  match Interval::infer(&self, i) {
-                Interval(a,b) if a == b && a.is_finite() => SymExpression::Literal(Literal::Integer(a.finite().unwrap())),
-                _ => self
-            } ,
+            SymExpression::FreeVariable(_, x) => match Interval::infer(&self, i) {
+                Interval(a, b) if a == b && a.is_finite() => {
+                    SymExpression::Literal(Literal::Integer(a.finite().unwrap()))
+                }
+                _ => self,
+            },
             SymExpression::Reference(_) => self,
             SymExpression::Forall(_) => self,
             SymExpression::Exists(_, _, _, _) => self,
@@ -518,14 +525,11 @@ impl Forall {
 
         // get size from heap and make i < size expression
         let size = match current_memory.heap_get(r) {
-            ReferenceValue::Array((_,_,size,_)) => size,
-            _ => todo!()
+            ReferenceValue::Array((_, _, size, _)) => size,
+            _ => todo!(),
         };
 
-        let i_lt_size = SymExpression::LT(
-            Box::new(index_id.clone()),
-            Box::new(size.clone()),
-        );
+        let i_lt_size = SymExpression::LT(Box::new(index_id.clone()), Box::new(size.clone()));
 
         // build inner expression with index and value as freevars
         let mut extended_memory = captured_memory.clone();
