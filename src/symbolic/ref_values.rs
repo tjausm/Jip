@@ -208,7 +208,7 @@ impl Sub for Interval {
 
     fn sub(self, rhs: Self) -> Self {
         let ((a, b), (c, d)) = (self.get(), rhs.get());
-
+        
         let lower = match (a, c) {
             (Infinitable::NegativeInfinity, _) => Infinitable::NegativeInfinity,
             (_, Infinitable::NegativeInfinity) => Infinitable::NegativeInfinity,
@@ -245,7 +245,7 @@ impl Interval {
         (self.0, self.1)
     }
 
-    // return most pessimistic interval, return 
+    // return most pessimistic interval, return
     pub fn broaden(self, other: Interval) -> Self {
         let min = self.0.min(other.0);
         let max = self.1.max(other.1);
@@ -291,12 +291,7 @@ impl Default for IntervalMap {
     }
 }
 
-
 impl IntervalMap {
-
-pub fn iter(self: &Self) -> impl Iterator<Item=(&Identifier, &Interval)>{
-        self.0.iter()
-  }
 
     fn broaden(&mut self, other: &IntervalMap) {
         let mut keys: FxHashSet<Identifier> = self.0.clone().into_keys().collect();
@@ -368,9 +363,29 @@ pub fn iter(self: &Self) -> impl Iterator<Item=(&Identifier, &Interval)>{
                 }
                 _ => (),
             },
+            SymExpression::Not(expr) => match *expr.clone() {
+                SymExpression::LT(l_expr, r_expr) => {
+                    self.infer(&SymExpression::GEQ(l_expr, r_expr))
+                }
+                SymExpression::GT(l_expr, r_expr) => {
+                    self.infer(&SymExpression::LEQ(l_expr, r_expr))
+                }
+                SymExpression::GEQ(l_expr, r_expr) => {
+                    self.infer(&SymExpression::LT(l_expr, r_expr))
+                }
+                SymExpression::LEQ(l_expr, r_expr) => {
+                    self.infer(&SymExpression::GT(l_expr, r_expr))
+                }
+                _ => (),
+            },
             SymExpression::LT(l_expr, r_expr) => match (&**l_expr, &**r_expr) {
                 (SymExpression::FreeVariable(SymType::Int, x), r_expr) => {
-                    let (a, _) = Interval::infer(r_expr, self).get();
+                    let (a, _) = Interval::infer(r_expr, self).get(); // abort inference if compared value is not finite
+
+                    if !a.is_finite() {
+                        return;
+                    }
+
                     let i = self.get(x).narrow(Interval::new(
                         Infinitable::NegativeInfinity,
                         a - infinitable::Finite(1),
@@ -379,6 +394,9 @@ pub fn iter(self: &Self) -> impl Iterator<Item=(&Identifier, &Interval)>{
                 }
                 (l_expr, (SymExpression::FreeVariable(SymType::Int, x))) => {
                     let (_, b) = Interval::infer(l_expr, self).get();
+                    if !b.is_finite() {
+                        return;
+                    }
                     let i = self.get(x).narrow(Interval::new(
                         b + infinitable::Finite(1),
                         Infinitable::Infinity,
@@ -390,6 +408,11 @@ pub fn iter(self: &Self) -> impl Iterator<Item=(&Identifier, &Interval)>{
             SymExpression::LEQ(l_expr, r_expr) => match (&**l_expr, &**r_expr) {
                 (SymExpression::FreeVariable(SymType::Int, x), r_expr) => {
                     let (a, _) = Interval::infer(r_expr, self).get();
+
+                    if !a.is_finite() {
+                        return;
+                    }
+
                     let i = self
                         .get(x)
                         .narrow(Interval::new(Infinitable::NegativeInfinity, a));
@@ -397,6 +420,9 @@ pub fn iter(self: &Self) -> impl Iterator<Item=(&Identifier, &Interval)>{
                 }
                 (l_expr, (SymExpression::FreeVariable(SymType::Int, x))) => {
                     let (_, b) = Interval::infer(l_expr, self).get();
+                    if !b.is_finite() {
+                        return;
+                    }
                     let i = self.get(x).narrow(Interval::new(b, Infinitable::Infinity));
                     self.0.insert(x.clone(), i);
                 }
@@ -405,6 +431,9 @@ pub fn iter(self: &Self) -> impl Iterator<Item=(&Identifier, &Interval)>{
             SymExpression::GT(l_expr, r_expr) => match (&**l_expr, &**r_expr) {
                 ((SymExpression::FreeVariable(SymType::Int, x)), r_expr) => {
                     let (_, b) = Interval::infer(r_expr, self).get();
+                    if !b.is_finite() {
+                        return;
+                    }
                     let i = self.get(x).narrow(Interval::new(
                         b + infinitable::Finite(1),
                         Infinitable::Infinity,
@@ -413,6 +442,9 @@ pub fn iter(self: &Self) -> impl Iterator<Item=(&Identifier, &Interval)>{
                 }
                 (l_expr, SymExpression::FreeVariable(SymType::Int, x)) => {
                     let (a, _) = Interval::infer(l_expr, self).get();
+                    if !a.is_finite() {
+                        return;
+                    }
                     let i = self.get(x).narrow(Interval::new(
                         Infinitable::NegativeInfinity,
                         a - infinitable::Finite(1),
@@ -425,11 +457,17 @@ pub fn iter(self: &Self) -> impl Iterator<Item=(&Identifier, &Interval)>{
             SymExpression::GEQ(l_expr, r_expr) => match (&**l_expr, &**r_expr) {
                 ((SymExpression::FreeVariable(SymType::Int, x)), r_expr) => {
                     let (_, b) = Interval::infer(r_expr, self).get();
+                    if !b.is_finite() {
+                        return;
+                    }
                     let i = self.get(x).narrow(Interval::new(b, Infinitable::Infinity));
                     self.0.insert(x.clone(), i);
                 }
                 (l_expr, SymExpression::FreeVariable(SymType::Int, x)) => {
                     let (a, _) = Interval::infer(l_expr, self).get();
+                    if !a.is_finite() {
+                        return;
+                    }
                     let i = self
                         .get(x)
                         .narrow(Interval::new(Infinitable::NegativeInfinity, a));

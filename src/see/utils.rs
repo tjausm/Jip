@@ -209,8 +209,9 @@ pub fn assume(
 
     // return false if expression always evaluates to false
     match (prune, &constraints) {
-        // if is unsatisfiable return false
-        (_, SymExpression::Literal(Literal::Boolean(false))) => return false,
+        // if is unsatisfiable return false, if always satisfiable return true
+        (_, SymExpression::Literal(Literal::Boolean(false))) => false,
+        (_, SymExpression::Literal(Literal::Boolean(true))) => true,
         // if z3 finds a satisfying model return true, otherwise return false
         (true, _) => {
             let res = solver.verify_expr(&constraints, sym_memory, i);
