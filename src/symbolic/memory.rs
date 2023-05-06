@@ -249,7 +249,7 @@ impl<'a> SymMemory {
         };
 
         match (index_lt_size) {
-            SymExpression::Literal(Literal::Boolean(false)) => (),
+            SymExpression::Literal(Literal::Boolean(true)) => (),
             _ => {
                 
                 // add 'index < size' as inner most constraint of pc  '!(pc1 => (pc2 && index < size))'
