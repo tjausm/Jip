@@ -1,9 +1,9 @@
 use crate::ast::*;
-use crate::shared::{panic_with_diagnostics, Feasible, Error};
+use crate::shared::{panic_with_diagnostics, Error, Feasible};
 use crate::smt_solver::SolverEnv;
 use crate::symbolic::expression::{PathConstraints, SymExpression, SymType};
 use crate::symbolic::memory::SymMemory;
-use crate::symbolic::ref_values::{EvaluatedRefs, SymRefType, IntervalMap};
+use crate::symbolic::ref_values::{EvaluatedRefs, IntervalMap, SymRefType};
 
 /// returns the symbolic expression rhs refers to, or None if we encounter a lazy object on an infeasible path
 pub fn parse_rhs<'a, 'b>(
@@ -71,15 +71,7 @@ pub fn lhs_from_rhs<'a>(
     lhs: &'a Lhs,
     rhs: &'a Rhs,
 ) -> Result<Feasible, Error> {
-
-    let mut var = match parse_rhs(
-        sym_memory,
-        pc,
-        i,
-        eval_refs,
-        solver,
-        rhs,
-    )? {
+    let mut var = match parse_rhs(sym_memory, pc, i, eval_refs, solver, rhs)? {
         Some(var) => var,
         _ => return Ok(false),
     };
@@ -107,14 +99,7 @@ pub fn lhs_from_rhs<'a>(
         },
 
         Lhs::AccessArray(arr_name, index) => sym_memory
-            .heap_access_array(
-                pc,
-                i,
-                solver,
-                arr_name,
-                index.clone(),
-                Some(var),
-            )
+            .heap_access_array(pc, i, solver, arr_name, index.clone(), Some(var))
             .map(|_| true),
     }
 }
@@ -128,13 +113,16 @@ pub fn assert(
     solver: &mut SolverEnv,
     assertion: &Expression,
 ) -> Result<(), Error> {
-    let sym_assertion = SymExpression::new(&sym_memory, assertion.clone());
+    let mut sym_assertion = SymExpression::new(&sym_memory, assertion.clone());
     let config = &solver.config;
 
     // temporarly push assumption and infer updated intervalmap from pathconstraints
-    pc.push_assumption(sym_assertion.clone());
-    i.iterative_inference(&pc.conjunct(), config.infer_size);
-    pc.pop();
+    if config.infer_size > 0 {
+        sym_assertion = sym_assertion.eval(i, Some(eval_refs));
+        pc.push_assumption(sym_assertion.clone());
+        i.iterative_inference(&pc.conjunct(), config.infer_size);
+        pc.pop();
+    }
 
     // add (inferred  and / or simplified) assertion
     if config.expression_evaluation {
@@ -151,7 +139,7 @@ pub fn assert(
     // calculate (inferred and / or simplified) constraints
     let mut constraints = pc.combine_over_true();
     if config.expression_evaluation {
-        constraints = constraints.eval(i,Some(eval_refs))
+        constraints = constraints.eval(i, Some(eval_refs))
     };
     match constraints {
         SymExpression::Literal(Literal::Boolean(true)) => return Ok(()),
@@ -181,20 +169,22 @@ pub fn assume(
     solver: &mut SolverEnv,
     assumption: &Expression,
 ) -> bool {
-    let sym_assumption = SymExpression::new(&sym_memory, assumption.clone());
+    let mut sym_assumption = SymExpression::new(&sym_memory, assumption.clone());
     let config = &solver.config;
 
     // push assumption and infer updated intervalmap from pathconstraints
-    pc.push_assumption(sym_assumption.clone());
-    i.iterative_inference(&pc.conjunct(), config.infer_size);
-    pc.pop();
+    if (config.infer_size > 0) {
+        sym_assumption = sym_assumption.eval(i, Some(eval_refs));
+        pc.push_assumption(sym_assumption.clone());
+        i.iterative_inference(&pc.conjunct(), config.infer_size);
+        pc.pop();
+    }
 
     if config.expression_evaluation {
         let simple_assumption = sym_assumption.clone().eval(i, Some(eval_refs));
 
         match simple_assumption {
-            SymExpression::Literal(Literal::Boolean(false)) => {
-                return false},
+            SymExpression::Literal(Literal::Boolean(false)) => return false,
             SymExpression::Literal(Literal::Boolean(true)) => (),
             _ => pc.push_assumption(simple_assumption),
         };
