@@ -132,7 +132,7 @@ pub type While = (Expression, Box<Statement>);
 pub enum Type {
     Void,
     Int,
-    Bool,
+Bool,
     Class(Identifier),
     Array(Box<Type>),
 }

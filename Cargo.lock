@@ -411,6 +411,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "infinitable"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6521abcd589191d253b192fe72eab2a1c26b9d6924d6e1561920d47c34e109a9"
+dependencies = [
+ "num-traits",
+]
+
+[[package]]
 name = "instant"
 version = "0.1.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -436,6 +445,7 @@ dependencies = [
  "clap 3.1.18",
  "colored",
  "global_counter",
+ "infinitable",
  "lalrpop",
  "lalrpop-util",
  "petgraph",
@@ -554,6 +564,15 @@ checksum = "ffb4262d26ed83a1c0a33a38fe2bb15797329c85770da05e6b828ddb782627af"
 dependencies = [
  "memchr",
  "version_check",
+]
+
+[[package]]
+name = "num-traits"
+version = "0.2.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "578ede34cf02f8924ab9447f50c28075b4d3e5b269972345e7e0372b38c6cdcd"
+dependencies = [
+ "autocfg",
 ]
 
 [[package]]

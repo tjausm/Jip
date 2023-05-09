@@ -38,8 +38,9 @@ pub enum SolverType {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Config {
-    pub simplify: bool,
-    pub infer_size: bool,
+    pub expression_evaluation: bool,
+    pub infer_size: i8,
+    pub symbolic_array_size: Option<i64>,
     pub formula_caching: bool,
     pub prune_ratio: i8,
     pub solver_type: SolverType,

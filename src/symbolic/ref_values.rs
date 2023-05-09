@@ -10,8 +10,13 @@ use crate::{
     smt_solver::SolverEnv,
 };
 use core::fmt;
+use infinitable::Infinitable;
 use rustc_hash::{FxHashMap, FxHashSet};
-use std::cmp::Ordering;
+use std::{
+    cmp::Ordering,
+    collections::hash_map::Iter,
+    ops::{Add, Mul, Sub},
+};
 
 /// tracks if lazy reference is already evaluated
 pub type EvaluatedRefs = FxHashSet<Reference>;
@@ -71,23 +76,22 @@ impl LazyReference {
         &self,
         solver: &mut SolverEnv,
         pc: &PathConstraints,
-        sizes: &ArrSizes,
+        i: &IntervalMap,
         eval_refs: &EvaluatedRefs,
         sym_memory: &SymMemory,
     ) -> Result<bool, Error> {
-
-        let simplify = solver.config.simplify;
+        let simplify = solver.config.expression_evaluation;
 
         // check if path is feasible
         let mut pc = pc.conjunct();
         if simplify {
-            pc = pc.simplify(Some(sizes), Some(eval_refs));
+            pc = pc.eval(i, Some(eval_refs));
             match pc {
                 SymExpression::Literal(Literal::Boolean(false)) => return Ok(false),
-                _ => ()
+                _ => (),
             }
         }
-        if solver.verify_expr(&pc, sym_memory, Some(sizes)).is_none() {
+        if solver.verify_expr(&pc, sym_memory, i).is_none() {
             return Ok(false);
         }
 
@@ -98,14 +102,14 @@ impl LazyReference {
         );
         let mut pc_null_check = SymExpression::And(Box::new(pc), Box::new(ref_is_null));
         if simplify {
-            pc_null_check = pc_null_check.simplify(Some(sizes), Some(eval_refs));
+            pc_null_check = pc_null_check.eval(i, Some(eval_refs));
             match pc_null_check {
                 SymExpression::Literal(Literal::Boolean(true)) => return Ok(true),
-                _ => ()
+                _ => (),
             }
         }
 
-        match solver.verify_expr(&pc_null_check, sym_memory, Some(sizes)) {
+        match solver.verify_expr(&pc_null_check, sym_memory, i) {
             None => Ok(true),
             Some(model) => Err(Error::Verification(format!(
                 "Reference {:?} could possibly be null:\n{:?}",
@@ -120,7 +124,7 @@ impl LazyReference {
         solver: &mut SolverEnv,
         sym_memory: &mut SymMemory,
         pc: &PathConstraints,
-        sizes: &ArrSizes,
+        i: &IntervalMap,
         eval_refs: &mut EvaluatedRefs,
     ) -> Result<Option<Reference>, Error> {
         // try to add ref to hashset, and if it was already present return
@@ -128,7 +132,7 @@ impl LazyReference {
             return Ok(Some(self.r));
         };
 
-        let feasible = self.is_never_null(solver, pc, sizes, eval_refs, sym_memory)?;
+        let feasible = self.is_never_null(solver, pc, i, eval_refs, sym_memory)?;
 
         if feasible {
             // insert fresh lazy object into heap
@@ -143,7 +147,6 @@ impl LazyReference {
             Ok(None)
         }
     }
-
 }
 
 /// Consists of `identifier` (= classname) and a hashmap describing it's fields
@@ -171,486 +174,321 @@ pub type Array = (
     IsLazy,
 );
 
-#[derive(Clone, Copy)]
-pub enum Boundary {
-    Known(i64),
-    Unknown,
-    None,
+#[derive(Clone, Copy, PartialEq)]
+pub struct Interval(pub Infinitable<i64>, pub Infinitable<i64>);
+
+impl Default for Interval {
+    fn default() -> Self {
+        Interval(Infinitable::NegativeInfinity, Infinitable::Infinity)
+    }
 }
 
-#[derive(Clone, Copy)]
-pub enum ArrSize {
-    Range(Boundary, Boundary),
-    Point(i64),
+impl Add for Interval {
+    // The multiplication of rational numbers is a closed operation.
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self {
+        let ((a, b), (c, d)) = (self.get(), rhs.get());
+        let lower = match (a, c) {
+            (Infinitable::NegativeInfinity, _) => Infinitable::NegativeInfinity,
+            (_, Infinitable::NegativeInfinity) => Infinitable::NegativeInfinity,
+            _ => a + c,
+        };
+        let upper = match (b, d) {
+            (Infinitable::Infinity, _) => Infinitable::Infinity,
+            (_, Infinitable::Infinity) => Infinitable::Infinity,
+            _ => b + d,
+        };
+        Interval::new(lower, upper)
+    }
+}
+impl Sub for Interval {
+    // The multiplication of rational numbers is a closed operation.
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self {
+        let ((a, b), (c, d)) = (self.get(), rhs.get());
+        
+        let lower = match (a, c) {
+            (Infinitable::NegativeInfinity, _) => Infinitable::NegativeInfinity,
+            (_, Infinitable::NegativeInfinity) => Infinitable::NegativeInfinity,
+            _ => a - c,
+        };
+        let upper = match (b, d) {
+            (Infinitable::Infinity, _) => Infinitable::Infinity,
+            (_, Infinitable::Infinity) => Infinitable::Infinity,
+            _ => b - d,
+        };
+        Interval::new(lower, upper)
+    }
+}
+
+impl Mul for Interval {
+    // The multiplication of rational numbers is a closed operation.
+    type Output = Self;
+
+    fn mul(self, rhs: Self) -> Self {
+        let ((a, b), (c, d)) = (self.get(), rhs.get());
+        let products = [a * c, a * d, b * c, b * d];
+        Interval::new(
+            *products.iter().min().unwrap(),
+            *products.iter().max().unwrap(),
+        )
+    }
+}
+
+impl Interval {
+    pub fn new(b: Infinitable<i64>, u: Infinitable<i64>) -> Interval {
+        Interval(b, u)
+    }
+    pub fn get(self) -> (Infinitable<i64>, Infinitable<i64>) {
+        (self.0, self.1)
+    }
+
+    // return most pessimistic interval, return
+    pub fn broaden(self, other: Interval) -> Self {
+        let min = self.0.min(other.0);
+        let max = self.1.max(other.1);
+        Interval(min, max.max(min))
+    }
+
+    pub fn narrow(self, other: Interval) -> Self {
+        let min = self.0.max(other.0);
+        let max = self.1.min(other.1);
+        Interval(min, max.max(min))
+    }
+
+    pub fn infer(e: &SymExpression, i: &IntervalMap) -> Interval {
+        match e {
+            SymExpression::Literal(Literal::Integer(z)) => {
+                Interval::new(Infinitable::Finite(*z), Infinitable::Finite(*z))
+            }
+            SymExpression::FreeVariable(SymType::Int, x) => i.get(x),
+            SymExpression::Plus(l_expr, r_expr) => {
+                Interval::infer(l_expr, i) + Interval::infer(r_expr, i)
+            }
+            SymExpression::Minus(l_expr, r_expr) => {
+                Interval::infer(l_expr, i) - Interval::infer(r_expr, i)
+            }
+            SymExpression::Multiply(l_expr, r_expr) => {
+                Interval::infer(l_expr, i) * Interval::infer(r_expr, i)
+            }
+            SymExpression::Negative(expr) => {
+                Interval::new(Infinitable::Finite(-1), Infinitable::Finite(-1))
+                    * Interval::infer(expr, i)
+            }
+            _ => Interval::default(),
+        }
+    }
 }
 
 #[derive(Clone)]
-pub struct ArrSizes(FxHashMap<Reference, ArrSize>);
+pub struct IntervalMap(FxHashMap<Identifier, Interval>);
 
-impl Default for ArrSizes {
+impl Default for IntervalMap {
     fn default() -> Self {
-        ArrSizes(FxHashMap::default())
+        Self(FxHashMap::default())
     }
 }
 
-impl ArrSizes {
-    /// make a set of ranges with 1 mapping inserted
-    pub fn new(arr: Reference, r: ArrSize) -> ArrSizes {
-        let mut ranges = ArrSizes::default();
-        ranges.0.insert(arr, r);
-        ranges
-    }
+impl IntervalMap {
 
-    pub fn get(&self, arr: &Reference) -> Option<ArrSize> {
-        self.0.get(arr).map(|v| v.clone())
-    }
-
-    /// given 2 sets of symSizes, take the intersection of their boundaries
-    /// and narrow all boundaries in their union to the most pesimistic (known) boundary
-    /// e.g. if one boundary is unknown set boundary to unknown,
-    /// if both are known set boundary to smallest min and largest max,
-    /// otherwise set boundary to None
-    fn broaden(&mut self, new_ranges: &ArrSizes) {
-        for (arr, r_range) in new_ranges.0.iter() {
-            if let Some(l_range) = new_ranges.0.get(arr) {
-                self.0.insert(arr.clone(), broaden_one(l_range, &r_range));
-            } else {
-                self.0.insert(arr.clone(), r_range.clone());
-            }
+    fn broaden(&mut self, other: &IntervalMap) {
+        let mut keys: FxHashSet<Identifier> = self.0.clone().into_keys().collect();
+        keys.extend(
+            other
+                .0
+                .clone()
+                .into_keys()
+                .collect::<FxHashSet<Identifier>>(),
+        );
+        for k in keys {
+            self.0
+                .insert(k.clone(), self.get(&k).broaden(other.get(&k)));
         }
+    }
 
-        fn broaden_one(l: &ArrSize, r: &ArrSize) -> ArrSize {
-            match (l, r) {
-                (ArrSize::Range(l_min, l_max), ArrSize::Range(r_min, r_max)) => {
-                    let min = match (l_min, r_min) {
-                        (Boundary::Known(l), Boundary::Known(r)) => Boundary::Known(*l.min(r)),
-                        (_, Boundary::Unknown) => Boundary::Unknown,
-                        (Boundary::Unknown, _) => Boundary::Unknown,
-                        _ => Boundary::None,
-                    };
-                    let max = match (l_max, r_max) {
-                        (Boundary::Known(l), Boundary::Known(r)) => Boundary::Known(*l.max(r)),
-                        (_, Boundary::Unknown) => Boundary::Unknown,
-                        (Boundary::Unknown, _) => Boundary::Unknown,
-                        _ => Boundary::None,
-                    };
-                    ArrSize::Range(min, max)
+    fn narrow(&mut self, other: &IntervalMap) {
+        let mut keys: FxHashSet<Identifier> = self.0.clone().into_keys().collect();
+        keys.extend(
+            other
+                .0
+                .clone()
+                .into_keys()
+                .collect::<FxHashSet<Identifier>>(),
+        );
+        for k in keys {
+            self.0.insert(k.clone(), self.get(&k).narrow(other.get(&k)));
+        }
+    }
+
+    pub fn get(&self, id: &Identifier) -> Interval {
+        match self.0.get(id) {
+            Some(i) => *i,
+            None => Interval::default(),
+        }
+    }
+
+    // updates IntervalMap with information from passed expression
+    fn infer(&mut self, e: &SymExpression) {
+        match e {
+            SymExpression::And(l_expr, r_expr) => {
+                let mut i1 = self.clone();
+                i1.infer(r_expr);
+                self.infer(l_expr);
+                self.narrow(&i1);
+            }
+            SymExpression::Or(l_expr, r_expr) => {
+                let mut i1 = self.clone();
+                i1.infer(r_expr);
+                self.infer(l_expr);
+                self.broaden(&i1);
+            }
+            SymExpression::EQ(l_expr, r_expr) => match (&**l_expr, &**r_expr) {
+                (
+                    SymExpression::FreeVariable(SymType::Int, x1),
+                    SymExpression::FreeVariable(SymType::Int, x2),
+                ) => {
+                    let i = self.get(x1).narrow(self.get(x2));
+                    self.0.insert(x1.clone(), i);
+                    self.0.insert(x2.clone(), i);
                 }
-                (ArrSize::Range(_, _), _) => *l,
-                (_, ArrSize::Range(_, _)) => *r,
-                (ArrSize::Point(n), ArrSize::Point(m)) if m == n => *l,
-                _ => panic_with_diagnostics(
-                    "Something has gone very wrong here during inference",
-                    &vec![l, r],
-                ),
-            }
-        }
-    }
-    /// given 2 sets of symSizes, take the intersection of their boundaries
-    /// and narrow all boundaries in their union to the most optimistic (known) boundary
-    /// if both are known set the largest min and smallest max,
-    /// if one of the two boundaries is known set that boundary
-    /// if one is unknown set boundary to unknown
-    /// otherwise set boundary to None
-    fn narrow(&mut self, r_ranges: &ArrSizes) {
-        for (arr, r_range) in r_ranges.0.iter() {
-            if let Some(l_range) = self.0.get(arr) {
-                self.0.insert(arr.clone(), narrow_one(l_range, &r_range));
-            } else {
-                self.0.insert(arr.clone(), r_range.clone());
-            }
-        }
-        fn narrow_one(l: &ArrSize, r: &ArrSize) -> ArrSize {
-            match (l, r) {
-                (ArrSize::Point(n), ArrSize::Point(m)) if n != m => panic_with_diagnostics(
-                    "Something has gone very wrong here during inference",
-                    &vec![l, r],
-                ),
-                (ArrSize::Point(_), _) => *l,
-                (_, ArrSize::Point(_)) => *r,
-                (ArrSize::Range(Boundary::Known(l_min), Boundary::Known(l_max)), _)
-                    if l_min == l_max =>
-                {
-                    ArrSize::Point(*l_min)
+                (SymExpression::FreeVariable(SymType::Int, x1), r_expr) => {
+                    let i = self.get(x1).narrow(Interval::infer(r_expr, &self));
+                    self.0.insert(x1.clone(), i);
                 }
-                (_, ArrSize::Range(Boundary::Known(r_min), Boundary::Known(r_max)))
-                    if r_min == r_max =>
-                {
-                    ArrSize::Point(*r_min)
+                (l_expr, (SymExpression::FreeVariable(SymType::Int, x2))) => {
+                    let i = self.get(x2).narrow(Interval::infer(l_expr, &self));
+                    self.0.insert(x2.clone(), i);
                 }
-                (ArrSize::Range(l_min, l_max), ArrSize::Range(r_min, r_max)) => {
-                    let min = match (l_min, r_min) {
-                        (Boundary::Known(l), Boundary::Known(r)) => Boundary::Known(*l.max(r)),
-                        (_, Boundary::Unknown) => Boundary::Unknown,
-                        (Boundary::Unknown, _) => Boundary::Unknown,
-                        (Boundary::Known(_), _) => *l_min,
-                        (_, Boundary::Known(_)) => *r_min,
-                        _ => Boundary::None,
-                    };
-                    let max = match (l_max, r_max) {
-                        (Boundary::Known(l), Boundary::Known(r)) => Boundary::Known(*l.min(r)),
-                        (_, Boundary::Unknown) => Boundary::Unknown,
-                        (Boundary::Unknown, _) => Boundary::Unknown,
-                        (Boundary::Known(_), _) => *l_max,
-                        (_, Boundary::Known(_)) => *r_max,
-                        _ => Boundary::None,
-                    };
-                    ArrSize::Range(min, max)
+                _ => (),
+            },
+            SymExpression::Not(expr) => match *expr.clone() {
+                SymExpression::LT(l_expr, r_expr) => {
+                    self.infer(&SymExpression::GEQ(l_expr, r_expr))
                 }
-            }
-        }
-    }
+                SymExpression::GT(l_expr, r_expr) => {
+                    self.infer(&SymExpression::LEQ(l_expr, r_expr))
+                }
+                SymExpression::GEQ(l_expr, r_expr) => {
+                    self.infer(&SymExpression::LT(l_expr, r_expr))
+                }
+                SymExpression::LEQ(l_expr, r_expr) => {
+                    self.infer(&SymExpression::GT(l_expr, r_expr))
+                }
+                _ => (),
+            },
+            SymExpression::LT(l_expr, r_expr) => match (&**l_expr, &**r_expr) {
+                (SymExpression::FreeVariable(SymType::Int, x), r_expr) => {
+                    let (a, _) = Interval::infer(r_expr, self).get(); // abort inference if compared value is not finite
 
-    pub fn update_inference(&mut self, expr: SymExpression) {
-        self.narrow(&infer_new_ranges(&expr.simplify(None, None)));
-
-        fn infer_new_ranges(expr: &SymExpression) -> ArrSizes {
-            match expr {
-                // rewrite negations and recurse
-                SymExpression::Not(expr) => {
-                    let new_expr = match &**expr {
-                        SymExpression::NE(l, r) => {
-                            SymExpression::EQ(Box::new(*l.clone()), Box::new(*r.clone()))
-                        }
-                        SymExpression::LT(l, r) => {
-                            SymExpression::GEQ(Box::new(*l.clone()), Box::new(*r.clone()))
-                        }
-                        SymExpression::GT(l, r) => {
-                            SymExpression::LEQ(Box::new(*l.clone()), Box::new(*r.clone()))
-                        }
-                        SymExpression::GEQ(l, r) => {
-                            SymExpression::LT(Box::new(*l.clone()), Box::new(*r.clone()))
-                        }
-                        SymExpression::LEQ(l, r) => {
-                            SymExpression::GT(Box::new(*l.clone()), Box::new(*r.clone()))
-                        }
-                        _ => *expr.clone(),
-                    };
-                    infer_new_ranges(&new_expr)
-                }
-
-                // if not falsifiable we assume it to be true and pick most pessimistic range?
-                SymExpression::Implies(l, r) => match (&**l, &**r) {
-                    (SymExpression::Literal(Literal::Boolean(false)), _) => ArrSizes::default(),
-                    (_, SymExpression::Literal(Literal::Boolean(false))) => ArrSizes::default(),
-                    _ => {
-                        let mut range = infer_new_ranges(l);
-                        range.broaden(&infer_new_ranges(r));
-                        range
+                    if !a.is_finite() {
+                        return;
                     }
-                },
 
-                // pick the most optimistics range
-                SymExpression::And(l, r) => {
-                    let mut range = infer_new_ranges(l);
-                    range.narrow(&infer_new_ranges(r));
-                    range
+                    let i = self.get(x).narrow(Interval::new(
+                        Infinitable::NegativeInfinity,
+                        a - infinitable::Finite(1),
+                    ));
+                    self.0.insert(x.clone(), i);
+                }
+                (l_expr, (SymExpression::FreeVariable(SymType::Int, x))) => {
+                    let (_, b) = Interval::infer(l_expr, self).get();
+                    if !b.is_finite() {
+                        return;
+                    }
+                    let i = self.get(x).narrow(Interval::new(
+                        b + infinitable::Finite(1),
+                        Infinitable::Infinity,
+                    ));
+                    self.0.insert(x.clone(), i);
+                }
+                _ => (),
+            },
+            SymExpression::LEQ(l_expr, r_expr) => match (&**l_expr, &**r_expr) {
+                (SymExpression::FreeVariable(SymType::Int, x), r_expr) => {
+                    let (a, _) = Interval::infer(r_expr, self).get();
+
+                    if !a.is_finite() {
+                        return;
+                    }
+
+                    let i = self
+                        .get(x)
+                        .narrow(Interval::new(Infinitable::NegativeInfinity, a));
+                    self.0.insert(x.clone(), i);
+                }
+                (l_expr, (SymExpression::FreeVariable(SymType::Int, x))) => {
+                    let (_, b) = Interval::infer(l_expr, self).get();
+                    if !b.is_finite() {
+                        return;
+                    }
+                    let i = self.get(x).narrow(Interval::new(b, Infinitable::Infinity));
+                    self.0.insert(x.clone(), i);
+                }
+                _ => (),
+            },
+            SymExpression::GT(l_expr, r_expr) => match (&**l_expr, &**r_expr) {
+                ((SymExpression::FreeVariable(SymType::Int, x)), r_expr) => {
+                    let (_, b) = Interval::infer(r_expr, self).get();
+                    if !b.is_finite() {
+                        return;
+                    }
+                    let i = self.get(x).narrow(Interval::new(
+                        b + infinitable::Finite(1),
+                        Infinitable::Infinity,
+                    ));
+                    self.0.insert(x.clone(), i);
+                }
+                (l_expr, SymExpression::FreeVariable(SymType::Int, x)) => {
+                    let (a, _) = Interval::infer(l_expr, self).get();
+                    if !a.is_finite() {
+                        return;
+                    }
+                    let i = self.get(x).narrow(Interval::new(
+                        Infinitable::NegativeInfinity,
+                        a - infinitable::Finite(1),
+                    ));
+                    self.0.insert(x.clone(), i);
                 }
 
-                // pick the most pesimistic range
-                SymExpression::Or(l, r) => {
-                    let mut range = infer_new_ranges(l);
-                    range.broaden(&infer_new_ranges(r));
-                    range
+                _ => (),
+            },
+            SymExpression::GEQ(l_expr, r_expr) => match (&**l_expr, &**r_expr) {
+                ((SymExpression::FreeVariable(SymType::Int, x)), r_expr) => {
+                    let (_, b) = Interval::infer(r_expr, self).get();
+                    if !b.is_finite() {
+                        return;
+                    }
+                    let i = self.get(x).narrow(Interval::new(b, Infinitable::Infinity));
+                    self.0.insert(x.clone(), i);
+                }
+                (l_expr, SymExpression::FreeVariable(SymType::Int, x)) => {
+                    let (a, _) = Interval::infer(l_expr, self).get();
+                    if !a.is_finite() {
+                        return;
+                    }
+                    let i = self
+                        .get(x)
+                        .narrow(Interval::new(Infinitable::NegativeInfinity, a));
+                    self.0.insert(x.clone(), i);
                 }
 
-                // if sizeof equals some literal we set all boundarys and size to that literal
-                // else if sizeof equals some other expression we set all boundaries to unknown
-                SymExpression::EQ(l, r) => match (&**l, &**r) {
-                    (SymExpression::SizeOf(r1, _), SymExpression::SizeOf(r2, _)) => {
-                        let mut ar_s = FxHashMap::default();
-                        ar_s.insert(
-                            r1.clone(),
-                            ArrSize::Range(Boundary::Unknown, Boundary::Unknown),
-                        );
-                        ar_s.insert(
-                            r2.clone(),
-                            ArrSize::Range(Boundary::Unknown, Boundary::Unknown),
-                        );
-                        ArrSizes(ar_s)
-                    }
-                    (SymExpression::SizeOf(r, _), SymExpression::Literal(Literal::Integer(n))) => {
-                        ArrSizes::new(r.clone(), ArrSize::Point(*n))
-                    }
-                    (SymExpression::Literal(Literal::Integer(n)), SymExpression::SizeOf(r, _)) => {
-                        ArrSizes::new(r.clone(), ArrSize::Point(*n))
-                    }
-                    (SymExpression::SizeOf(r, size_expr), _) => ArrSizes::new(
-                        r.clone(),
-                        ArrSize::Range(Boundary::Unknown, Boundary::Unknown),
-                    ),
-
-                    (_, SymExpression::SizeOf(r, size_expr)) => ArrSizes::new(
-                        r.clone(),
-                        ArrSize::Range(Boundary::Unknown, Boundary::Unknown),
-                    ),
-
-                    _ => ArrSizes::default(),
-                },
-
-                // if sizeof is LT or GT some literal we set min or max to that literal - 1
-                // else if sizOf is LT or GT some freevar we set min or max to unknown
-                SymExpression::LT(l, r) => match (&**l, &**r) {
-                    (SymExpression::SizeOf(r1, _), SymExpression::SizeOf(r2, _)) => {
-                        let mut ar_s = FxHashMap::default();
-                        ar_s.insert(
-                            r1.clone(),
-                            ArrSize::Range(Boundary::Unknown, Boundary::Unknown),
-                        );
-                        ar_s.insert(
-                            r2.clone(),
-                            ArrSize::Range(Boundary::Unknown, Boundary::Unknown),
-                        );
-                        ArrSizes(ar_s)
-                    }
-                    (SymExpression::SizeOf(r, _), SymExpression::Literal(Literal::Integer(n))) => {
-                        ArrSizes::new(
-                            r.clone(),
-                            ArrSize::Range(Boundary::None, Boundary::Known(*n - 1)),
-                        )
-                    }
-                    (SymExpression::Literal(Literal::Integer(n)), SymExpression::SizeOf(r, _)) => {
-                        ArrSizes::new(
-                            r.clone(),
-                            ArrSize::Range(Boundary::Known(*n + 1), Boundary::None),
-                        )
-                    }
-                    (_, SymExpression::SizeOf(r, _)) => {
-                        ArrSizes::new(r.clone(), ArrSize::Range(Boundary::Unknown, Boundary::None))
-                    }
-
-                    (SymExpression::SizeOf(r, _), _) => {
-                        ArrSizes::new(r.clone(), ArrSize::Range(Boundary::None, Boundary::Unknown))
-                    }
-
-                    _ => ArrSizes::default(),
-                },
-                SymExpression::GT(l, r) => match (&**l, &**r) {
-                    (SymExpression::SizeOf(r1, _), SymExpression::SizeOf(r2, _)) => {
-                        let mut ar_s = FxHashMap::default();
-                        ar_s.insert(
-                            r1.clone(),
-                            ArrSize::Range(Boundary::Unknown, Boundary::Unknown),
-                        );
-                        ar_s.insert(
-                            r2.clone(),
-                            ArrSize::Range(Boundary::Unknown, Boundary::Unknown),
-                        );
-                        ArrSizes(ar_s)
-                    }
-                    (SymExpression::SizeOf(r, _), SymExpression::Literal(Literal::Integer(n))) => {
-                        ArrSizes::new(
-                            r.clone(),
-                            ArrSize::Range(Boundary::Known(*n + 1), Boundary::None),
-                        )
-                    }
-                    (SymExpression::Literal(Literal::Integer(n)), SymExpression::SizeOf(r, _)) => {
-                        ArrSizes::new(
-                            r.clone(),
-                            ArrSize::Range(Boundary::None, Boundary::Known(*n - 1)),
-                        )
-                    }
-                    (_, SymExpression::SizeOf(r, _)) => {
-                        ArrSizes::new(r.clone(), ArrSize::Range(Boundary::None, Boundary::Unknown))
-                    }
-                    (SymExpression::SizeOf(r, _), _) => {
-                        ArrSizes::new(r.clone(), ArrSize::Range(Boundary::Unknown, Boundary::None))
-                    }
-                    _ => ArrSizes::default(),
-                },
-
-                // if sizeof is LEQ or GEQ some literal we set min or max to that literal
-                // else if sizOf is LT or GT some freevar we set min or max to unknown
-                SymExpression::GEQ(l, r) => match (&**l, &**r) {
-                    (SymExpression::SizeOf(r1, _), SymExpression::SizeOf(r2, _)) => {
-                        let mut ar_s = FxHashMap::default();
-                        ar_s.insert(
-                            r1.clone(),
-                            ArrSize::Range(Boundary::Unknown, Boundary::Unknown),
-                        );
-                        ar_s.insert(
-                            r2.clone(),
-                            ArrSize::Range(Boundary::Unknown, Boundary::Unknown),
-                        );
-                        ArrSizes(ar_s)
-                    }
-                    (SymExpression::SizeOf(r, _), SymExpression::Literal(Literal::Integer(n))) => {
-                        ArrSizes::new(
-                            r.clone(),
-                            ArrSize::Range(Boundary::Known(*n), Boundary::None),
-                        )
-                    }
-                    (SymExpression::Literal(Literal::Integer(n)), SymExpression::SizeOf(r, _)) => {
-                        ArrSizes::new(
-                            r.clone(),
-                            ArrSize::Range(Boundary::None, Boundary::Known(*n)),
-                        )
-                    }
-                    (_, SymExpression::SizeOf(r, _)) => {
-                        ArrSizes::new(r.clone(), ArrSize::Range(Boundary::None, Boundary::Unknown))
-                    }
-                    (SymExpression::SizeOf(r, _), _) => {
-                        ArrSizes::new(r.clone(), ArrSize::Range(Boundary::Unknown, Boundary::None))
-                    }
-                    _ => ArrSizes::default(),
-                },
-                SymExpression::LEQ(l, r) => match (&**l, &**r) {
-                    (SymExpression::SizeOf(r1, _), SymExpression::SizeOf(r2, _)) => {
-                        let mut ar_s = FxHashMap::default();
-                        ar_s.insert(
-                            r1.clone(),
-                            ArrSize::Range(Boundary::Unknown, Boundary::Unknown),
-                        );
-                        ar_s.insert(
-                            r2.clone(),
-                            ArrSize::Range(Boundary::Unknown, Boundary::Unknown),
-                        );
-                        ArrSizes(ar_s)
-                    }
-                    (SymExpression::SizeOf(r, _), SymExpression::Literal(Literal::Integer(n))) => {
-                        ArrSizes::new(
-                            r.clone(),
-                            ArrSize::Range(Boundary::None, Boundary::Known(*n)),
-                        )
-                    }
-                    (SymExpression::Literal(Literal::Integer(n)), SymExpression::SizeOf(r, _)) => {
-                        ArrSizes::new(
-                            r.clone(),
-                            ArrSize::Range(Boundary::Known(*n), Boundary::None),
-                        )
-                    }
-                    (_, SymExpression::SizeOf(r, _)) => {
-                        ArrSizes::new(r.clone(), ArrSize::Range(Boundary::Unknown, Boundary::None))
-                    }
-
-                    (SymExpression::SizeOf(r, _), _) => {
-                        ArrSizes::new(r.clone(), ArrSize::Range(Boundary::None, Boundary::Unknown))
-                    }
-
-                    _ => ArrSizes::default(),
-                },
-                _ => ArrSizes::default(),
-            }
+                _ => (),
+            },
+            _ => (),
         }
     }
-}
 
-impl ArrSize {
-    pub fn lt(&self, &other: &Self) -> Option<bool> {
-        match self.partial_cmp(&other) {
-            Some(ord) => match ord {
-                Ordering::Less => Some(true),
-                Ordering::Equal => Some(false),
-                Ordering::Greater => Some(false),
-            },
-            // trivially returns true if there are no constraints on 1 boundary
-            None => match (self, other) {
-                (ArrSize::Range(Boundary::None, Boundary::None), _) => Some(true),
-                (_, ArrSize::Range(Boundary::None, Boundary::None)) => Some(true),
-                _ => None,
-            },
-        }
-    }
-    pub fn le(&self, &other: &Self) -> Option<bool> {
-        match self.partial_cmp(&other) {
-            Some(ord) => match ord {
-                Ordering::Less => Some(true),
-                Ordering::Equal => Some(true),
-                Ordering::Greater => Some(false),
-            },
-            // trivially returns true if there are no constraints on 1 boundary
-            None => match (self, other) {
-                (ArrSize::Range(Boundary::None, Boundary::None), _) => Some(true),
-                (_, ArrSize::Range(Boundary::None, Boundary::None)) => Some(true),
-                _ => None,
-            },
-        }
-    }
-    pub fn gt(&self, &other: &Self) -> Option<bool> {
-        match self.partial_cmp(&other) {
-            Some(ord) => match ord {
-                Ordering::Less => Some(false),
-                Ordering::Equal => Some(false),
-                Ordering::Greater => Some(true),
-            },
-            // trivially returns true if there are no constraints on 1 boundary
-            None => match (self, other) {
-                (ArrSize::Range(Boundary::None, Boundary::None), _) => Some(true),
-                (_, ArrSize::Range(Boundary::None, Boundary::None)) => Some(true),
-                _ => None,
-            },
-        }
-    }
-    pub fn ge(&self, &other: &Self) -> Option<bool> {
-        match self.partial_cmp(&other) {
-            Some(ord) => match ord {
-                Ordering::Less => Some(false),
-                Ordering::Equal => Some(true),
-                Ordering::Greater => Some(true),
-            },
-            // trivially returns true if there are no constraints on 1 boundary
-            None => match (self, other) {
-                (ArrSize::Range(Boundary::None, Boundary::None), _) => Some(true),
-                (_, ArrSize::Range(Boundary::None, Boundary::None)) => Some(true),
-                _ => None,
-            },
-        }
-    }
-}
-
-impl PartialOrd for ArrSize {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        match (self, other) {
-            (ArrSize::Range(Boundary::Known(min), Boundary::Known(max)), _) if min == max => {
-                ArrSize::Point(*min).partial_cmp(other)
+    // An iterative inference algorithm to update the IntervalMap with given expression
+    pub fn iterative_inference<'a>(&'a mut self, e: &SymExpression, mut d: i8) {
+        while d > 0 {
+            d -= 1;
+            let i = self.clone();
+            self.infer(e);
+            if i.0 == self.0 {
+                break;
             }
-            (_, ArrSize::Range(Boundary::Known(min), Boundary::Known(max))) if min == max => {
-                self.partial_cmp(&ArrSize::Point(*min))
-            }
-
-            (
-                ArrSize::Range(_, Boundary::Known(l_max)),
-                ArrSize::Range(Boundary::Known(r_min), _),
-            ) if l_max < r_min => Some(Ordering::Less),
-            (
-                ArrSize::Range(_, Boundary::Known(l_max)),
-                ArrSize::Range(Boundary::None, Boundary::Known(r_min)),
-            ) if l_max < r_min => Some(Ordering::Less),
-            (
-                ArrSize::Range(Boundary::Known(l_min), _),
-                ArrSize::Range(_, Boundary::Known(r_max)),
-            ) if l_min > r_max => Some(Ordering::Greater),
-
-            (ArrSize::Range(Boundary::Known(l_min), _), ArrSize::Point(p2)) if p2 < l_min => {
-                Some(Ordering::Greater)
-            }
-            (ArrSize::Range(_, Boundary::Known(l_max)), ArrSize::Point(p2)) if p2 > l_max => {
-                Some(Ordering::Less)
-            }
-
-            (ArrSize::Point(p1), ArrSize::Range(Boundary::Known(n), _)) if p1 < n => {
-                Some(Ordering::Less)
-            }
-            (ArrSize::Point(p1), ArrSize::Range(_, Boundary::Known(n))) if p1 > n => {
-                Some(Ordering::Greater)
-            }
-            (ArrSize::Point(p1), ArrSize::Point(p2)) => Some(p1.cmp(p2)),
-            _ => None,
-        }
-    }
-}
-
-impl PartialEq for ArrSize {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (ArrSize::Range(Boundary::Known(min), Boundary::Known(max)), _) if min == max => {
-                ArrSize::Point(*min).eq(other)
-            }
-            (_, ArrSize::Range(Boundary::Known(min), Boundary::Known(max))) if min == max => {
-                self.eq(&ArrSize::Point(*min))
-            }
-            (ArrSize::Point(p1), ArrSize::Point(p2)) => p1 == p2,
-            _ => false,
         }
     }
 }
@@ -671,31 +509,18 @@ impl fmt::Debug for LazyReference {
     }
 }
 
-impl fmt::Debug for ArrSizes {
+impl fmt::Debug for IntervalMap {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut res = "Ranges:\n".to_string();
-        for (arr, range) in self.0.iter() {
-            res.push_str(&format!("    #{:?} -> {:?}\n", arr, range));
+        let mut res = "IntervalMap:\n".to_string();
+        for (var, interval) in self.0.iter() {
+            res.push_str(&format!("    {} -> {:?}\n", var, interval));
         }
         write!(f, "{}", res)
     }
 }
 
-impl fmt::Debug for ArrSize {
+impl fmt::Debug for Interval {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ArrSize::Range(min, max) => write!(f, "({:?} - {:?})", min, max),
-            ArrSize::Point(n) => write!(f, "({})", n),
-        }
-    }
-}
-
-impl fmt::Debug for Boundary {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Boundary::Known(n) => write!(f, "{}", n),
-            Boundary::Unknown => write!(f, "Unknown"),
-            Boundary::None => write!(f, "None"),
-        }
+        write!(f, "⟨{}, {}⟩", self.0, self.1)
     }
 }

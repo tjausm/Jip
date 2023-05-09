@@ -29,13 +29,17 @@ struct Cli {
     #[clap(subcommand)]
     mode: Mode,
 
-    /// Turns on the front end simplifier
+    /// Turns on the expression evaluator
     #[clap(short, long)]
-    simplifier: bool,
+    expression_evaluator: bool,
 
-    /// Turns on array size inference & simplifier
+    /// The maximum number of iterations that the interval inference algorithm performs 
+    #[clap(short, long, default_value_t = 0)]
+    infer_size: i8,
+
+    /// The maximum size of a symbolic array, if none is set the size is symbolic
     #[clap(short, long)]
-    infer_size: bool,
+    symbolic_array_size: Option<i64>,
 
     /// Turns on formula caching 
     #[clap(short, long)]
@@ -114,8 +118,9 @@ fn main(){
         Mode::PrintCFG => exit(see::print_cfg(&program)),
         Mode::Verify { depth, verbose } => {
             let config = Config {
-                simplify: cli.simplifier || cli.infer_size,
+                expression_evaluation: cli.expression_evaluator || cli.infer_size > 0,
                 infer_size: cli.infer_size,
+                symbolic_array_size: cli.symbolic_array_size,
                 formula_caching: cli.formula_caching,
                 prune_ratio: cli.prune_ratio,
                 solver_type: solver_type,
@@ -129,8 +134,9 @@ fn main(){
             interval,
         } => {
             let config = Config {
-                simplify: cli.simplifier || cli.infer_size,
+                expression_evaluation: cli.expression_evaluator || cli.infer_size > 0,
                 infer_size: cli.infer_size,
+                symbolic_array_size: cli.symbolic_array_size,
                 formula_caching: cli.formula_caching,
                 prune_ratio: cli.prune_ratio,
                 solver_type: solver_type,
