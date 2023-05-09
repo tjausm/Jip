@@ -1,3 +1,5 @@
+use rand::Rng;
+
 use crate::ast::*;
 use crate::shared::{panic_with_diagnostics, Error, Feasible};
 use crate::smt_solver::SolverEnv;
@@ -158,17 +160,17 @@ pub fn assert(
 }
 
 /// handles the assume in the SEE (used in `assume`, `require` and `ensure` statements)
-/// returns false if assumption is infeasible and can be dropped
+/// returns tupple of updated prune probability and bool which is false if assumption is infeasible and can be dropped
 /// prunes path using z3 if prune is set to true
 pub fn assume(
     sym_memory: &mut SymMemory,
     pc: &mut PathConstraints,
     i: &mut IntervalMap,
     eval_refs: &EvaluatedRefs,
-    prune: bool,
+    prune_p: u8,
     solver: &mut SolverEnv,
     assumption: &Expression,
-) -> bool {
+) -> (u8, bool ){
     let mut sym_assumption = SymExpression::new(&sym_memory, assumption.clone());
     let config = &solver.config;
 
@@ -184,7 +186,7 @@ pub fn assume(
         let simple_assumption = sym_assumption.clone().eval(i, Some(eval_refs));
 
         match simple_assumption {
-            SymExpression::Literal(Literal::Boolean(false)) => return false,
+            SymExpression::Literal(Literal::Boolean(false)) => return (prune_p, false),
             SymExpression::Literal(Literal::Boolean(true)) => (),
             _ => pc.push_assumption(simple_assumption),
         };
@@ -198,16 +200,25 @@ pub fn assume(
     };
 
     // return false if expression always evaluates to false
-    match (prune, &constraints) {
+    match (prune_p, &constraints) {
         // if is unsatisfiable return false, if always satisfiable return true
-        (_, SymExpression::Literal(Literal::Boolean(false))) => false,
-        (_, SymExpression::Literal(Literal::Boolean(true))) => true,
-        // if z3 finds a satisfying model return true, otherwise return false
-        (true, _) => {
-            let res = solver.verify_expr(&constraints, sym_memory, i);
-            res.is_some()
+        (_, SymExpression::Literal(Literal::Boolean(false))) => (prune_p, false),
+        (_, SymExpression::Literal(Literal::Boolean(true))) => (prune_p, true),
+        // if p > random number between 0..100 then attempt to prune path and update p
+        (p, _) if p > rand::thread_rng().gen_range(0..=100) => {
+            match solver.verify_expr(&constraints, sym_memory, i){
+                // assumption is feasible
+                Some(res) =>  (u8::max(5, p - 5),
+                    true)
+                ,
+                // assumption is infeasible
+                None => 
+                     (u8::min(100, p + 10),
+                    false)
+                ,
+            }
         }
         // if either not proved or z3 is turned off we just return true and go on
-        (false, _) => true,
+        _ => (prune_p, true),
     }
 }

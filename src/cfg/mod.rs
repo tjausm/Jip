@@ -257,10 +257,9 @@ fn stmts_to_cfg<'a>(
 
                 // declare retval and if non-static declarethis
                 let append_actions = if is_static {
-                    vec![Action::DeclareRetval { ty: ty.clone() }]
+                    vec![]
                 } else {
                     vec![
-                        Action::DeclareRetval { ty: ty.clone() },
                         Action::DeclareThis {
                             class: class.clone(),
                             obj: Lhs::Identifier(class_or_obj.clone()),

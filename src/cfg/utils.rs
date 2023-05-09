@@ -78,7 +78,6 @@ impl fmt::Debug for Action {
                 write!(f, "Init {} {:?} on heap", from_class, to)
             }
             Action::LiftRetval => write!(f, "Lifting retval"),
-            Action::DeclareRetval { ty } => write!(f, "Declaring '{:?} retval'", ty),
             Action::CheckSpecifications { specifications } => {
                 write!(f, "Checking specifications: {:?}", specifications)
             }

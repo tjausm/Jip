@@ -20,10 +20,6 @@ pub enum Action {
     EnterScope {
         to: Scope,
     },
-    // declare retval with correct type in current scope
-    DeclareRetval {
-        ty: Type,
-    },
     AssignArgs {
         params: Parameters,
         args: Vec<Expression>,

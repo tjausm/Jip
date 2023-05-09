@@ -8,7 +8,7 @@ extern crate lalrpop_util;
 extern crate global_counter;
 
 use clap::{Parser, Subcommand};
-use shared::{Config, ExitCode, SolverType, Depth};
+use shared::{Config, Depth, ExitCode, SolverType};
 use std::process::exit;
 
 // module declarations
@@ -33,7 +33,7 @@ struct Cli {
     #[clap(short, long)]
     expression_evaluator: bool,
 
-    /// The maximum number of iterations that the interval inference algorithm performs 
+    /// The maximum number of iterations that the interval inference algorithm performs
     #[clap(short, long, default_value_t = 0)]
     infer_size: i8,
 
@@ -41,14 +41,13 @@ struct Cli {
     #[clap(short, long)]
     symbolic_array_size: Option<i64>,
 
-    /// Turns on formula caching 
+    /// Turns on formula caching
     #[clap(short, long)]
     formula_caching: bool,
 
-    /// number between 0 and 127 denoting how deep we should prune
-    /// , 0 = no pruning, 63 = prune to 50% of depth and so on
-    #[clap(default_value_t = 0)]
-    prune_ratio: i8,
+    /// Turns on adaptive pruning
+    #[clap(short, long)]
+    adaptive_pruning: bool,
 
     /// Passes the custom argument to call z3
     #[clap(long)]
@@ -75,7 +74,6 @@ enum Mode {
         /// Report detailed information about proceedings of SEE
         #[clap(short, long)]
         verbose: bool,
-
     },
     /// Print cfg in Dot format
     PrintCFG,
@@ -91,8 +89,7 @@ enum Mode {
     },
 }
 
-fn main(){
-
+fn main() {
     let cli = Cli::parse();
     let exit = |(exit_code, result): (ExitCode, String)| {
         println!("{}", result);
@@ -103,7 +100,7 @@ fn main(){
         (Some(arg), _, _, _) => SolverType::Z3(arg),
         (_, Some(arg), _, _) => SolverType::CVC4(arg),
         (_, _, Some(arg), _) => SolverType::Yices2(arg),
-        (_,_,_,true) => SolverType::Z3Api,
+        (_, _, _, true) => SolverType::Z3Api,
         (_, _, _, _) => SolverType::Default,
     };
 
@@ -122,7 +119,7 @@ fn main(){
                 infer_size: cli.infer_size,
                 symbolic_array_size: cli.symbolic_array_size,
                 formula_caching: cli.formula_caching,
-                prune_ratio: cli.prune_ratio,
+                adaptive_pruning: cli.adaptive_pruning,
                 solver_type: solver_type,
                 verbose: verbose,
             };
@@ -138,7 +135,7 @@ fn main(){
                 infer_size: cli.infer_size,
                 symbolic_array_size: cli.symbolic_array_size,
                 formula_caching: cli.formula_caching,
-                prune_ratio: cli.prune_ratio,
+                adaptive_pruning: cli.adaptive_pruning,
                 solver_type: solver_type,
                 verbose: false,
             };

@@ -120,11 +120,13 @@ fn print_debug(
     sym_memory: &SymMemory,
     pc: &PathConstraints,
     i: &IntervalMap,
+    prune_p: u8,
     eval_refs: &EvaluatedRefs,
     trace: &Trace,
 ) {
     let print_eval_refs = format!("Evaluated refs: {:?}", eval_refs);
     let print_trace = format!("trace: {:?}", trace);
+    let print_prune_p = format!("prune probability: {}/127", prune_p);
 
     let pc = pc.combine_over_true();
     let print_pc = format!("Path constraints -> {:?}", pc);
@@ -136,8 +138,8 @@ fn print_debug(
     };
     if dump_state {
         println!(
-            "{:?}\n\n{}\n\n{}\n\n{:?}\n\n{}\n\n{:?}",
-            node, print_trace, print_pc, i, print_eval_refs, sym_memory
+            "{:?}\n\n{}\n\n{}\n\n{}\n\n{:?}\n\n{}\n\n{:?}",
+            node, print_trace, print_prune_p, print_pc, i, print_eval_refs, sym_memory
         );
     } else {
         println!("{:?}", node);
@@ -145,8 +147,7 @@ fn print_debug(
 }
 
 fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagnostics, Error> {
-    let prune_coefficient = f64::from(config.prune_ratio) / f64::from(i8::MAX);
-    let prune_depth = (f64::from(d) - f64::from(d) * prune_coefficient) as i32;
+    let mut prune_p : u8 = if config.adaptive_pruning {50} else {0};
 
     //init solver, config & diagnostics
     let ctx = SolverEnv::build_ctx();
@@ -201,6 +202,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                 &sym_memory,
                 &pc,
                 &i,
+                prune_p,
                 &eval_refs,
                 &trace,
             );
@@ -266,17 +268,17 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                             .stack_insert(id.clone(), SymExpression::Reference(Reference::null())),
                     },
                     Statement::Assume(assumption) => {
-                        if !assume(
+                        let (updated_p, feasible) = assume(
                             &mut sym_memory,
                             &mut pc,
                             &mut i,
                             &eval_refs,
-                            d > prune_depth,
+                            prune_p,
                             &mut solver_env,
                             assumption,
-                        ) {
-                            continue;
-                        }
+                        );
+                        prune_p = updated_p;
+                        if !feasible {continue;};
                     }
                     Statement::Assert(assertion) => assert(
                         &mut sym_memory,
@@ -494,22 +496,21 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                                         Specification::Requires(expr) => expr,
                                         Specification::Ensures(expr) => expr,
                                     };
-                                    if !assume(
+                                    let (updated_p, feasible) = assume(
                                         &mut sym_memory,
                                         &mut pc,
                                         &mut i,
                                         &eval_refs,
-                                        prune_depth < d,
+                                        prune_p,
                                         &mut solver_env,
                                         assumption,
-                                    ) {
-                                        continue;
-                                    };
+                                    );
+                                    prune_p = updated_p;
+                                    if !feasible {continue;};
                                 }
                             };
                         }
                     }
-                    _ => (),
                 }
             }
             let next = edge.target();

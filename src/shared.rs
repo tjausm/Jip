@@ -42,7 +42,7 @@ pub struct Config {
     pub infer_size: i8,
     pub symbolic_array_size: Option<i64>,
     pub formula_caching: bool,
-    pub prune_ratio: i8,
+    pub adaptive_pruning: bool,
     pub solver_type: SolverType,
     pub verbose: bool,
 }
