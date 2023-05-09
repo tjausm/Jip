@@ -21,8 +21,8 @@ class Main {
        // choose max N:
        int N := 10 ;
        assume #a>0 && #a==N
-              && (forall v,i : a : v>0)
-              && (forall v,i : a : v==1) ;
+              && (forall a,v,i  : v>0)
+              && (forall a,v,i a : v==1) ;
 
        int k := 0 ;
        int r ;

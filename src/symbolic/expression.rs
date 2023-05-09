@@ -565,13 +565,12 @@ enum HashExpression {
     Mod(u64, u64),
     Negative(u64),
     FreeVariable(SymType, Identifier),
-    SizeOf(Reference),
     Reference(Reference),
     Forall(Reference, Identifier, Identifier, SymExpression),
     Exists(Reference, Identifier, Identifier, SymExpression),
     Implies(u64, u64),
-    And(u64, u64),
-    Or(u64, u64),
+    And(Vec<u64>),
+    Or(Vec<u64>),
     EQ(u64, u64),
     NE(u64, u64),
     LT(u64, u64),
@@ -621,6 +620,26 @@ impl Hash for SymExpression {
                 _ => vec![expr],
             }
         }
+        fn collect_and(expr: SymExpression) -> Vec<SymExpression> {
+            match expr {
+                SymExpression::And(l_expr, r_expr) => {
+                    let mut conj = collect_mult(*l_expr);
+                    conj.append(&mut collect_mult(*r_expr));
+                    conj
+                }
+                _ => vec![expr],
+            }
+        }
+        fn collect_or(expr: SymExpression) -> Vec<SymExpression> {
+            match expr {
+                SymExpression::Or(l_expr, r_expr) => {
+                    let mut or = collect_mult(*l_expr);
+                    or.append(&mut collect_mult(*r_expr));
+                    or
+                }
+                _ => vec![expr],
+            }
+        }
 
         match self {
             SymExpression::Plus(_, _) => {
@@ -634,6 +653,18 @@ impl Hash for SymExpression {
                 let mut hashed_mult = map_hash(&mult);
                 hashed_mult.sort();
                 HashExpression::Multiply(hashed_mult).hash(state)
+            }
+            SymExpression::And(_, _) => {
+                let and = collect_and(self.clone());
+                let mut hashed_and = map_hash(&and);
+                hashed_and.sort();
+                HashExpression::And(hashed_and).hash(state)
+            }
+            SymExpression::Or(_, _) => {
+                let or = collect_or(self.clone());
+                let mut hashed_or = map_hash(&or);
+                hashed_or.sort();
+                HashExpression::Or(hashed_or).hash(state)
             }
             SymExpression::Minus(l_expr, r_expr) => SymExpression::Plus(
                 l_expr.clone(),
@@ -658,12 +689,6 @@ impl Hash for SymExpression {
             SymExpression::Implies(l_expr, r_expr) => {
                 HashExpression::Implies(calculate_hash(&*l_expr), calculate_hash(&*r_expr))
                     .hash(state)
-            }
-            SymExpression::And(l_expr, r_expr) => {
-                HashExpression::And(calculate_hash(&*l_expr), calculate_hash(&*r_expr)).hash(state)
-            }
-            SymExpression::Or(l_expr, r_expr) => {
-                HashExpression::Or(calculate_hash(&*l_expr), calculate_hash(&*r_expr)).hash(state)
             }
             SymExpression::EQ(l_expr, r_expr) => {
                 HashExpression::EQ(calculate_hash(&*l_expr), calculate_hash(&*r_expr)).hash(state)
