@@ -6,6 +6,8 @@ use crate::symbolic::expression::{SymExpression, SymType};
 use crate::symbolic::memory::SymMemory;
 use crate::symbolic::ref_values::{Interval, IntervalMap, Reference, SymRefType};
 use core::fmt;
+use std::sync::mpsc;
+use std::thread;
 use infinitable::Infinitable;
 use rsmt2;
 use rsmt2::print::ModelParser;
@@ -161,28 +163,53 @@ impl SolverEnv<'_> {
             };
         };
 
-        self.diagnostics.solver_calls += 1;
+        let verbose = self.config.verbose;
 
-        let res = match &mut self.solver {
-            Solver::Rsmt2(solver) => SolverEnv::verify_with_rsmt2(
-                self.config.verbose,
-                solver,
-                expr,
-                sym_memory,
-                i,
-            ),
-            Solver::Z3Api(solver) => SolverEnv::verify_with_z3api(
-                self.config.verbose,
-                solver,
-                expr,
-                sym_memory,
-                i,
-            ),
-        };
-        if self.config.formula_caching{
-            self.formula_cache.insert(expr.clone(), res.clone());
-        };
-        res
+        let (tx, rx) = mpsc::channel();
+
+        // clone all variables and start z3 thread
+        let tx1 = tx.clone();
+        let z3_sym_memory = sym_memory.clone();
+        let z3_i = i.clone();
+        let z3_expr = expr.clone();
+
+        thread::spawn(move || {
+            let conf = rsmt2::SmtConf::z3("z3");
+            let mut solver = rsmt2::Solver::new(conf, Parser).unwrap();
+            solver.set_option(":print-success", "false").unwrap(); //turn off automatic succes printing in yices2
+            solver.produce_models().unwrap();
+            solver.set_logic(rsmt2::Logic::QF_NIA).unwrap(); //set logic to quantifier free non-linear arithmetics
+            let solution = SolverEnv::verify_with_rsmt2(verbose, &mut solver, &z3_expr, &z3_sym_memory, &z3_i);
+            tx1.send(("z3", solution));
+        });
+
+        let tx2 = tx.clone();
+        let yi_sym_memory = sym_memory.clone();
+        let yi_i = i.clone();
+        let yi_expr = expr.clone();
+        thread::spawn(move || {
+            let mut conf = rsmt2::SmtConf::yices_2("yices-smt2");
+            conf.option("--incremental"); //add support for scope popping and pushing from solver
+            conf.option("--interactive"); //add support for scope popping and pushing from solvercargo
+            let mut solver = rsmt2::Solver::new(conf, Parser).unwrap();
+            solver.set_option(":print-success", "false").unwrap(); //turn off automatic succes printing in yices2
+            solver.produce_models().unwrap();
+            solver.set_logic(rsmt2::Logic::QF_NIA).unwrap(); //set logic to quantifier free non-linear arithmetics
+            let solution = SolverEnv::verify_with_rsmt2(verbose, &mut solver, &yi_expr, &yi_sym_memory, &yi_i);
+            tx2.send(("yices", solution));
+        });
+    
+        // if the first solution is received we return
+
+        loop {
+            match rx.recv() {
+                Ok((solver, solution)) => {
+                    self.diagnostics.solver_calls += 1;
+                    return solution
+                },
+                Err(_) => (),
+            }
+        }  
     }
 
     fn verify_with_rsmt2(
