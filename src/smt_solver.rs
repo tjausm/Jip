@@ -161,31 +161,33 @@ impl SolverEnv<'_> {
             };
         };
 
-        self.diagnostics.z3_calls += 1;
-        match &mut self.solver {
+        self.diagnostics.solver_calls += 1;
+
+        let res = match &mut self.solver {
             Solver::Rsmt2(solver) => SolverEnv::verify_with_rsmt2(
-                &self.config,
+                self.config.verbose,
                 solver,
-                &mut self.formula_cache,
                 expr,
                 sym_memory,
                 i,
             ),
             Solver::Z3Api(solver) => SolverEnv::verify_with_z3api(
-                &self.config,
+                self.config.verbose,
                 solver,
-                &mut self.formula_cache,
                 expr,
                 sym_memory,
                 i,
             ),
-        }
+        };
+        if self.config.formula_caching{
+            self.formula_cache.insert(expr.clone(), res.clone());
+        };
+        res
     }
 
     fn verify_with_rsmt2(
-        config: &Config,
+        verbose: bool,
         solver: &mut rsmt2::Solver<Parser>,
-        formula_cache: &mut FormulaCache,
         expr: &SymExpression,
         sym_memory: &SymMemory,
         i: &IntervalMap,
@@ -193,7 +195,7 @@ impl SolverEnv<'_> {
         solver.push(1).unwrap();
         let (expr_str, fvs, assertions) = expr_to_smtlib(expr, &sym_memory, i);
 
-        if config.verbose {
+        if verbose {
             println!("\nInvoking z3");
             println!("SymExpression: {:?}", &expr);
             println!("  Declarations: {:?}", fvs);
@@ -248,26 +250,15 @@ impl SolverEnv<'_> {
                     panic_with_diagnostics(&format!("Error during model parsing: {:?}", err), &())
                 }
             };
-
-            // update formula cache and return
-            let res = Some(Model(model));
-            if config.formula_caching {
-                formula_cache.insert(expr.clone(), res.clone());
-            };
-            res
+            Some(Model(model))
         } else {
-            // update formula cache and return
-            if config.formula_caching {
-                formula_cache.insert(expr.clone(), None);
-            };
             None
         }
     }
 
     fn verify_with_z3api(
-        config: &Config,
+        verbose: bool,
         solver: &mut z3::Solver,
-        formula_cache: &mut FormulaCache,
         expr: &SymExpression,
         sym_memory: &SymMemory,
         i: &IntervalMap,
@@ -275,7 +266,7 @@ impl SolverEnv<'_> {
         solver.push();
         let ast = expr_to_bool(solver.get_context(), expr, sym_memory, i);
 
-        if config.verbose {
+        if verbose {
             println!("\nInvoking z3");
             println!("SymExpression: {:?}", &expr);
 
@@ -296,9 +287,6 @@ impl SolverEnv<'_> {
             z3::SatResult::Sat => Some(Model(vec![])),
         };
         solver.pop(1);
-        if config.formula_caching {
-            formula_cache.insert(expr.clone(), res.clone());
-        };
         res
     }
 }

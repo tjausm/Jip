@@ -58,7 +58,7 @@ pub fn bench(
             depth,
             &time[0..5],
             dia.paths_explored,
-            dia.z3_calls
+            dia.solver_calls
         );
     }
     return (ExitCode::Valid, "Benchmark done!".to_owned());
@@ -83,7 +83,7 @@ fn print_result(r: Result<Diagnostics, Error>) -> (ExitCode, String) {
                 "{}\nPaths checked    {}\nZ3 invocations   {}",
                 "Program is correct".green().bold(),
                 d.paths_explored,
-                d.z3_calls
+                d.solver_calls
             ));
             (ExitCode::Valid, msg)
         }
