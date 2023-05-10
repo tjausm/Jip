@@ -27,16 +27,21 @@ pub struct Scope {
     pub id: Option<i32>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+
+#[derive(Debug, Clone)]
 pub enum SolverType {
+    Rsmt2(Vec<Rsmt2Arg>),
+    Z3Api
+}
+
+#[derive(Debug, Clone)]
+pub enum Rsmt2Arg {
     Z3(String),
     Yices2(String),
     CVC4(String),
-    Z3Api,
-    Default,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Config {
     pub expression_evaluation: bool,
     pub infer_size: i8,

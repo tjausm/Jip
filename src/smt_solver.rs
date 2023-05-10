@@ -1,19 +1,19 @@
 //! Encode expressions into the smt-lib format to test satisfiability using the chosen backend
 
 use crate::ast::{Identifier, Literal};
-use crate::shared::{panic_with_diagnostics, Config, Diagnostics, SolverType};
+use crate::shared::{panic_with_diagnostics, Config, Diagnostics, Rsmt2Arg, SolverType};
 use crate::symbolic::expression::{SymExpression, SymType};
 use crate::symbolic::memory::SymMemory;
 use crate::symbolic::ref_values::{Interval, IntervalMap, Reference, SymRefType};
 use core::fmt;
-use std::sync::mpsc;
-use std::thread;
 use infinitable::Infinitable;
 use rsmt2;
 use rsmt2::print::ModelParser;
 use rustc_hash::FxHashSet;
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::mpsc;
+use std::thread;
 use z3;
 type Formula = String;
 type Declarations = FxHashSet<(SymType, String)>;
@@ -80,7 +80,7 @@ impl<'a> ModelParser<String, SymType, (Identifier, Literal), &'a str> for Parser
 type FormulaCache = HashMap<SymExpression, Option<Model>>;
 
 enum Solver<'a> {
-    Rsmt2(rsmt2::Solver<Parser>),
+    Rsmt2(Vec<Rsmt2Arg>),
     Z3Api(z3::Solver<'a>),
 }
 
@@ -102,42 +102,8 @@ impl SolverEnv<'_> {
     /// For both Yices and Cvc we pas a set of flags to make them work with the rust interface
     pub fn new<'ctx>(config: &'ctx Config, ctx: &'ctx z3::Context) -> SolverEnv<'ctx> {
         let mut solver = match &config.solver_type {
-            SolverType::Z3(arg) => {
-                let conf = rsmt2::SmtConf::z3(arg);
-                let solver = rsmt2::Solver::new(conf, Parser).unwrap();
-                Solver::Rsmt2(solver)
-            }
-            SolverType::Yices2(arg) => {
-                let mut conf = rsmt2::SmtConf::yices_2(arg);
-                conf.option("--incremental"); //add support for scope popping and pushing from solver
-                conf.option("--interactive"); //add support for scope popping and pushing from solvercargo
-                let solver = rsmt2::Solver::new(conf, Parser).unwrap();
-                Solver::Rsmt2(solver)
-            }
-            SolverType::CVC4(arg) => {
-                let mut conf = rsmt2::SmtConf::cvc4(arg);
-                conf.option("--incremental"); //add support for scope popping and pushing from solver
-                conf.option("--rewrite-divk"); //add support for `div` and `mod` operators (not working)
-                let solver = rsmt2::Solver::new(conf, Parser).unwrap();
-                Solver::Rsmt2(solver)
-            }
-            SolverType::Default => {
-                let conf = rsmt2::SmtConf::default_z3();
-                let solver = rsmt2::Solver::new(conf, Parser).unwrap();
-                Solver::Rsmt2(solver)
-            }
+            SolverType::Rsmt2(args) => Solver::Rsmt2(args.clone()),
             SolverType::Z3Api => Solver::Z3Api(z3::Solver::new(&ctx)),
-        };
-
-        // configure rsmt2 solvers
-        match solver {
-            Solver::Rsmt2(mut s) => {
-                s.set_option(":print-success", "false").unwrap(); //turn off automatic succes printing in yices2
-                s.produce_models().unwrap();
-                s.set_logic(rsmt2::Logic::QF_NIA).unwrap(); //set logic to quantifier free non-linear arithmetics
-                solver = Solver::Rsmt2(s);
-            }
-            _ => (),
         };
 
         SolverEnv {
@@ -162,162 +128,178 @@ impl SolverEnv<'_> {
                 None => (),
             };
         };
-
+        self.diagnostics.solver_calls += 1;
         let verbose = self.config.verbose;
 
-        let (tx, rx) = mpsc::channel();
-
-        // clone all variables and start z3 thread
-        let tx1 = tx.clone();
-        let z3_sym_memory = sym_memory.clone();
-        let z3_i = i.clone();
-        let z3_expr = expr.clone();
-
-        thread::spawn(move || {
-            let conf = rsmt2::SmtConf::z3("z3");
-            let mut solver = rsmt2::Solver::new(conf, Parser).unwrap();
-            solver.set_option(":print-success", "false").unwrap(); //turn off automatic succes printing in yices2
-            solver.produce_models().unwrap();
-            solver.set_logic(rsmt2::Logic::QF_NIA).unwrap(); //set logic to quantifier free non-linear arithmetics
-            let solution = SolverEnv::verify_with_rsmt2(verbose, &mut solver, &z3_expr, &z3_sym_memory, &z3_i);
-            tx1.send(("z3", solution));
-        });
-
-        let tx2 = tx.clone();
-        let yi_sym_memory = sym_memory.clone();
-        let yi_i = i.clone();
-        let yi_expr = expr.clone();
-        thread::spawn(move || {
-            let mut conf = rsmt2::SmtConf::yices_2("yices-smt2");
-            conf.option("--incremental"); //add support for scope popping and pushing from solver
-            conf.option("--interactive"); //add support for scope popping and pushing from solvercargo
-            let mut solver = rsmt2::Solver::new(conf, Parser).unwrap();
-            solver.set_option(":print-success", "false").unwrap(); //turn off automatic succes printing in yices2
-            solver.produce_models().unwrap();
-            solver.set_logic(rsmt2::Logic::QF_NIA).unwrap(); //set logic to quantifier free non-linear arithmetics
-            let solution = SolverEnv::verify_with_rsmt2(verbose, &mut solver, &yi_expr, &yi_sym_memory, &yi_i);
-            tx2.send(("yices", solution));
-        });
-    
-        // if the first solution is received we return
-
-        loop {
-            match rx.recv() {
-                Ok((solver, solution)) => {
-                    self.diagnostics.solver_calls += 1;
-                    return solution
-                },
-                Err(_) => (),
-            }
-        }  
-    }
-
-    fn verify_with_rsmt2(
-        verbose: bool,
-        solver: &mut rsmt2::Solver<Parser>,
-        expr: &SymExpression,
-        sym_memory: &SymMemory,
-        i: &IntervalMap,
-    ) -> Option<Model> {
-        solver.push(1).unwrap();
-        let (expr_str, fvs, assertions) = expr_to_smtlib(expr, &sym_memory, i);
-
-        if verbose {
-            println!("\nInvoking z3");
-            println!("SymExpression: {:?}", &expr);
-            println!("  Declarations: {:?}", fvs);
-            println!("  Assertions:");
-
-            for assertion in &assertions {
-                println!("      {:?}", assertion);
-            }
-
-            println!("    Formula: {:?}\n", expr_str);
-        }
-
-        // declare free variables
-        for fv in fvs {
-            match fv {
-                (SymType::Bool, id) => solver.declare_const(id, "Bool").unwrap(),
-                (SymType::Int, id) => solver.declare_const(id, "Int").unwrap(),
-                (SymType::Ref(_), id) => solver.declare_const(id, "Int").unwrap(),
-            }
-        }
-
-        // perform set of collected assertions
-        for assertion in assertions {
-            solver.assert(assertion).unwrap();
-        }
-
-        solver.assert(expr_str.clone()).unwrap();
-        let satisfiable = match solver.check_sat() {
-            Ok(b) => b,
-            Err(err) => panic_with_diagnostics(
-                &format!(
-                    "Received backend error: {}\nWhile evaluating formula '{:?}'",
-                    err, expr_str
-                ),
-                &(),
-            ),
+        let solution = match &mut self.solver {
+            Solver::Rsmt2(args) => verify_with_rsmt2(verbose, args, expr, sym_memory, i),
+            Solver::Z3Api(solver) => verify_with_z3api(verbose, solver, expr, sym_memory, i),
         };
-
-        let rsmt2_model = solver.get_model();
-        solver.pop(1).unwrap();
-
-        //either return Sat(model) or Unsat
-        if satisfiable {
-            let mut model: Vec<(Identifier, Literal)> = vec![];
-            match rsmt2_model {
-                Ok(rsmt2_model) => {
-                    for var in rsmt2_model {
-                        model.push(var.3);
-                    }
-                }
-                Err(err) => {
-                    panic_with_diagnostics(&format!("Error during model parsing: {:?}", err), &())
-                }
-            };
-            Some(Model(model))
-        } else {
-            None
-        }
-    }
-
-    fn verify_with_z3api(
-        verbose: bool,
-        solver: &mut z3::Solver,
-        expr: &SymExpression,
-        sym_memory: &SymMemory,
-        i: &IntervalMap,
-    ) -> Option<Model> {
-        solver.push();
-        let ast = expr_to_bool(solver.get_context(), expr, sym_memory, i);
-
-        if verbose {
-            println!("\nInvoking z3");
-            println!("SymExpression: {:?}", &expr);
-
-            println!("    Formula: {:?}\n", ast);
-        }
-
-        solver.assert(&ast);
-
-        let res = match solver.check() {
-            z3::SatResult::Unsat => None,
-            z3::SatResult::Unknown => panic_with_diagnostics(
-                &format!(
-                    "Ooh noo, solving expression {:?} gave an unknown result",
-                    expr
-                ),
-                &(),
-            ),
-            z3::SatResult::Sat => Some(Model(vec![])),
+        if self.config.formula_caching {
+            self.formula_cache.insert(expr.clone(), solution);
         };
-        solver.pop(1);
-        res
+        solution
     }
 }
 
+impl Rsmt2Arg {
+    pub fn into_solver(&mut self) -> rsmt2::Solver<Parser> {
+        let mut solver = match &self {
+            Rsmt2Arg::Z3(arg) => {
+                let conf = rsmt2::SmtConf::z3(arg);
+                rsmt2::Solver::new(conf, Parser).unwrap()
+            }
+            Rsmt2Arg::Yices2(arg) => {
+                let mut conf = rsmt2::SmtConf::yices_2(arg);
+                conf.option("--incremental"); //add support for scope popping and pushing from solver
+                conf.option("--interactive"); //add support for scope popping and pushing from solvercargo
+                rsmt2::Solver::new(conf, Parser).unwrap()
+            }
+            Rsmt2Arg::CVC4(arg) => {
+                let mut conf = rsmt2::SmtConf::cvc4(arg);
+                conf.option("--incremental"); //add support for scope popping and pushing from solver
+                conf.option("--rewrite-divk"); //add support for `div` and `mod` operators (not working)
+                rsmt2::Solver::new(conf, Parser).unwrap()
+            }
+        };
+
+        solver.set_option(":print-success", "false").unwrap(); //turn off automatic succes printing in yices2
+        solver.produce_models().unwrap();
+        solver.set_logic(rsmt2::Logic::QF_NIA).unwrap(); //set logic to quantifier free non-linear arithmetics
+        solver
+    }
+}
+
+fn verify_with_rsmt2(
+    verbose: bool,
+    solver_args: &Vec<Rsmt2Arg>,
+    expr: &SymExpression,
+    sym_memory: &SymMemory,
+    i: &IntervalMap,
+) -> Option<Model> {
+    let (expr_str, fvs, assertions) = expr_to_smtlib(expr, &sym_memory, i);
+
+    if verbose {
+        println!("\nInvoking SMT-solvers");
+        println!("SymExpression: {:?}", &expr);
+        println!("  Declarations: {:?}", fvs);
+        println!("  Assertions:");
+
+        for assertion in &assertions {
+            println!("      {:?}", assertion);
+        }
+
+        println!("    Formula: {:?}\n", expr_str);
+    }
+
+    // define sender and receiver
+    let (tx, rx) = mpsc::channel();
+
+    // initialize and parallelize each of the passed solvers
+    for arg in solver_args {
+
+        // initialize solver from the argument
+        let mut solver = arg.into_solver();
+
+        // clone info needed in new thread
+        let expr_str = expr_str.clone();
+        let tx = tx.clone();
+        let assertions = assertions.clone();
+        let fvs = fvs.clone();
+
+        // spawn thread and start solving
+        thread::spawn(move || {
+            // declare free variables in solver
+            for fv in fvs {
+                match fv {
+                    (SymType::Bool, id) => solver.declare_const(id, "Bool").unwrap(),
+                    (SymType::Int, id) => solver.declare_const(id, "Int").unwrap(),
+                    (SymType::Ref(_), id) => solver.declare_const(id, "Int").unwrap(),
+                }
+            }
+
+            // declare assertions in solver
+            for assertion in assertions {
+                solver.assert(assertion).unwrap();
+            }
+
+            solver.assert(expr_str.clone()).unwrap();
+            let satisfiable = match solver.check_sat() {
+                Ok(b) => b,
+                Err(err) => panic_with_diagnostics(
+                    &format!(
+                        "Received backend error: {}\nWhile evaluating formula '{:?}'",
+                        err, expr_str
+                    ),
+                    &(),
+                ),
+            };
+            let model = solver.get_model();
+            tx.send((satisfiable, model));
+        });
+    }
+
+    // loop until we receive a solution
+    loop {
+        match rx.recv() {
+            Ok((satisfiable, rsmt2_model)) => {
+                //get variable vvalue mapping from model either return Sat(model) or Unsat
+                if satisfiable {
+                    let mut parsed_model: Vec<(Identifier, Literal)> = vec![];
+                    match rsmt2_model {
+                        Ok(rsmt2_model) => {
+                            for var in rsmt2_model {
+                                parsed_model.push(var.3);
+                            }
+                        }
+                        Err(err) => panic_with_diagnostics(
+                            &format!("Error during model parsing: {:?}", err),
+                            &(),
+                        ),
+                    };
+                    return Some(Model(parsed_model));
+                } else {
+                    return None;
+                }
+            }
+            Err(_) => (),
+        }
+    }
+}
+
+fn verify_with_z3api(
+    verbose: bool,
+    solver: &mut z3::Solver,
+    expr: &SymExpression,
+    sym_memory: &SymMemory,
+    i: &IntervalMap,
+) -> Option<Model> {
+    solver.push();
+    let ast = expr_to_bool(solver.get_context(), expr, sym_memory, i);
+
+    if verbose {
+        println!("\nInvoking z3");
+        println!("SymExpression: {:?}", &expr);
+
+        println!("    Formula: {:?}\n", ast);
+    }
+
+    solver.assert(&ast);
+
+    let res = match solver.check() {
+        z3::SatResult::Unsat => None,
+        z3::SatResult::Unknown => panic_with_diagnostics(
+            &format!(
+                "Ooh noo, solving expression {:?} gave an unknown result",
+                expr
+            ),
+            &(),
+        ),
+        z3::SatResult::Sat => Some(Model(vec![])),
+    };
+    solver.pop(1);
+    res
+}
 impl fmt::Debug for Model {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut model_str = "".to_string();
