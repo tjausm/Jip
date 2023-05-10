@@ -1,9 +1,13 @@
 # Build & run
 1. [Install rustup](https://www.rust-lang.org/tools/install)
 2. install version 4.8.5 [z3](https://github.com/Z3Prover/z3/releases) and make sure z3 is available as a binary in your path 
+3. install [CVC4 1.6](https://cvc4.github.io/downloads.html) and make sure CVC4 is available as binary in your path
 3. Build with cmd `cargo build` a
 4. Run with cmd `target/debug/jip`
 
+# versions
+- z3 4.8.5
+- CVC4 1.6
 
 # Usage:
 
