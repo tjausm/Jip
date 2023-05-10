@@ -36,7 +36,7 @@ impl Model {
 }
 
 #[derive(Clone, Copy)]
-struct Parser;
+pub struct Parser;
 
 impl<'a> rsmt2::print::IdentParser<String, SymType, &'a str> for Parser {
     fn parse_ident(self, input: &'a str) -> rsmt2::SmtRes<String> {
@@ -136,14 +136,14 @@ impl SolverEnv<'_> {
             Solver::Z3Api(solver) => verify_with_z3api(verbose, solver, expr, sym_memory, i),
         };
         if self.config.formula_caching {
-            self.formula_cache.insert(expr.clone(), solution);
+            self.formula_cache.insert(expr.clone(), solution.clone());
         };
         solution
     }
 }
 
 impl Rsmt2Arg {
-    pub fn into_solver(&mut self) -> rsmt2::Solver<Parser> {
+    pub fn into_solver(&self) -> rsmt2::Solver<Parser> {
         let mut solver = match &self {
             Rsmt2Arg::Z3(arg) => {
                 let conf = rsmt2::SmtConf::z3(arg);

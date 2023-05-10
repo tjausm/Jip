@@ -8,7 +8,8 @@ extern crate lalrpop_util;
 extern crate global_counter;
 
 use clap::{Parser, Subcommand};
-use shared::{Config, Depth, ExitCode, SolverType};
+use shared::{Config, Depth, ExitCode, SolverType, Rsmt2Arg};
+use core::panic;
 use std::process::exit;
 
 // module declarations
@@ -96,12 +97,22 @@ fn main() {
         exit(exit_code as i32);
     };
 
-    let solver_type = match (cli.z3_arg, cli.cvc4_arg, cli.yices2_arg, cli.z3_api) {
-        (Some(arg), _, _, _) => SolverType::Z3(arg),
-        (_, Some(arg), _, _) => SolverType::CVC4(arg),
-        (_, _, Some(arg), _) => SolverType::Yices2(arg),
-        (_, _, _, true) => SolverType::Z3Api,
-        (_, _, _, _) => SolverType::Default,
+    let solver_type = match (cli.z3_api, cli.z3_arg, cli.cvc4_arg, cli.yices2_arg) { 
+        (true, _, _, _) => SolverType::Z3Api,
+        (_, None, None, None) => panic!("No solver was specified"),
+        (_, z3_arg, cvc4_arg, yices2_arg) => {
+            let mut args = vec![];
+            if let Some(arg) = z3_arg{
+                args.push(Rsmt2Arg::Z3(arg));
+            };
+            if let Some(arg) = cvc4_arg{
+                args.push(Rsmt2Arg::CVC4(arg));
+            };
+            if let Some(arg) = yices2_arg{
+                args.push(Rsmt2Arg::Yices2(arg));
+            };
+            SolverType::Rsmt2(args)
+        },
     };
 
     // attempt to load program, and exit with exitcode and error if fails
