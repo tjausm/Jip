@@ -154,8 +154,6 @@ impl Rsmt2Arg {
             }
             Rsmt2Arg::Yices2(arg) => {
                 let mut conf = rsmt2::SmtConf::yices_2(arg);
-                conf.option("--incremental"); //add support for scope popping and pushing from solver
-                conf.option("--interactive"); //add support for scope popping and pushing from solvercargo
                 let mut solver = rsmt2::Solver::new(conf, Parser).unwrap();
                 solver.set_option(":print-success", "false").unwrap(); //turn off automatic succes printing in yices2 
                 solver.produce_models().unwrap();
@@ -163,10 +161,8 @@ impl Rsmt2Arg {
             }
             Rsmt2Arg::CVC4(arg) => {
                 let mut conf = rsmt2::SmtConf::cvc4(arg);
-                conf.option("--lang smt"); //set solver to smt lang
-                conf.option("--incremental"); //add support for scope popping and pushing from solver
+                conf.models();
                 conf.option("--rewrite-divk"); //add support for `div` and `mod` operators (not working)
-                conf.option("--produce-models"); //add support for `div` and `mod` operators (not working)
                 rsmt2::Solver::new(conf, Parser).unwrap()
             }
         };
@@ -217,9 +213,9 @@ fn verify_with_rsmt2(
             // declare free variables in solver
             for fv in fvs {
                 match fv {
-                    (SymType::Bool, id) => solver.declare_const(format!("|{}|", id), "Bool").unwrap(),
-                    (SymType::Int, id) => solver.declare_const(format!("|{}|", id), "Int").unwrap(),
-                    (SymType::Ref(_), id) => solver.declare_const(format!("|{}|", id), "Int").unwrap(),
+                    (SymType::Bool, id) => solver.declare_const(id, "Bool").unwrap(),
+                    (SymType::Int, id) => solver.declare_const(id, "Int").unwrap(),
+                    (SymType::Ref(_), id) => solver.declare_const(id, "Int").unwrap(),
                 }
             }
 
@@ -227,9 +223,7 @@ fn verify_with_rsmt2(
             for assertion in assertions {
                 solver.assert(assertion).unwrap();
             }
-
-            println!("{:?}",solver.assert(expr_str.clone()));
-            solver.check_sat().unwrap();
+            solver.assert(expr_str.clone()).unwrap();
             let satisfiable = match solver.check_sat() {
                 Ok(b) => b,
                 Err(err) => panic_with_diagnostics(
