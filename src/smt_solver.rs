@@ -226,7 +226,9 @@ fn verify_with_rsmt2(
             for assertion in assertions {
                 solver.assert(assertion).unwrap();
             }
+
             solver.assert(expr_str.clone()).unwrap();
+
             let satisfiable = match solver.check_sat() {
                 Ok(b) => b,
                 Err(err) => panic_with_diagnostics(
@@ -286,6 +288,24 @@ fn verify_with_z3api(
         println!("SymExpression: {:?}", &expr);
 
         println!("    Formula: {:?}\n", ast);
+    }
+
+    // assert inferred intervals 
+    for (ty, id) in vars.iter() {
+        if let SymType::Int = ty{
+            let Interval(min, max) = i.get(id);
+            if let Infinitable::Finite(min) = min {
+                let var_ast = z3::ast::Int::new_const(solver.get_context(), id.clone());
+                let min_ast = z3::ast::Int::from_i64(solver.get_context(), min);
+                solver.assert(&min_ast.le(&var_ast));
+            }
+            if let Infinitable::Finite(max) = max {
+                let var_ast = z3::ast::Int::new_const(solver.get_context(), id.clone());
+                let max_ast = z3::ast::Int::from_i64(solver.get_context(), max);
+                solver.assert(&var_ast.le(&max_ast));
+            }
+        }
+
     }
 
     solver.assert(&ast);
@@ -553,6 +573,11 @@ fn expr_to_dynamic<'ctx, 'a>(
     i: &IntervalMap,
 ) -> (FreeVariables, z3::ast::Dynamic<'ctx>) {
     match expr {
+        SymExpression::Forall(forall) => {
+            let forall_expr = forall.construct(sym_memory);
+            let (fv, expr) = expr_to_bool(ctx, &forall_expr, sym_memory, i);
+            return (fv, z3::ast::Dynamic::from(expr))
+        },
         SymExpression::And(l_expr, r_expr) => {
             let (mut fv_l, l) = expr_to_bool(ctx, l_expr, sym_memory, i);
             let (fv_r, r) = expr_to_bool(ctx, r_expr, sym_memory, i);
