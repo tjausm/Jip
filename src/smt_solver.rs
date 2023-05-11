@@ -6,6 +6,8 @@ use crate::symbolic::expression::{SymExpression, SymType};
 use crate::symbolic::memory::SymMemory;
 use crate::symbolic::ref_values::{Interval, IntervalMap, Reference, SymRefType};
 use core::fmt;
+use std::hash::Hash;
+use std::time::{Instant, Duration};
 use infinitable::Infinitable;
 use rsmt2;
 use rsmt2::print::ModelParser;
@@ -95,7 +97,7 @@ pub struct SolverEnv<'a> {
 
 impl SolverEnv<'_> {
     pub fn build_ctx() -> z3::Context {
-        // generate config with model generation activated and return
+        // generate config with model generation and parallel solving activated and return
         let mut z3_cfg = z3::Config::new();
         z3_cfg.set_model_generation(true);
         let ctx = z3::Context::new(&z3_cfg);
@@ -181,7 +183,22 @@ fn verify_with_rsmt2(
     sym_memory: &SymMemory,
     i: &IntervalMap,
 ) -> Option<Model> {
+    
+    let mut sub_time = Instant::now();
+    let tot_time = Instant::now();
+
+    // Print readable timing and reset duration
+    let bench_id : u8 = rand::random();
+    let print = move |label, inst: &Instant| {
+        let dur = inst.elapsed();
+        println!("{:<5}{:<30}= {:?},{:0>6}", bench_id, label,  dur.as_secs(), dur.as_millis());
+    };
+
+    
+
     let (expr_str, fvs, assertions) = expr_to_smtlib(expr, &sym_memory, i);
+
+    print("Expr to smtlib".to_string(), &sub_time);
 
     if verbose {
         println!("\nInvoking SMT-solver(s) ({:?})", solver_args);
@@ -201,8 +218,13 @@ fn verify_with_rsmt2(
 
     // initialize and parallelize each of the passed solvers
     for arg in solver_args {
-        // initialize solver from the argument
-        let mut solver = arg.into_solver();
+        let solver_name = match arg{
+            Rsmt2Arg::Z3(_) => "z3",
+            Rsmt2Arg::Yices2(_) => "yices",
+            Rsmt2Arg::CVC4(_) => "cvc4",
+        };
+
+        let now = Instant::now();
 
         // clone info needed in new thread
         let expr_str = expr_str.clone();
@@ -211,8 +233,18 @@ fn verify_with_rsmt2(
         let fvs = fvs.clone();
         let arg = arg.clone();
 
+        print(format!("{} clone thread info", solver_name), &now);
+        let now = Instant::now();
+
         // spawn thread and start solving
         thread::spawn(move || {
+
+            // initialize solver from the argument
+            let mut solver = arg.into_solver();
+    
+            print(format!("{} build solver", solver_name), &now);
+
+            let now = Instant::now();
             // declare free variables in solver
             for fv in fvs {
                 match fv {
@@ -227,7 +259,13 @@ fn verify_with_rsmt2(
                 solver.assert(assertion).unwrap();
             }
 
+            print(format!("{} declare and assertions", solver_name), &now);
+            let now = Instant::now();
+
             solver.assert(expr_str.clone()).unwrap();
+
+            print(format!("{} assert expr", solver_name), &now);
+            let now = Instant::now();
 
             let satisfiable = match solver.check_sat() {
                 Ok(b) => b,
@@ -240,6 +278,7 @@ fn verify_with_rsmt2(
                 ),
             };
             let model = solver.get_model();
+            print(format!("{} solved expr", solver_name), &now);
             tx.send((arg, satisfiable, model));
         });
     }
@@ -263,8 +302,10 @@ fn verify_with_rsmt2(
                             &(),
                         ),
                     };
+                    print("Total time".to_string(), &tot_time);
                     return Some(Model(parsed_model));
                 } else {
+                    print("Total time".to_string(), &tot_time);
                     return None;
                 }
             }
