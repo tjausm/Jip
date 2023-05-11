@@ -1,21 +1,21 @@
 //! Encode expressions into the smt-lib format to test satisfiability using the chosen backend
 
 use crate::ast::{Identifier, Literal};
-use crate::shared::{panic_with_diagnostics, Config, Diagnostics, Rsmt2Arg, SolverType};
+use crate::shared::{panic_with_diagnostics, Config, Diagnostics, Rsmt2Type, SolverType};
 use crate::symbolic::expression::{SymExpression, SymType};
 use crate::symbolic::memory::SymMemory;
 use crate::symbolic::ref_values::{Interval, IntervalMap, Reference, SymRefType};
 use core::fmt;
-use std::hash::Hash;
-use std::time::{Instant, Duration};
 use infinitable::Infinitable;
 use rsmt2;
 use rsmt2::print::ModelParser;
 use rustc_hash::FxHashSet;
 use std::collections::HashMap;
+use std::hash::Hash;
 use std::str::FromStr;
 use std::sync::mpsc;
 use std::thread;
+use std::time::{Duration, Instant};
 use z3;
 type Formula = String;
 
@@ -84,7 +84,7 @@ impl<'a> ModelParser<String, SymType, (Identifier, Literal), &'a str> for Parser
 type FormulaCache = HashMap<SymExpression, Option<Model>>;
 
 enum Solver<'a> {
-    Rsmt2(Vec<Rsmt2Arg>),
+    Rsmt2(Vec<(Rsmt2Type, rsmt2::Solver<Parser>)>),
     Z3Api(z3::Solver<'a>),
 }
 
@@ -108,7 +108,9 @@ impl SolverEnv<'_> {
     /// For both Yices and Cvc we pas a set of flags to make them work with the rust interface
     pub fn new<'ctx>(config: &'ctx Config, ctx: &'ctx z3::Context) -> SolverEnv<'ctx> {
         let mut solver = match &config.solver_type {
-            SolverType::Rsmt2(args) => Solver::Rsmt2(args.clone()),
+            SolverType::Rsmt2(args) => {
+                Solver::Rsmt2(args.into_iter().map(|a| a.clone().into_solver()).collect())
+            }
             SolverType::Z3Api => Solver::Z3Api(z3::Solver::new(&ctx)),
         };
 
@@ -148,60 +150,69 @@ impl SolverEnv<'_> {
     }
 }
 
-impl Rsmt2Arg {
-    pub fn into_solver(&self) -> rsmt2::Solver<Parser> {
-        let mut solver = match &self {
-            Rsmt2Arg::Z3(arg) => {
+impl Rsmt2Type {
+    fn into_solver(self: Rsmt2Type) -> (Rsmt2Type, rsmt2::Solver<Parser>) {
+        match &self {
+            Rsmt2Type::Z3(arg) => {
                 let mut conf = rsmt2::SmtConf::z3(arg);
+                conf.option("-t:100"); // set timeout to safely use rsmt2::async_check_sat_or_unk()
                 conf.models();
                 let mut solver = rsmt2::Solver::new(conf, Parser).unwrap();
-                solver
+                solver.set_logic(rsmt2::Logic::QF_NIA).unwrap(); //set logic to quantifier free non-linear arithmetics
+                (self, solver)
             }
-            Rsmt2Arg::Yices2(arg) => {
+            Rsmt2Type::Yices2(arg) => {
                 let mut conf = rsmt2::SmtConf::yices_2(arg);
+                conf.option("-t:100"); // set timeout to safely use rsmt2::async_check_sat_or_unk()
                 let mut solver = rsmt2::Solver::new(conf, Parser).unwrap();
                 solver.set_option(":print-success", "false").unwrap(); //turn off automatic succes printing in yices2
                 solver.produce_models().unwrap();
-                solver
+                solver.set_logic(rsmt2::Logic::QF_NIA).unwrap(); //set logic to quantifier free non-linear arithmetics
+                (self, solver)
             }
-            Rsmt2Arg::CVC4(arg) => {
+            Rsmt2Type::CVC4(arg) => {
                 let mut conf = rsmt2::SmtConf::cvc4(arg);
+                conf.option("-t:100"); // set timeout to safely use rsmt2::async_check_sat_or_unk()
                 conf.models();
                 conf.option("--rewrite-divk"); //add support for `div` and `mod` operators (not working)
-                rsmt2::Solver::new(conf, Parser).unwrap()
+                let mut solver = rsmt2::Solver::new(conf, Parser).unwrap();
+                solver.set_logic(rsmt2::Logic::QF_NIA).unwrap(); //set logic to quantifier free non-linear arithmetics
+                (self, solver)
             }
-        };
-        solver.set_logic(rsmt2::Logic::QF_NIA).unwrap(); //set logic to quantifier free non-linear arithmetics
-        solver
+        }
     }
 }
 
 fn verify_with_rsmt2(
     verbose: bool,
-    solver_args: &Vec<Rsmt2Arg>,
+    solvers: &mut Vec<(Rsmt2Type, rsmt2::Solver<Parser>)>,
     expr: &SymExpression,
     sym_memory: &SymMemory,
     i: &IntervalMap,
 ) -> Option<Model> {
-    
     let mut sub_time = Instant::now();
     let tot_time = Instant::now();
 
     // Print readable timing and reset duration
-    let bench_id : u8 = rand::random();
+    let bench_id: u8 = rand::random();
     let print = move |label, inst: &Instant| {
         let dur = inst.elapsed();
-        println!("{:<5}{:<30}= {:?},{:0>6}", bench_id, label,  dur.as_secs(), dur.as_millis());
+        println!(
+            "{:<5}{:<30}= {:?},{:0>6}",
+            bench_id,
+            label,
+            dur.as_secs(),
+            dur.as_millis()
+        );
     };
-
-    
 
     let (expr_str, fvs, assertions) = expr_to_smtlib(expr, &sym_memory, i);
 
     print("Expr to smtlib".to_string(), &sub_time);
+    let now = Instant::now();
 
     if verbose {
-        println!("\nInvoking SMT-solver(s) ({:?})", solver_args);
+        println!("\nInvoking SMT-solver");
         println!("SymExpression: {:?}", &expr);
         println!("  Declarations: {:?}", fvs);
         println!("  Assertions:");
@@ -213,103 +224,74 @@ fn verify_with_rsmt2(
         println!("    Formula: {:?}\n", expr_str);
     }
 
-    // define sender and receiver
-    let (tx, rx) = mpsc::channel();
+    let mut futures = vec![];
 
-    // initialize and parallelize each of the passed solvers
-    for arg in solver_args {
-        let solver_name = match arg{
-            Rsmt2Arg::Z3(_) => "z3",
-            Rsmt2Arg::Yices2(_) => "yices",
-            Rsmt2Arg::CVC4(_) => "cvc4",
-        };
-
+    // iterate over all solvers
+    for (ty, solver) in solvers.as_mut_slice() {
+        print(format!("{:?} print debug & build solver", ty), &now);
         let now = Instant::now();
 
-        // clone info needed in new thread
-        let expr_str = expr_str.clone();
-        let tx = tx.clone();
-        let assertions = assertions.clone();
-        let fvs = fvs.clone();
-        let arg = arg.clone();
-
-        print(format!("{} clone thread info", solver_name), &now);
-        let now = Instant::now();
-
-        // spawn thread and start solving
-        thread::spawn(move || {
-
-            // initialize solver from the argument
-            let mut solver = arg.into_solver();
-    
-            print(format!("{} build solver", solver_name), &now);
-
-            let now = Instant::now();
-            // declare free variables in solver
-            for fv in fvs {
-                match fv {
-                    (SymType::Bool, id) => solver.declare_const(id, "Bool").unwrap(),
-                    (SymType::Int, id) => solver.declare_const(id, "Int").unwrap(),
-                    (SymType::Ref(_), id) => solver.declare_const(id, "Int").unwrap(),
-                }
+        // declare free variables in solver
+        for fv in &fvs {
+            match fv {
+                (SymType::Bool, id) => solver.declare_const(id, "Bool").unwrap(),
+                (SymType::Int, id) => solver.declare_const(id, "Int").unwrap(),
+                (SymType::Ref(_), id) => solver.declare_const(id, "Int").unwrap(),
             }
+        }
 
-            // declare assertions in solver
-            for assertion in assertions {
-                solver.assert(assertion).unwrap();
-            }
+        // declare assertions in solver
+        for assertion in &assertions {
+            solver.assert(assertion).unwrap();
+        }
 
-            print(format!("{} declare and assertions", solver_name), &now);
-            let now = Instant::now();
+        solver.assert(expr_str.clone()).unwrap();
 
-            solver.assert(expr_str.clone()).unwrap();
-
-            print(format!("{} assert expr", solver_name), &now);
-            let now = Instant::now();
-
-            let satisfiable = match solver.check_sat() {
-                Ok(b) => b,
-                Err(err) => panic_with_diagnostics(
-                    &format!(
-                        "Received backend error: {}\nWith backtrace: {:?}\nWhile evaluating formula '{:?}'",
-                        err, err.backtrace(), expr_str
-                    ),
-                    &(),
-                ),
-            };
-            let model = solver.get_model();
-            print(format!("{} solved expr", solver_name), &now);
-            tx.send((arg, satisfiable, model));
-        });
+        print(format!("{:?} declare and assert expr", ty), &now);
+        let future = unsafe { solver.async_check_sat_or_unk() };
+        futures.push((ty, future));
     }
 
     // loop until we receive a solution
     loop {
-        match rx.recv() {
-            Ok((arg, satisfiable, rsmt2_model)) => {
-                //println!("solved with {:?}", arg);
-                //get variable vvalue mapping from model either return Sat(model) or Unsat
-                if satisfiable {
-                    let mut parsed_model: Vec<(Identifier, Literal)> = vec![];
-                    match rsmt2_model {
-                        Ok(rsmt2_model) => {
-                            for var in rsmt2_model {
-                                parsed_model.push(var.3);
-                            }
-                        }
-                        Err(err) => panic_with_diagnostics(
-                            &format!("Error during model parsing: {:?}", err),
-                            &(),
-                        ),
-                    };
-                    print("Total time".to_string(), &tot_time);
-                    return Some(Model(parsed_model));
-                } else {
-                    print("Total time".to_string(), &tot_time);
-                    return None;
+        for (ty, future) in futures.as_slice() {
+            match future.try_get() {
+                Some(Ok(Some(satisfiable))) => {
+
+                    print(format!("Total time ({:?})", ty), &tot_time);
+
+                    //save type, drop all futures and reset all solvers
+                    drop(futures);
+                    for (_, solver) in solvers {
+                        solver.reset().unwrap();
+                    }
+
+                    //get variable vvalue mapping from model either return Sat(model) or Unsat
+                    if satisfiable {
+                        panic!("No model retreiving in parallel mode");
+
+                        // let rsmt2_model = todo!();
+                        // let mut parsed_model: Vec<(Identifier, Literal)> = vec![];
+                        // match rsmt2_model {
+                        //     Ok(rsmt2_model) => {
+                        //         for var in rsmt2_model {
+                        //             parsed_model.push(var.3);
+                        //         }
+                        //     }
+                        //     Err(err) => panic_with_diagnostics(
+                        //         &format!("Error during model parsing: {:?}", err),
+                        //         &(),
+                        //     ),
+                        // };
+                        // print("Total time".to_string(), &tot_time);
+                        // return Some(Model(parsed_model));
+                    } else {
+                        
+                        return None;
+                    }
                 }
+                _ => (),
             }
-            Err(_) => (),
         }
     }
 }
@@ -331,9 +313,9 @@ fn verify_with_z3api(
         println!("    Formula: {:?}\n", ast);
     }
 
-    // assert inferred intervals 
+    // assert inferred intervals
     for (ty, id) in vars.iter() {
-        if let SymType::Int = ty{
+        if let SymType::Int = ty {
             let Interval(min, max) = i.get(id);
             if let Infinitable::Finite(min) = min {
                 let var_ast = z3::ast::Int::new_const(solver.get_context(), id.clone());
@@ -346,7 +328,6 @@ fn verify_with_z3api(
                 solver.assert(&var_ast.le(&max_ast));
             }
         }
-
     }
 
     solver.assert(&ast);
@@ -361,9 +342,8 @@ fn verify_with_z3api(
             &(),
         ),
 
-        
         // If satisfiable, retreive values from z3 model
-        z3::SatResult::Sat => { 
+        z3::SatResult::Sat => {
             let z3_model = solver.get_model().unwrap();
             let mut model = vec![];
             for (ty, id) in vars {
@@ -377,7 +357,7 @@ fn verify_with_z3api(
                         let ast = z3::ast::Bool::new_const(&solver.get_context(), id.clone());
                         let value = z3_model.eval(&ast, true).unwrap().as_bool().unwrap();
                         model.push((id.clone(), Literal::Boolean(value)));
-                    },
+                    }
                     SymType::Ref(_) => {
                         let ast = z3::ast::Int::new_const(&solver.get_context(), id.clone());
                         let value = z3_model.eval(&ast, true).unwrap().as_i64().unwrap();
@@ -617,8 +597,8 @@ fn expr_to_dynamic<'ctx, 'a>(
         SymExpression::Forall(forall) => {
             let forall_expr = forall.construct(sym_memory);
             let (fv, expr) = expr_to_bool(ctx, &forall_expr, sym_memory, i);
-            return (fv, z3::ast::Dynamic::from(expr))
-        },
+            return (fv, z3::ast::Dynamic::from(expr));
+        }
         SymExpression::And(l_expr, r_expr) => {
             let (mut fv_l, l) = expr_to_bool(ctx, l_expr, sym_memory, i);
             let (fv_r, r) = expr_to_bool(ctx, r_expr, sym_memory, i);

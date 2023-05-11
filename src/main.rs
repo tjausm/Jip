@@ -8,7 +8,7 @@ extern crate lalrpop_util;
 extern crate global_counter;
 
 use clap::{Parser, Subcommand};
-use shared::{Config, Depth, ExitCode, SolverType, Rsmt2Arg};
+use shared::{Config, Depth, ExitCode, SolverType, Rsmt2Type};
 use core::panic;
 use std::process::exit;
 
@@ -103,13 +103,13 @@ fn main() {
         (_, z3_arg, cvc4_arg, yices2_arg) => {
             let mut args = vec![];
             if let Some(arg) = z3_arg{
-                args.push(Rsmt2Arg::Z3(arg));
+                args.push(Rsmt2Type::Z3(arg));
             };
             if let Some(arg) = cvc4_arg{
-                args.push(Rsmt2Arg::CVC4(arg));
+                args.push(Rsmt2Type::CVC4(arg));
             };
             if let Some(arg) = yices2_arg{
-                args.push(Rsmt2Arg::Yices2(arg));
+                args.push(Rsmt2Type::Yices2(arg));
             };
             SolverType::Rsmt2(args)
         },

@@ -30,12 +30,12 @@ pub struct Scope {
 
 #[derive(Debug, Clone)]
 pub enum SolverType {
-    Rsmt2(Vec<Rsmt2Arg>),
+    Rsmt2(Vec<Rsmt2Type>),
     Z3Api
 }
 
 #[derive(Debug, Clone)]
-pub enum Rsmt2Arg {
+pub enum Rsmt2Type {
     Z3(String),
     Yices2(String),
     CVC4(String),
