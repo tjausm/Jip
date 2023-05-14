@@ -1,0 +1,30 @@
+class Main {
+
+    static void swap(int[] arr, int i, int j){
+        int temp := arr[i];
+        arr[i] := arr[j];
+        arr[j] := temp;
+    }
+
+    static void bubbleSort(int [] arr)    
+    {
+        int i := 0;
+        int j := 0;
+        while (i < #arr) {
+
+            while (j < (#arr - i) - 1) {
+                int a := arr [j];
+                int b := arr [j + 1];
+                if (a > b) {
+                    Main.swap(arr, j, j+1);
+                };;
+                j := j + 1;
+            }
+        }
+    }
+
+    static void main(int[] arr)
+    {
+        Main.bubbleSort(arr);
+    }
+}
