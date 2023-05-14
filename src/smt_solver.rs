@@ -228,8 +228,9 @@ fn verify_with_rsmt2(
 
     // iterate over all solvers
     for (ty, solver) in solvers.as_mut_slice() {
-        print(format!("{:?} print debug & build solver", ty), &now);
         let now = Instant::now();
+
+        solver.check_sat().unwrap();
 
         // declare free variables in solver
         for fv in &fvs {
@@ -262,7 +263,8 @@ fn verify_with_rsmt2(
 
                     //save type, drop all futures and reset all solvers
                     drop(futures);
-                    for (_, solver) in solvers {
+                    for (ty, solver) in solvers {
+                        println!("Resetting {:?}", ty);
                         solver.reset().unwrap();
                     }
 
