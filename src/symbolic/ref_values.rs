@@ -18,58 +18,33 @@ use std::{
     ops::{Add, Mul, Sub},
 };
 
-/// tracks if lazy reference is already evaluated
-pub type EvaluatedRefs = FxHashSet<Reference>;
+/// tracks if reference is already initialized
+pub type EvaluatedRefs = FxHashSet<i32>;
 
 global_counter!(REF_COUNTER, i32, 1);
 
-#[derive(Clone, Copy, Hash, PartialEq, Eq)]
-pub struct Reference(i32);
+#[derive(Clone, Hash, PartialEq, Eq)]
+pub enum Reference {
+    Evaluated(i32),
+    Lazy { r: i32, class: Identifier },
+}
 
 impl Reference {
     /// generates unique reference using a global counter
-    pub fn new() -> Reference {
+    pub fn new_evaluated() -> Reference {
         let i = REF_COUNTER.get_cloned();
         REF_COUNTER.inc();
-        Reference(i)
+        Reference::Evaluated(i)
+    }
+
+    pub fn new_lazy(class: Identifier) -> Self {
+        let r = REF_COUNTER.get_cloned();
+        REF_COUNTER.inc();
+        Reference::Lazy { r, class }
     }
     /// returns the null reference
     pub fn null() -> Reference {
-        Reference(0)
-    }
-
-    /// return the i32 representing reference
-    pub fn get(&self) -> i32 {
-        self.0
-    }
-}
-
-#[derive(Clone, Hash)]
-pub struct LazyReference {
-    r: Reference,
-    class: Identifier,
-}
-
-impl LazyReference {
-    pub fn new(class: Identifier) -> Self {
-        LazyReference {
-            r: Reference::new(),
-            class,
-        }
-    }
-
-    /// DO NOT USE function to generate reference from lazy reference. Use `initialize()` & `release()` instead to do this.
-    pub fn get(&self) -> (Reference, &Identifier) {
-        return (self.r, &self.class);
-    }
-
-    /// returns reference if it was already initialized
-    pub fn evaluate(&self, eval_refs: &EvaluatedRefs) -> Option<Reference> {
-        if eval_refs.contains(&self.r) {
-            Some(self.r.clone())
-        } else {
-            None
-        }
+        Reference::Evaluated(0)
     }
 
     fn is_never_null(
@@ -97,7 +72,7 @@ impl LazyReference {
 
         // if it's feasible we check if ref is never null
         let ref_is_null = SymExpression::EQ(
-            Box::new(SymExpression::LazyReference(self.clone())),
+            Box::new(SymExpression::Reference(self.clone())),
             Box::new(SymExpression::Reference(Reference::null())),
         );
         let mut pc_null_check = SymExpression::And(Box::new(pc), Box::new(ref_is_null));
@@ -113,38 +88,60 @@ impl LazyReference {
             None => Ok(true),
             Some(model) => Err(Error::Verification(format!(
                 "Reference {:?} could possibly be null:\n{:?}",
-                self.get().0,
+                self.get_unsafe(),
                 model
             ))),
         }
     }
 
-    pub fn initialize(
+    /// returns the value of the reference without checking the reference
+    pub fn get_unsafe(&self) -> i32 {
+        match self {
+            Reference::Evaluated(r) => *r,
+            Reference::Lazy { r, class } => *r,
+        }
+    }
+
+    // returns inner-value of reference, while accounting for the reference being (possibly) null but (possibly) on an infeasible path
+    pub fn get(
         &self,
         solver: &mut SolverEnv,
         sym_memory: &mut SymMemory,
         pc: &PathConstraints,
         i: &IntervalMap,
         eval_refs: &mut EvaluatedRefs,
-    ) -> Result<Option<Reference>, Error> {
-        // try to add ref to hashset, and if it was already present return
-        if eval_refs.contains(&self.r) {
-            return Ok(Some(self.r));
-        };
+    ) -> Result<Option<i32>, Error> {
 
-        let feasible = self.is_never_null(solver, pc, i, eval_refs, sym_memory)?;
+        match self {
+            // if null reference make sure path is infeasible
+            Reference::Evaluated(0) => match solver.verify_expr(&pc.conjunct(), sym_memory, i) {
+                Some(model) => Err(Error::Verification(format!("Reference is null:\n{:?}", model))),
+                None => Ok(None),
+            },
+            // if evaluated save and return
+            Reference::Evaluated(r) => {
+                eval_refs.insert(*r);
+                Ok(Some(*r))
+            }
+            // if lazy, make sure it's feasible and not null and return
+            Reference::Lazy { r, class } => {
+                // try to add ref to hashset, and if it was already present return
+                if eval_refs.contains(&r) {
+                    return Ok(Some(*r));
+                };
+                let feasible = self.is_never_null(solver, pc, i, eval_refs, sym_memory)?;
+                if feasible {
+                    // insert fresh lazy object into heap
+                    let obj = sym_memory.init_lazy_object(*r, class.clone());
+                    sym_memory.heap_insert(Some(self.clone()), obj);
 
-        if feasible {
-            // insert fresh lazy object into heap
-            let r = self.r;
-            let obj = sym_memory.init_lazy_object(r, self.class.clone());
-            sym_memory.heap_insert(Some(r), obj);
-
-            //update evaluated refs & return
-            eval_refs.insert(r);
-            Ok(Some(r))
-        } else {
-            Ok(None)
+                    //update evaluated refs & return
+                    eval_refs.insert(*r);
+                    Ok(Some(*r))
+                } else {
+                    Ok(None)
+                }
+            }
         }
     }
 }
@@ -208,7 +205,7 @@ impl Sub for Interval {
 
     fn sub(self, rhs: Self) -> Self {
         let ((a, b), (c, d)) = (self.get(), rhs.get());
-        
+
         let lower = match (a, c) {
             (Infinitable::NegativeInfinity, _) => Infinitable::NegativeInfinity,
             (_, Infinitable::NegativeInfinity) => Infinitable::NegativeInfinity,
@@ -292,7 +289,6 @@ impl Default for IntervalMap {
 }
 
 impl IntervalMap {
-
     fn broaden(&mut self, other: &IntervalMap) {
         let mut keys: FxHashSet<Identifier> = self.0.clone().into_keys().collect();
         keys.extend(
@@ -495,17 +491,16 @@ impl IntervalMap {
 
 impl fmt::Debug for Reference {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.get() == 0 {
-            write!(f, "null")
-        } else {
-            write!(f, "r({})", self.get())
+        match self {
+            Reference::Evaluated(_) => {
+                if self.get_unsafe() == 0 {
+                    write!(f, "null")
+                } else {
+                    write!(f, "r({})", self.get_unsafe())
+                }
+            }
+            Reference::Lazy { r, class } => write!(f, "r({} || null)", self.get_unsafe()),
         }
-    }
-}
-
-impl fmt::Debug for LazyReference {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "r({} || null)", self.r.get())
     }
 }
 
