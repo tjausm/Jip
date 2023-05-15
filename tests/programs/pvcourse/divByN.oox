@@ -7,6 +7,7 @@
 class Main {
 
     static void main(int x, int N) {
+      assume N > 2;
       //int N := 5;
       assume x>1 ;
       int k := 1 ;

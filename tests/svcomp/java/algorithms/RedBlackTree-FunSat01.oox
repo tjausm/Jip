@@ -1,0 +1,458 @@
+// Expected verdict: VALID
+
+class Object {
+      Object() { ; }
+}
+
+//A <code>Node</code> object is a node of search tree including key data and satellite object.
+// <p>It can be used with binary search tree as well as with red black tree or with any other search
+// tree.
+class RedBlackTreeNode {
+
+  // The key of the node.
+  - int key;
+  // The satellite data in the node.
+  - Object data; // Refers to the satellite data
+
+  // The color node of current node.
+  // oox has no support for sting yet:
+  // string color ;
+  - int color ; // 0 for black, non-0 for red
+
+  // The parent node of current node.
+  - RedBlackTreeNode p;
+
+  // The left child node of current node.
+  - RedBlackTreeNode left;
+
+  // The right child node of current node.
+  - RedBlackTreeNode right;
+
+  // Constructs a new node. The satellite data is set to <code>null>/code>.
+  RedBlackTreeNode(int keyx) {
+    this.key := keyx ;
+    this.data := null;
+    // oox has no good full support for string yet:
+    // this.color := null; // black = null, red = "r". Non-key leaves are nulls!!!
+    this.color := 0 ;
+    this.p := null;
+    this.left := null;
+    this.right := null;
+  }
+
+  // Constructs a new node.
+  RedBlackTreeNode(int keyx, Object dat) {
+    this.key := keyx  ;
+    this.data := null ;
+    // Object data = dat // BUG! this shadow the field-data!
+    this.data := dat ;
+    // this.color := null; // black = null, red = "r". Non-key leaves are nulls!!!
+    this.color := 0 ;
+    this.p := null;
+    this.left := null;
+    this.right := null;
+  }
+
+  // Returns the key of the node.
+  int key() {
+    assert true;
+    int r_ := this.key ;
+    return r_ ; }
+
+  // Returns the satellite data of the node.
+  Object object() {
+    Object r_ := this.data ;
+    return r_ ; }
+
+  // Returns the parent of the node.
+  RedBlackTreeNode parent() {
+    RedBlackTreeNode r_ := this.p ;
+    return r_ ;
+  }
+
+  // Returns the right child of the node.
+  RedBlackTreeNode right() {
+     RedBlackTreeNode r_ := this.right;
+     return r_ ;
+   }
+
+  // Returns the left child of the node.
+  RedBlackTreeNode left() {
+     RedBlackTreeNode r_ := this.left;
+     return r_ ;
+   }
+
+
+  // Returns the node.
+  // Can we do this in oox??
+  // public String toString() {
+     // return new String("Key: " + this.key + ", color: " + this.color + ", parent: " + p);
+   // }
+
+  // Set the key
+  void keyTo(int keyx) { this.key := keyx ; }
+
+  // Set the data to o.
+  void objectTo(Object o) { this.data := o; }
+
+  // Set the color of the node to black.
+  void setBlack() {
+    //this.color := null;
+    this.color := 0 ;
+  }
+
+  // Sets the color of the node to red.
+  void setRed() {
+    //this.color := "r";
+    this.color := 1 ;
+  }
+
+  // Checks if the color of the node is black.
+  bool isBlack() {
+    //string clr := this.color ;
+    //if (clr == null) {
+    int clr_ := this.color ;
+    if (clr_ == 0) {
+      return true;
+    } else {
+      return false;
+    }
+  }
+
+  // Checks if the color of the node is red.
+  bool isRed() {
+    //string clr := this.color ;
+    //if (clr == "r") {
+    int clr_ := this.color ;
+    if (clr_ == 1) {
+      return true;
+    } else {
+      return false;
+    }
+  }
+
+  // Set the parent node to parent.
+  void parentTo(RedBlackTreeNode parent) { this.p := parent; }
+
+  // Set the right child node to parent.
+  void rightTo(RedBlackTreeNode r) { this.right := r; }
+
+  // Set the left child node to parent.
+  void leftTo(RedBlackTreeNode l) { this.left := l; }
+
+} // End class RedBlackTreeNode
+
+class RedBlackTree {
+  - RedBlackTreeNode root;
+
+  // Constructs a new empty tree.
+  RedBlackTree() { this.root := null; }
+
+  // Constructs a new tree with a root node x.
+  RedBlackTree(RedBlackTreeNode x) {
+    this.root := x;
+  }
+
+  // Inserts a node to the tree. Runs in O(lg n) time.
+  void treeInsert(RedBlackTreeNode x) {
+      RedBlackTreeNode y := null;
+      RedBlackTreeNode z := this.root;
+
+      while (z != null) {
+        y := z;
+        int xkey_ := x.key() ;
+        int zkey_ := z.key() ;
+        if (xkey_ < zkey_) {
+          z := z.left();
+        } else {
+          z := z.right();
+        }
+      }
+
+      x.parentTo(y);
+      if (y == null) {
+        this.root := x;
+      } else {
+        int xkey_ := x.key() ;
+        int ykey_ := y.key() ;
+        if (xkey_ < ykey_) {
+          y.leftTo(x);
+        } else {
+          y.rightTo(x);
+        }
+      }
+
+      x.setRed();
+
+      // checking the loop-guard, translating short-circuiting:
+      RedBlackTreeNode myroot_ := this.root ;
+      bool condition_ := x != myroot_ ;
+      if (condition_) {
+           RedBlackTreeNode xparent_ := x.parent() ;
+           bool xparent_red_ := xparent_.isRed() ;
+           condition_ := condition_ && xparent_red_ ;
+      };
+      while (condition_) { // x != this.root && (x.parent()).isRed()
+          RedBlackTreeNode xparent_ := x.parent() ;
+          RedBlackTreeNode xparent_parent_ := xparent_.parent() ;
+          RedBlackTreeNode xparent_parent_left_ := xparent_parent_.left() ;
+          if (xparent_ == xparent_parent_left_) {
+              RedBlackTreeNode xparent_parent_right_ := xparent_parent_.right() ;
+              y := xparent_parent_right_ ;
+              bool condition1_ := y != null ;
+              if (condition1_) {
+                 bool y_red_ := y.isRed() ;
+                 condition1_ := condition1_ && y_red_ ;
+              };
+              if (condition1_) {  // y != null && y.isRed
+                 xparent_ := x.parent() ;
+                 xparent_.setBlack();
+                 y.setBlack();
+                 xparent_ := x.parent() ;
+                 xparent_parent_ := xparent_.parent() ;
+                 xparent_parent_.setRed();
+                 xparent_ := x.parent() ;
+                 x := xparent_.parent() ;
+              } else {
+                 xparent_ := x.parent() ;
+                 RedBlackTreeNode xparent_right_ := xparent_.right() ;
+                 if (x == xparent_right_) {
+                    x := x.parent();
+                    this.leftRotate(x);
+                 };
+                 xparent_ := x.parent() ;
+                 xparent_.setBlack();
+                 xparent_parent_ := xparent_.parent() ;
+                 xparent_parent_.setRed();
+                 this.rightRotate(xparent_parent_);
+              }
+          } else {
+              xparent_ := x.parent() ;
+              xparent_parent_ := xparent_.parent() ;
+              y := xparent_parent_.left();
+              bool condition2_ := y != null ;
+              if (condition2_) {
+                 bool y_isred_ := y.isRed() ;
+                 condition2_ := condition2_ && y_isred_ ;
+              };
+              if (condition2_) { // y != null && y.isRed()
+                 xparent_ := x.parent() ;
+                 xparent_.setBlack();
+                 y.setBlack();
+                 xparent_ := x.parent() ;
+                 xparent_parent_ := xparent_.parent() ;
+                 xparent_parent_.setRed();
+                 xparent_ := x.parent() ;
+                 x := xparent_.parent() ;
+              } else {
+                 xparent_ := x.parent() ;
+                 RedBlackTreeNode xparent_left_ := xparent_.left() ;
+                 if (x == xparent_left_) {
+                    x := xparent_ ;
+                    this.rightRotate(x);
+                 };
+
+                xparent_ := x.parent() ;
+                xparent_.setBlack();
+                xparent_parent_ := xparent_.parent() ;
+                xparent_parent_.setRed();
+                xparent_ := x.parent() ;
+                xparent_parent_ := xparent_.parent() ;
+                this.leftRotate(xparent_parent_);
+              }
+          }
+          myroot_ := this.root ;
+          condition_ := x != myroot_ ; // update loop-condition
+          if (condition_) {
+               xparent_ := x.parent() ;
+               bool xparent_red_ := xparent_.isRed() ;
+               condition_ := condition_ && xparent_red_ ;
+          };
+      } // End while
+
+      myroot_ := this.root ;
+      myroot_.setBlack();
+  }
+
+  // Rotates the tree from the node x to left. Runs in Theta(n) time.
+  void leftRotate(RedBlackTreeNode x) {
+      RedBlackTreeNode y := x.right();
+      RedBlackTreeNode yleft_ := y.left() ;
+      x.rightTo(yleft_) ;
+      yleft_ := y.left() ;
+      if (yleft_ != null) {
+         yleft_ := y.left() ;
+         yleft_.parentTo(x);
+      };
+      RedBlackTreeNode xparent_ := x.parent() ;
+      y.parentTo(xparent_) ;
+
+      xparent_ := x.parent() ;
+      if (xparent_ == null) {
+        this.root := y;
+      } else {
+        xparent_ := x.parent() ;
+        RedBlackTreeNode xparent_left_ := xparent_.left() ;
+        if (x == xparent_left_) {
+          xparent_ := x.parent() ;
+          xparent_.leftTo(y);
+        } else {
+          xparent_ := x.parent() ;
+          xparent_.rightTo(y);
+        }
+      }
+      y.leftTo(x);
+      x.parentTo(y);
+  }
+
+  // Rotates the tree from the node x to right. Runs in Theta(n) time.
+  void rightRotate(RedBlackTreeNode x) {
+      RedBlackTreeNode xleft_ := x.left();
+      RedBlackTreeNode y := xleft_ ;
+      RedBlackTreeNode yright_ := y.right() ;
+      x.leftTo(yright_);
+      yright_ := y.right() ;
+      if (yright_ != null) {
+        yright_.parentTo(x);
+      };
+      RedBlackTreeNode xparent_ := x.parent() ;
+      y.parentTo(xparent_);
+      xparent_ := x.parent() ;
+      if (xparent_ == null) {
+        this.root := y;
+      } else {
+        xparent_ := x.parent() ;
+        RedBlackTreeNode xparent_right_ := xparent_.right() ;
+        if (x == xparent_right_) {
+           xparent_ := x.parent() ;
+           xparent_.rightTo(y);
+        } else {
+           xparent_ := x.parent() ;
+           xparent_.leftTo(y);
+        }
+      }
+      y.rightTo(x);
+      x.parentTo(y);
+  }
+
+  // Delete the given node from the tree. Runs in O(lg n) time.
+  RedBlackTreeNode treeDelete(RedBlackTreeNode z)  {
+     return null ; // TODO
+  }
+
+  // Fix the red-black tree after a deletion if needed.
+  void deleteFixup(RedBlackTreeNode x) {
+     ; // TODO
+  }
+
+  // Print the keys of current tree in inorder (ascending). Runs in Theta(n) time.
+  // No printing in oox :|
+  //void inorderTreeWalk(RedBlackTreeNode x, String space) {
+  //  if (!(x == null)) {
+  //     System.out.println(space + x.key());
+  //    inorderTreeWalk(x.left(), space + "    ");
+  //    inorderTreeWalk(x.right(), space + "    ");
+  //  }
+  //}
+
+  // Searches a node with key k starting from the node x which is usually the root. If the node is
+  // not found returns <code>null</code> otherwise returns the pointer to the current node.Runs in
+  // O(h) time where h is the height of the tree. Works recursively.
+  //
+  // @return The node with key k or <code>null</code>.
+  // @param x The node from which to start, usually the root.
+  // @param k The key of the wanted node.
+  //
+  RedBlackTreeNode treeSearch(RedBlackTreeNode x, int k) {
+      bool condition_ := x==null ;
+      if (!condition_) {
+         int xkey_ := x.key() ;
+         condition_ := condition_ || k == xkey_ ;
+      };
+      if (condition_) { // x == null || k == x.key()
+        return x;
+      };
+      int xkey_ := x.key() ;
+      if (k < xkey_) {
+        RedBlackTreeNode xleft_ := x.left() ;
+        RedBlackTreeNode r_ := this.treeSearch(xleft_, k);
+        return r_ ;
+      } else {
+        RedBlackTreeNode xright_ := x.right() ;
+        RedBlackTreeNode r_ := this.treeSearch(xright_ , k) ;
+        return r_ ;
+      }
+  }
+
+  // Search a node with key k starting from the node x which is usually the root. If the node is
+  // not found returns <code>null</code> otherwise returns the pointer to the current node. Runs in
+  // O(h) time where h is the height of the tree. Works iteratively.
+  RedBlackTreeNode iterativeTreeSearch(RedBlackTreeNode x, int k) {
+     return null ; // TODO
+  }
+
+  //Search a node with smallest key starting from the node x which is usually the root. Runs in
+  // O(h) time where h is the height of the tree.
+  RedBlackTreeNode treeMinimum(RedBlackTreeNode x) {
+    RedBlackTreeNode xleft_ := x.left() ;
+    while (xleft_ != null) {
+      x := x.left();
+      xleft_ := x.left() ;
+    }
+    return x;
+  }
+
+  // Search a node with biggest key starting from the node x which is usually the root. Runs in
+  // O(h) time where h is the height of the tree.
+  RedBlackTreeNode treeMaximum(RedBlackTreeNode x) {
+    RedBlackTreeNode xright_ := x.right() ;
+    while (xright_ != null) {
+      x := x.right();
+      xright_ := x.right() ;
+    }
+    return x;
+  }
+
+  // Search the successor node of the key x. Runs in O(h) time where h is the height of the tree.
+  RedBlackTreeNode treeSuccessor(RedBlackTreeNode x) {
+    return null ; // TODO
+  }
+
+  // Search the predessor node of the key x. Runs in O(h) time where h is the height of the tree.
+  RedBlackTreeNode treePredessor(RedBlackTreeNode x) {
+    return null ; // TODO
+  }
+
+  // Return the root of the tree.
+  RedBlackTreeNode root() {
+    RedBlackTreeNode myroot_ := this.root ;
+    return myroot_ ;
+  }
+
+}
+
+
+
+class Main {
+
+  static void main(int N, int z) {
+     assume N > 0 ;
+
+     RedBlackTree tree := new RedBlackTree();
+     int i:=0 ;
+     while (i < N) {
+       RedBlackTreeNode o_ := new RedBlackTreeNode(i);
+       assert true;
+       tree.treeInsert(o_);
+       i := i+1 ;
+     }
+
+     //int data = Verifier.nondetInt();
+     int data := z ;
+     assume data >= 0 && data < N ;
+     RedBlackTreeNode treeroot_ := tree.root() ;
+     RedBlackTreeNode node := tree.treeSearch(treeroot_, data);
+     assert node != null ;
+   }
+
+}
