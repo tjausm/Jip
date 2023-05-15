@@ -1,0 +1,11 @@
+class Main {
+    
+    static void main(){
+        Object o := new Object();
+    }
+}
+
+class Object {
+    Object() {this.doNothing();}
+    void doNothing() {;}
+}

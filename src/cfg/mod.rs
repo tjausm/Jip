@@ -426,6 +426,15 @@ fn routine_to_cfg<'a>(
 
     // put new frame on typeStack and keep track of the params accompanying classes
     ty_stack.push();
+    
+    // map this to class in the typestack
+    let class_name = match &routine {
+        Routine::Method { class, method } => class,
+        Routine::Constructor { class } => class,
+    };
+    ty_stack.insert("this".to_string(), prog.get_class(class_name).clone());
+
+
     for (ty, id) in params {
         match ty {
             Type::Class(class_name) => {
