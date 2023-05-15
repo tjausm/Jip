@@ -7,10 +7,8 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use infinitable::Infinitable;
-
 use super::ref_values::{
-    EvaluatedRefs, Interval, IntervalMap, LazyReference, Reference, ReferenceValue, SymRefType,
+    EvaluatedRefs, Interval, IntervalMap, Reference, ReferenceValue, SymRefType,
 };
 use crate::{ast::*, shared::panic_with_diagnostics, symbolic::memory::SymMemory};
 
@@ -114,7 +112,6 @@ pub enum SymExpression {
     Literal(Literal),
     FreeVariable(SymType, Identifier),
     Reference(Reference),
-    LazyReference(LazyReference),
     Uninitialized,
 }
 
@@ -154,12 +151,18 @@ impl SymExpression {
                 Some(sym_expr) => sym_expr,
                 _ => panic_with_diagnostics(&format!("{} was not declared", id), &sym_memory),
             },
-            Expression::SizeOf(arr_name) => {
-                match sym_memory.stack_get(&arr_name) {
-                    Some(SymExpression::Reference(r)) => sym_memory.heap_get_arr_len(&r).clone(),
-                    _ => panic_with_diagnostics(&format!("{} is not a reference", arr_name), &sym_memory),
+            Expression::SizeOf(arr_name) => match sym_memory.stack_get(&arr_name) {
+                Some(SymExpression::Reference(r)) => match sym_memory.heap_get_unsafe(&r) {
+                    ReferenceValue::Array((_, _, size, _)) => size.clone(),
+                    _ => panic_with_diagnostics(
+                        &format!("{} is not an array", arr_name),
+                        &sym_memory,
+                    ),
+                },
+                _ => {
+                    panic_with_diagnostics(&format!("{} is not a reference", arr_name), &sym_memory)
                 }
-            }
+            },
             Expression::Implies(l, r) => SymExpression::Implies(
                 Box::new(SymExpression::new(sym_memory, *l)),
                 Box::new(SymExpression::new(sym_memory, *r)),
@@ -410,13 +413,6 @@ impl SymExpression {
                 }
                 expr => SymExpression::Negative(Box::new(expr)),
             },
-            SymExpression::LazyReference(lr) => match eval_refs {
-                Some(er) => lr
-                    .evaluate(er)
-                    .map(|r| SymExpression::Reference(r))
-                    .unwrap_or(self),
-                None => self,
-            },
             SymExpression::Literal(_) => self,
             //evaluate point interval
             SymExpression::FreeVariable(_, x) => match Interval::infer(&self, i) {
@@ -425,7 +421,13 @@ impl SymExpression {
                 }
                 _ => self,
             },
-            SymExpression::Reference(_) => self,
+            SymExpression::Reference(r) => match (r, eval_refs) {
+                (Reference::Evaluated(_), _) => self,
+                (Reference::Lazy { r, class }, Some(er)) if er.contains(r) => {
+                    SymExpression::Reference(Reference::Evaluated(*r))
+                }
+                _ => self,
+            },
             SymExpression::Forall(_) => self,
             SymExpression::Exists(_, _, _, _) => self,
             SymExpression::Uninitialized => panic_with_diagnostics(
@@ -477,7 +479,7 @@ impl Forall {
     /// ```
     pub fn construct(&self, current_memory: &SymMemory) -> SymExpression {
         let (r, index, value, inner_expr, captured_memory) = (
-            self.r,
+            &self.r,
             &self.index,
             &self.value,
             &self.inner_expr,
@@ -485,15 +487,9 @@ impl Forall {
         );
         let index_id = SymExpression::FreeVariable(SymType::Int, index.clone());
 
-        let (sym_ty, arr, size_expr, _) = match current_memory.heap_get(r) {
-            ReferenceValue::Array(arr) => arr,
-            _ => panic_with_diagnostics(
-                &format!(
-                    "Can't quantify over {:?} since it does not refer to an array",
-                    r
-                ),
-                &current_memory,
-            ),
+        let (sym_ty, arr, size_expr, _) = match current_memory.heap_get_unsafe(r) {
+            ReferenceValue::Array(a) => a,
+            _ => todo!(),
         };
 
         // foreach (i, v) pair in arr:
@@ -524,7 +520,7 @@ impl Forall {
         );
 
         // get size from heap and make i < size expression
-        let size = match current_memory.heap_get(r) {
+        let size = match current_memory.heap_get_unsafe(r) {
             ReferenceValue::Array((_, _, size, _)) => size,
             _ => todo!(),
         };
@@ -709,7 +705,6 @@ impl Hash for SymExpression {
                 HashExpression::LEQ(calculate_hash(&*l_expr), calculate_hash(&*r_expr)).hash(state)
             }
             SymExpression::Not(expr) => HashExpression::Not(calculate_hash(&*expr)).hash(state),
-            SymExpression::LazyReference(lr) => lr.hash(state),
             SymExpression::Uninitialized => HashExpression::Uninitialized.hash(state),
             SymExpression::Forall(_) => rand::random::<u64>().hash(state),
             SymExpression::Exists(_, _, _, _) => rand::random::<u64>().hash(state),
@@ -768,7 +763,6 @@ impl fmt::Debug for SymExpression {
             SymExpression::Literal(Literal::Integer(val)) => write!(f, "{:?}", val),
             SymExpression::FreeVariable(_, fv) => write!(f, "{}", fv),
             SymExpression::Reference(r) => write!(f, "{:?}", r),
-            SymExpression::LazyReference(lr) => write!(f, "{:?}", lr),
             SymExpression::Uninitialized => write!(f, "Uninitialized"),
         }
     }

@@ -8,7 +8,7 @@ use crate::shared::Scope;
 pub fn print_short_id(scope: &Scope) -> String {
     match scope.id {
         None => "main".to_owned(),
-        Some(id) => id.to_string()
+        Some(id) => id.to_string(),
     }
 }
 

@@ -458,31 +458,30 @@ fn expr_to_smtlib<'a>(
         SymExpression::Literal(Literal::Boolean(b)) => {
             (format!("{}", b), FxHashSet::default(), FxHashSet::default())
         }
-        SymExpression::LazyReference(lr) => {
-            let mut a = FxHashSet::default();
-            let mut fv = FxHashSet::default();
+        SymExpression::Reference(r) => match r {
+            Reference::Evaluated(r) => {
+                (format!("{}", r), FxHashSet::default(), FxHashSet::default())
+            }
+            Reference::Lazy { r, class } => {
+                let mut a = FxHashSet::default();
+                let mut fv = FxHashSet::default();
 
-            let (r, class) = lr.get();
-            let r_value = format!("{}", r.get());
-            let null = format!("{}", Reference::null().get());
-            let r_name = format!("|lazyRef({})|", r_value);
+                let r_value = format!("{}", r);
+                let null = format!("{}", Reference::null().get_unsafe());
+                let r_name = format!("|lazyRef({})|", r_value);
 
-            fv.insert((
-                SymType::Ref(SymRefType::Object(class.clone())),
-                r_name.clone(),
-            ));
-            a.insert(format!(
-                "(xor (= {} {}) (= {} {}))",
-                r_name, r_value, r_name, null
-            ));
+                fv.insert((
+                    SymType::Ref(SymRefType::Object(class.clone())),
+                    r_name.clone(),
+                ));
+                a.insert(format!(
+                    "(xor (= {} {}) (= {} {}))",
+                    r_name, r_value, r_name, null
+                ));
 
-            (r_name, fv, a)
-        }
-        SymExpression::Reference(r) => (
-            format!("{}", r.get()),
-            FxHashSet::default(),
-            FxHashSet::default(),
-        ),
+                (r_name, fv, a)
+            }
+        },
 
         otherwise => {
             panic_with_diagnostics(
@@ -629,7 +628,7 @@ fn expr_to_dynamic<'ctx, 'a>(
             z3::ast::Dynamic::from(z3::ast::Bool::from_bool(ctx, *b))
         }
         SymExpression::Reference(r) => {
-            z3::ast::Dynamic::from(z3::ast::Int::from_i64(ctx, r.get().into()))
+            z3::ast::Dynamic::from(z3::ast::Int::from_i64(ctx, r.get_unsafe().into()))
         }
         otherwise => {
             panic_with_diagnostics(

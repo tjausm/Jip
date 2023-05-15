@@ -49,11 +49,12 @@ pub fn parse_rhs<'a, 'b>(
         Rhs::AccessArray(arr_name, index) => sym_memory.heap_access_array(
             pc,
             i,
+            eval_refs,
             solver,
             arr_name,
             index.clone(),
             None,
-        ).map(|v| Some(v)),
+        ),
 
         Rhs::Expression(expr) => Ok(Some(SymExpression::new(&sym_memory, expr.clone()))),
         _ => panic_with_diagnostics(
@@ -101,7 +102,7 @@ pub fn lhs_from_rhs<'a>(
         },
 
         Lhs::AccessArray(arr_name, index) => sym_memory
-            .heap_access_array(pc, i, solver, arr_name, index.clone(), Some(var))
+            .heap_access_array(pc, i, eval_refs, solver, arr_name, index.clone(), Some(var))
             .map(|_| true),
     }
 }
@@ -170,7 +171,7 @@ pub fn assume(
     prune_p: u8,
     solver: &mut SolverEnv,
     assumption: &Expression,
-) -> (u8, bool ){
+) -> (u8, bool) {
     let mut sym_assumption = SymExpression::new(&sym_memory, assumption.clone());
     let config = &solver.config;
 
@@ -212,10 +213,7 @@ pub fn assume(
                     true)
                 ,
                 // assumption is infeasible
-                None => 
-                     (u8::min(100, p + 10),
-                    false)
-                ,
+                None => (u8::min(100, p + 10), false),
             }
         }
         // if either not proved or z3 is turned off we just return true and go on

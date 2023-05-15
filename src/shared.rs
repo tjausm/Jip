@@ -53,7 +53,6 @@ pub struct Diagnostics {
     pub z3_calls: i32,
 }
 
-
 impl Default for Diagnostics {
     fn default() -> Self {
         return Diagnostics {
@@ -63,19 +62,17 @@ impl Default for Diagnostics {
     }
 }
 
-
 global_counter!(SCOPE_COUNTER, i32, 1);
- pub struct ScopeCounter;
+pub struct ScopeCounter;
 
- impl ScopeCounter {
-     /// returns a unique number
-     pub fn new() -> i32 {
-         let i = SCOPE_COUNTER.get_cloned();
-         SCOPE_COUNTER.inc();
-         i
-     }
- }
-
+impl ScopeCounter {
+    /// returns a unique number
+    pub fn new() -> i32 {
+        let i = SCOPE_COUNTER.get_cloned();
+        SCOPE_COUNTER.inc();
+        i
+    }
+}
 
 /// Panics with passed message and passed datastructure (intended for SymMemory)
 #[track_caller]

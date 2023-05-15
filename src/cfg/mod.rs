@@ -259,12 +259,10 @@ fn stmts_to_cfg<'a>(
                 let append_actions = if is_static {
                     vec![]
                 } else {
-                    vec![
-                        Action::DeclareThis {
-                            class: class.clone(),
-                            obj: Lhs::Identifier(class_or_obj.clone()),
-                        },
-                    ]
+                    vec![Action::DeclareThis {
+                        class: class.clone(),
+                        obj: Lhs::Identifier(class_or_obj.clone()),
+                    }]
                 };
 
                 let routine = Routine::Method {
@@ -426,14 +424,13 @@ fn routine_to_cfg<'a>(
 
     // put new frame on typeStack and keep track of the params accompanying classes
     ty_stack.push();
-    
+
     // map this to class in the typestack
     let class_name = match &routine {
         Routine::Method { class, method } => class,
         Routine::Constructor { class } => class,
     };
     ty_stack.insert("this".to_string(), prog.get_class(class_name).clone());
-
 
     for (ty, id) in params {
         match ty {

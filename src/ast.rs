@@ -15,9 +15,7 @@ use non_empty_vec::NonEmpty;
 pub struct Program(pub Vec<Class>);
 
 impl Program {
-
     pub fn get_class<'a>(&'a self, class_name: &str) -> &'a Class {
-
         match self.0.iter().find(|(id, _)| id == class_name) {
             Some(class) => return class,
             None => panic_with_diagnostics(&format!("Class {} doesn't exist", class_name), &()),

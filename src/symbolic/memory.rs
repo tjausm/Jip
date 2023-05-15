@@ -4,11 +4,9 @@ use rustc_hash::FxHashMap;
 use std::fmt;
 
 use super::expression::{PathConstraints, SymExpression, SymType};
-use super::ref_values::{
-      Array, EvaluatedRefs, LazyReference, Reference, ReferenceValue, SymRefType, IntervalMap,
-};
+use super::ref_values::{Array, EvaluatedRefs, IntervalMap, Reference, ReferenceValue, SymRefType};
 use crate::ast::*;
-use crate::shared::{panic_with_diagnostics,  Error, Scope};
+use crate::shared::{panic_with_diagnostics, Error, Scope};
 use crate::smt_solver::SolverEnv;
 
 #[derive(Debug, Clone)]
@@ -19,7 +17,7 @@ struct Frame {
 
 type SymStack = Vec<Frame>;
 
-type SymHeap = FxHashMap<Reference, ReferenceValue>;
+type SymHeap = FxHashMap<i32, ReferenceValue>;
 
 #[derive(Clone)]
 pub struct SymMemory {
@@ -98,9 +96,55 @@ impl<'a> SymMemory {
     /// Inserts mapping `Reference |-> ReferenceValue` into heap returning it's reference.
     /// Generates new reference if none is given
     pub fn heap_insert(&mut self, r: Option<Reference>, v: ReferenceValue) -> Reference {
-        let r = r.unwrap_or(Reference::new());
-        self.heap.insert(r, v);
+        let r = r.unwrap_or(Reference::new_evaluated());
+        self.heap.insert(r.get_unsafe(), v);
         r
+    }
+
+    /// Returns object / array that reference points to, with 3 exceptions: (1) If reference could be null return Error;
+    /// (2) if path is infeasible return Ok(None) or (3) if reference has a value but points to nothing panic
+    pub fn heap_get(
+        &mut self,
+        r: &Reference,
+        solver: &mut SolverEnv,
+        pc: &PathConstraints,
+        i: &IntervalMap,
+        eval_refs: &mut EvaluatedRefs,
+    ) -> Result<Option<ReferenceValue>, Error> {
+        let i = match r.get(solver, self, pc, i, eval_refs)? {
+            Some(i) => i,
+            None => return Ok(None),
+        };
+        match self.heap.get(&i) {
+            Some(ref_val) => Ok(Some(ref_val.clone())),
+            None => panic_with_diagnostics(
+                &format!("Reference r({}) does not point to anything", i),
+                &self,
+            ),
+        }
+    }
+
+    /// Returns object / array that reference points to, with 3 exceptions: (1) If reference could be null return Error;
+    /// (2) if path is infeasible return Ok(None) or (3) if reference has a value but points to nothing panic
+    pub fn heap_get_mut(
+        &mut self,
+        r: &Reference,
+        solver: &mut SolverEnv,
+        pc: &PathConstraints,
+        i: &IntervalMap,
+        eval_refs: &mut EvaluatedRefs,
+    ) -> Result<Option<&mut ReferenceValue>, Error> {
+        let i = match r.get(solver, self, pc, i, eval_refs)? {
+            Some(i) => i,
+            None => return Ok(None),
+        };
+        match self.heap.get_mut(&i) {
+            Some(ref_val) => Ok(Some(ref_val)),
+            None => panic_with_diagnostics(
+                &format!("Reference r({}) does not point to anything", i),
+                &(),
+            ),
+        }
     }
 
     /// Get symbolic value of the object's field, panics if something goes wrong
@@ -116,14 +160,6 @@ impl<'a> SymMemory {
         var: Option<SymExpression>,
     ) -> Result<Option<SymExpression>, Error> {
         let r = match self.stack_get(obj_name) {
-            Some(SymExpression::LazyReference(lr)) =>
-            // if path is infeasible return nothing otherwise initialize obj and return ref
-            {
-                match lr.initialize( solver, self, pc, i, eval_refs)? {
-                    Some(r) => r,
-                    _ => return Ok(None),
-                }
-            }
             Some(SymExpression::Reference(r)) => r,
             Some(otherwise) => panic_with_diagnostics(
                 &format!(
@@ -135,7 +171,7 @@ impl<'a> SymMemory {
             _ => panic_with_diagnostics(&format!("Did you declare object {}?", obj_name), &self),
         };
 
-        match self.heap.get_mut(&r) {
+        match self.heap_get_mut(&r, solver, pc, i, eval_refs)? {
             Some(ReferenceValue::Object((_, fields))) => {
                 let expr = match fields.get(field_name) {
                     Some(field) => field,
@@ -152,13 +188,7 @@ impl<'a> SymMemory {
                     None => Ok(Some(expr.clone())),
                 }
             }
-            None => panic_with_diagnostics(
-                &format!(
-                    "Can't get value of '{}.{}' because {} with reference {:?} this does not seem to refer to an object'",
-                    obj_name, field_name, obj_name, &r
-                ),
-                &self,
-            ),
+            None => return Ok(None),
             otherwise => panic_with_diagnostics(
                 &format!(
                     "Can't get value of '{}.{}' because {:?} is not an object'",
@@ -169,11 +199,12 @@ impl<'a> SymMemory {
         }
     }
 
-    pub fn heap_get(&self, r: Reference) -> &ReferenceValue {
-        match self.heap.get(&r) {
-            Some(ref_val) => ref_val,
+    /// gets referencevalue reference points to without checking if the reference is valid
+    pub fn heap_get_unsafe(&self, r: &Reference) -> &ReferenceValue {
+        match self.heap.get(&r.get_unsafe()) {
+            Some(val) => val,
             _ => panic_with_diagnostics(
-                &format!("{:?} does not reference anything on the heap", r),
+                &format!("{:?} does not reference an array on the heap", r),
                 &self,
             ),
         }
@@ -184,16 +215,17 @@ impl<'a> SymMemory {
         &mut self,
         pc: &mut PathConstraints,
         i: &IntervalMap,
+        eval_refs: &mut EvaluatedRefs,
         solver: &mut SolverEnv,
         arr_name: &Identifier,
         index: Expression,
         var: Option<SymExpression>,
-    ) -> Result<SymExpression, Error> {
-
+    ) -> Result<Option<SymExpression>, Error> {
         //get information about array
         let (r, size, is_lazy) = match self.stack_get(&arr_name){
-            Some(SymExpression::Reference(r)) => match self.heap.get(&r){
-                Some(ReferenceValue::Array((_, _, size_expr, is_lazy))) => (r, size_expr,  *is_lazy),
+            Some(SymExpression::Reference(r)) => match self.heap_get(&r, solver, pc, i, eval_refs)?{
+                Some(ReferenceValue::Array((_, _, size_expr, is_lazy))) => (r, size_expr,  is_lazy),
+                None => return Ok(None),
                 otherwise => panic_with_diagnostics(&format!("{:?} is not an array and can't be assigned to in assignment '{}[{:?}] := {:?}'", otherwise, arr_name, index, var), &self),
             },
             _ => panic_with_diagnostics(&format!("{} is not a reference", arr_name), &self),
@@ -202,61 +234,65 @@ impl<'a> SymMemory {
         // substitute index and try to simplify it to a literal using simplifier and / or z3
         // to prevent from values being indexed twice in the array
         let mut index = SymExpression::new(self, index);
-        if(solver.config.expression_evaluation){
-            index = index.clone().eval(i, None); 
+        if (solver.config.expression_evaluation) {
+            index = index.clone().eval(i, None);
         }
-        
+
         let evaluated_index = match index {
             SymExpression::Literal(Literal::Integer(_)) => index.clone(),
             _ => {
-
-                
                 // conjunct pathconstraints and  `val1 == index` and let SMT-solver find value of 'val1'
                 let conjuncted_pc = Box::new(pc.conjunct());
                 let val1_id = "!val1".to_string();
                 let val1 = SymExpression::FreeVariable(SymType::Int, val1_id.clone());
-                let index_is_val1 = SymExpression::And(conjuncted_pc.clone(), Box::new(SymExpression::EQ(Box::new(index.clone()), Box::new(val1))));
-                
+                let index_is_val1 = SymExpression::And(
+                    conjuncted_pc.clone(),
+                    Box::new(SymExpression::EQ(Box::new(index.clone()), Box::new(val1))),
+                );
+
                 match solver.verify_expr(&index_is_val1, &self, i) {
                     Some(model) => {
-
                         // combine pathconstraints and check wheter val1 is the only value index can be`pc && val2 != val1 && val2 == index`
-                        let val2 = Box::new(SymExpression::FreeVariable(SymType::Int, "!val2".to_string()));
+                        let val2 = Box::new(SymExpression::FreeVariable(
+                            SymType::Int,
+                            "!val2".to_string(),
+                        ));
                         let val1_lit = model.find(&val1_id);
                         let val1 = Box::new(SymExpression::Literal(val1_lit.clone()));
-                        let index_is_val2 = SymExpression::And(conjuncted_pc, Box::new(SymExpression::And(Box::new(SymExpression::NE(val1, val2.clone())), Box::new(SymExpression::EQ(val2, Box::new(index.clone()))))));
+                        let index_is_val2 = SymExpression::And(
+                            conjuncted_pc,
+                            Box::new(SymExpression::And(
+                                Box::new(SymExpression::NE(val1, val2.clone())),
+                                Box::new(SymExpression::EQ(val2, Box::new(index.clone()))),
+                            )),
+                        );
 
                         // if index can be any other value than val1 return sym_index, otherwise return val1
-                        match solver.verify_expr(&index_is_val2, &self, i){
+                        match solver.verify_expr(&index_is_val2, &self, i) {
                             Some(_) => index.clone(),
                             None => SymExpression::Literal(val1_lit),
                         }
-
-
-                    
-                    },
+                    }
                     None => index.clone(),
                 }
             }
         };
 
-
-
         // build expression index < length
         let mut index_lt_size = SymExpression::LT(Box::new(index.clone()), Box::new(size.clone()));
-        if solver.config.expression_evaluation{
+        if solver.config.expression_evaluation {
             index_lt_size = index_lt_size.eval(i, None);
         };
 
         match (index_lt_size) {
             SymExpression::Literal(Literal::Boolean(true)) => (),
             _ => {
-                
                 // add 'index < size' as inner most constraint of pc  '!(pc1 => (pc2 && index < size))'
                 pc.push_assertion(index_lt_size);
-                let not_pc_implies_index_lt_size = &SymExpression::Not(Box::new(pc.combine_over_true()));
-                
-                // remove assertion to save memory e.g. if its 
+                let not_pc_implies_index_lt_size =
+                    &SymExpression::Not(Box::new(pc.combine_over_true()));
+
+                // remove assertion to save memory e.g. if its
                 pc.pop();
 
                 // try to find counter-example
@@ -264,9 +300,9 @@ impl<'a> SymMemory {
                     None => (),
                     Some(model) => {
                         return Err(Error::Verification(format!(
-                    "Following input could access an array out of bounds:\n{:?}",
-                    model
-                )));
+                            "Following input could access an array out of bounds:\n{:?}",
+                            model
+                        )));
                     }
                 }
             }
@@ -274,8 +310,9 @@ impl<'a> SymMemory {
 
         //get mutable HashMap representing array
         let (ty, arr) = match self.stack_get(&arr_name){
-            Some(SymExpression::Reference(r)) => match self.heap.get_mut(&r){
+            Some(SymExpression::Reference(r)) => match self.heap_get_mut(&r, solver, pc, i, eval_refs)?{
                 Some(ReferenceValue::Array((ty, arr, _, _))) => (ty, arr),
+                None => return Ok(None),
                 otherwise => panic_with_diagnostics(&format!("{:?} is not an array and can't be assigned to in assignment '{}[{:?}] := {:?}'", otherwise, arr_name, index, var), &self),
             },
             _ => panic_with_diagnostics(&format!("{} is not a reference", arr_name), &self),
@@ -284,18 +321,18 @@ impl<'a> SymMemory {
         // if we insert var or var is already in arr then return
         if let Some(var) = var {
             arr.insert(evaluated_index, var.clone());
-            return Ok(var);
+            return Ok(Some(var));
         }
         if let Some(v) = arr.get(&evaluated_index) {
-            return Ok(v.clone());
+            return Ok(Some(v.clone()));
         }
 
         // otherwise generate new
         match (is_lazy, &ty) {
             (false, SymType::Ref(SymRefType::Object(class))) => {
                 // generate and insert reference
-                let r = Reference::new();
-                let sym_r = SymExpression::Reference(r);
+                let r = Reference::new_evaluated();
+                let sym_r = SymExpression::Reference(r.clone());
                 arr.insert(evaluated_index, sym_r.clone());
 
                 // instantiate object and insert under reference afterwards (to please borrowchecker)
@@ -303,16 +340,16 @@ impl<'a> SymMemory {
                 let obj = self.init_object(class);
                 self.heap_insert(Some(r), obj);
 
-                Ok(sym_r)
+                Ok(Some(sym_r))
             }
             // generate and return lazy reference
             (true, SymType::Ref(SymRefType::Object(class))) => {
                 // generate and insert reference
-                let lr = LazyReference::new(class.clone());
-                let sym_lr = SymExpression::LazyReference(lr);
+                let lr = Reference::new_lazy(class.clone());
+                let sym_lr = SymExpression::Reference(lr);
                 arr.insert(evaluated_index, sym_lr.clone());
 
-                Ok(sym_lr)
+                Ok(Some(sym_lr))
             }
             (_, SymType::Ref(SymRefType::Array(_))) => {
                 todo!("2+ dimensional arrays are not supported")
@@ -321,42 +358,21 @@ impl<'a> SymMemory {
             (false, SymType::Int) => {
                 let lit = SymExpression::Literal(Literal::Integer(0));
                 arr.insert(evaluated_index, lit.clone());
-                Ok(lit)
+                Ok(Some(lit))
             }
             (false, SymType::Bool) => {
                 let lit = SymExpression::Literal(Literal::Boolean(false));
                 arr.insert(evaluated_index, lit.clone());
-                Ok(lit)
+                Ok(Some(lit))
             }
             _ => {
                 let fv_id = format!("{}[{:?}]", arr_name.clone(), evaluated_index);
                 let fv = SymExpression::FreeVariable(ty.clone(), fv_id);
                 arr.insert(evaluated_index, fv.clone());
-                Ok(fv)
+                Ok(Some(fv))
             }
         }
     }
-
-    // possibly set and then return current length expression of array
-    pub fn heap_get_arr_len(&'a self, r: &Reference) -> &'a SymExpression {
-        match self.heap.get(&r){
-            Some(ReferenceValue::Array((ty,arr,curr_len,l))) => curr_len,
-            otherwise => panic_with_diagnostics(&format!("Can't return length of {:?} since the value it references to ({:?}) is not an array", r, otherwise), &self),
-        }
-        
-    }
-
-    // possibly set and then return current length expression of array
-    pub fn heap_set_arr_len(&mut self, r: &Reference, new_len: SymExpression)  {
-        match self.heap.get(&r){
-            Some(ReferenceValue::Array((ty,arr,curr_len,l))) 
-                => {self.heap.insert(r.clone(), ReferenceValue::Array((ty.clone(), arr.clone(), new_len.clone(), *l)));},
-            otherwise => panic_with_diagnostics(&format!("Can't return length of {:?} since the value it references to ({:?}) is not an array", r, otherwise), &self),
-        }
-        
-    }
-    
-    
 
     // inits an object with al it's fields uninitialised
     pub fn init_object(&mut self, class: Identifier) -> ReferenceValue {
@@ -376,7 +392,7 @@ impl<'a> SymMemory {
     }
 
     // inits 1 objects with its concrete fields as free variables and its reference fields as lazy references
-    pub fn init_lazy_object(&mut self, r: Reference, class: Identifier) -> ReferenceValue {
+    pub fn init_lazy_object(&mut self, r: i32, class: Identifier) -> ReferenceValue {
         let mut fields = FxHashMap::default();
 
         let members = self.prog.get_class(&class).1.clone();
@@ -402,8 +418,8 @@ impl<'a> SymMemory {
                     }
                     Type::Class(class) => {
                         // either make lazy object or uninitialized
-                        let lr = LazyReference::new(class.clone());
-                        let lazy_ref = SymExpression::LazyReference(lr);
+                        let lr = Reference::new_lazy(class.clone());
+                        let lazy_ref = SymExpression::Reference(lr);
 
                         fields.insert(field.clone(), lazy_ref);
                     }

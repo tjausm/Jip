@@ -16,7 +16,7 @@ use crate::shared::{panic_with_diagnostics, Depth, Diagnostics, Error};
 use crate::smt_solver::SolverEnv;
 use crate::symbolic::expression::{PathConstraints, SymExpression, SymType};
 use crate::symbolic::memory::SymMemory;
-use crate::symbolic::ref_values::{IntervalMap, EvaluatedRefs, LazyReference, Reference, SymRefType};
+use crate::symbolic::ref_values::{EvaluatedRefs, IntervalMap, Reference, SymRefType};
 
 use colored::Colorize;
 use petgraph::stable_graph::NodeIndex;
@@ -147,7 +147,7 @@ fn print_debug(
 }
 
 fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagnostics, Error> {
-    let mut prune_p : u8 = if config.adaptive_pruning {50} else {0};
+    let mut prune_p: u8 = if config.adaptive_pruning { 50 } else { 0 };
 
     //init solver, config & diagnostics
     let ctx = SolverEnv::build_ctx();
@@ -222,10 +222,12 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                             SymExpression::FreeVariable(SymType::Bool, id.clone()),
                         ),
                         (Type::Array(ty), id) => {
-                            let r = Reference::new();
+                            let r = Reference::new_evaluated();
                             let size = match config.symbolic_array_size {
                                 Some(s) => SymExpression::Literal(Literal::Integer(s)),
-                                None => SymExpression::FreeVariable(SymType::Int, format!("#{:?}", r)),
+                                None => {
+                                    SymExpression::FreeVariable(SymType::Int, format!("#{:?}", r))
+                                }
                             };
                             let sym_ty = match &**ty {
                                 Type::Int => SymType::Int,
@@ -240,12 +242,12 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                                 ),
                             };
                             let arr = sym_memory.init_array(sym_ty.clone(), size, true);
-                            sym_memory.heap_insert(Some(r), arr);
+                            sym_memory.heap_insert(Some(r.clone()), arr);
                             sym_memory.stack_insert(id.clone(), SymExpression::Reference(r));
                         }
                         (Type::Class(class_name), id) => {
-                            let lr = LazyReference::new(class_name.clone());
-                            sym_memory.stack_insert(id.clone(), SymExpression::LazyReference(lr));
+                            let lr = Reference::new_lazy(class_name.clone());
+                            sym_memory.stack_insert(id.clone(), SymExpression::Reference(lr));
                         }
                         (ty, id) => panic_with_diagnostics(
                             &format!("Can't call main with parameter {} of type {:?}", id, ty),
@@ -278,7 +280,9 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                             assumption,
                         );
                         prune_p = updated_p;
-                        if !feasible {continue;};
+                        if !feasible {
+                            continue;
+                        };
                     }
                     Statement::Assert(assertion) => assert(
                         &mut sym_memory,
@@ -337,7 +341,6 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                         loop {
                             match (params_iter.next(), args_iter.next()) {
                                 (Some((_, arg_id)), Some(expr)) => {
-                                    
                                     sym_memory.stack_insert(arg_id.clone(), SymExpression::new(&sym_memory, expr.clone()));
                                 },
                                 (Some((_, param)), None) => panic_with_diagnostics(
@@ -365,9 +368,6 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
 
                             match val {
                                 Some(SymExpression::Reference(_)) => {
-                                    sym_memory.stack_insert(this_id.clone(), val.unwrap())
-                                }
-                                Some(SymExpression::LazyReference(_)) => {
                                     sym_memory.stack_insert(this_id.clone(), val.unwrap())
                                 }
 
@@ -407,13 +407,15 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                             let expr = sym_memory.heap_access_array(
                                 &mut pc,
                                 &i,
+                                &mut eval_refs,
                                 &mut solver_env,
                                 arr_name,
                                 index.clone(),
                                 None,
                             )?;
                             match expr {
-                                    SymExpression::Reference(r) => sym_memory.stack_insert(this_id.to_string(), SymExpression::Reference(r)),
+                                    Some(SymExpression::Reference(r)) => sym_memory.stack_insert(this_id.to_string(), SymExpression::Reference(r)),
+                                    None => continue 'q_edges,
                                     _ => panic_with_diagnostics(&format!("Can't assign '{} this' because there is no reference at {}[{:?}]", class, arr_name, index), &sym_memory),
                                 };
                         }
@@ -444,6 +446,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                                 sym_memory.heap_access_array(
                                     &mut pc,
                                     &i,
+                                    &mut eval_refs,
                                     &mut solver_env,
                                     arr_name,
                                     index.clone(),
@@ -457,7 +460,9 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                         let expr = sym_memory.stack_get(retval_id);
 
                         match expr {
-                            Some(retval) => sym_memory.stack_insert_below(retval_id.clone(), retval),
+                            Some(retval) => {
+                                sym_memory.stack_insert_below(retval_id.clone(), retval)
+                            }
                             None => panic_with_diagnostics(
                                 "Can't lift retval to a higher scope",
                                 &sym_memory,
@@ -506,7 +511,9 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                                         assumption,
                                     );
                                     prune_p = updated_p;
-                                    if !feasible {continue;};
+                                    if !feasible {
+                                        continue;
+                                    };
                                 }
                             };
                         }
