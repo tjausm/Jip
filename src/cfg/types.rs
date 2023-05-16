@@ -47,9 +47,9 @@ pub enum Action {
     },
 }
 
-pub type Edge = Vec<Action>;
+pub type Actions = Vec<Action>;
 
-pub type CFG = Graph<Node, Edge>;
+pub type CFG = Graph<Node, Actions>;
 
 /// Maps the collection type routine (covering all methods & constructors) to a tuple of start- and endnode for the subgraph of that routine
 pub type FunEnv = FxHashMap<Routine, (NodeIndex, NodeIndex)>;
@@ -108,5 +108,5 @@ impl TypeStack {
 #[derive(Clone)]
 pub struct Start {
     pub node: NodeIndex,
-    pub edge: Edge,
+    pub actions: Actions,
 }

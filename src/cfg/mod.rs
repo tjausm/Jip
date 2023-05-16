@@ -16,7 +16,7 @@ use std::collections::VecDeque;
 
 /// Transform node to unannotated start
 fn to_start(node: NodeIndex) -> Start {
-    Start { node, edge: vec![] }
+    Start { node, actions: vec![] }
 }
 
 /// Generates cfg in vizualizable Dot format (visualizable at http://viz-js.com/)
@@ -40,7 +40,7 @@ pub fn generate_cfg(prog: Program) -> (NodeIndex, CFG) {
             } else {
                 Start {
                     node: start_node,
-                    edge: vec![Action::CheckSpecifications {
+                    actions: vec![Action::CheckSpecifications {
                         specifications: specs.clone(),
                     }],
                 }
@@ -72,8 +72,8 @@ pub fn generate_cfg(prog: Program) -> (NodeIndex, CFG) {
             );
 
             //connect ending(s) of generated cfg to the 'end' node
-            for p_end in program_endings {
-                cfg.add_edge(p_end, end, vec![]);
+            for Start {node, actions: edge} in program_endings {
+                cfg.add_edge(node, end, edge);
             }
 
             return (start.node, cfg);
@@ -94,7 +94,7 @@ fn stmts_to_cfg<'a>(
     starts: Vec<Start>,
     curr_scope: &Scope,
     scope_end: Option<NodeIndex>,
-) -> Vec<NodeIndex> {
+) -> Vec<Start> {
     match stmts.pop_front() {
         Some(stmt) => match stmt {
             Statement::Block(stmts) => {
@@ -118,8 +118,8 @@ fn stmts_to_cfg<'a>(
                 let assume_not_start = to_start(cfg.add_node(assume_not));
                 //iterate over all starting nodes to lay edges
                 for start in starts {
-                    cfg.add_edge(start.node, assume_start.node, start.edge.clone());
-                    cfg.add_edge(start.node, assume_not_start.node, start.edge);
+                    cfg.add_edge(start.node, assume_start.node, start.actions.clone());
+                    cfg.add_edge(start.node, assume_not_start.node, start.actions);
                 }
 
                 // add the if and else branch to the cfg
@@ -146,10 +146,7 @@ fn stmts_to_cfg<'a>(
                 );
 
                 let all_endings: Vec<Start> = [if_ending, else_ending]
-                    .concat()
-                    .iter()
-                    .map(|n| to_start(*n))
-                    .collect();
+                    .concat();
 
                 return stmts_to_cfg(
                     ty_stack,
@@ -171,8 +168,8 @@ fn stmts_to_cfg<'a>(
 
                 // add edges from start node to assume and assume_not
                 for start in starts {
-                    cfg.add_edge(start.node, assume_node, start.edge.clone());
-                    cfg.add_edge(start.node, assume_not_node, start.edge);
+                    cfg.add_edge(start.node, assume_node, start.actions.clone());
+                    cfg.add_edge(start.node, assume_not_node, start.actions);
                 }
                 // calculate cfg for body of while and cfg for the remainder of the stmts
                 let body_ending = stmts_to_cfg(
@@ -196,9 +193,9 @@ fn stmts_to_cfg<'a>(
                     scope_end,
                 );
                 // add edges from end of while body to begin and edge from while body to rest of stmts
-                for node in body_ending {
-                    cfg.add_edge(node, assume_node, vec![]);
-                    cfg.add_edge(node, assume_not_node, vec![]);
+                for Start {node, actions} in body_ending {
+                    cfg.add_edge(node, assume_node, actions.clone());
+                    cfg.add_edge(node, assume_not_node, actions);
                 }
 
                 return end_remainder;
@@ -289,7 +286,7 @@ fn stmts_to_cfg<'a>(
                 cfg.add_edge(
                     f_end.node,
                     assign_retval,
-                    [vec![Action::LiftRetval], f_end.edge].concat(),
+                    [vec![Action::LiftRetval], f_end.actions].concat(),
                 );
 
                 return stmts_to_cfg(
@@ -347,7 +344,7 @@ fn stmts_to_cfg<'a>(
             Statement::Return(expr) => {
                 let retval_assign = cfg.add_node(Node::Statement(Statement::Return(expr.clone())));
                 for start in starts {
-                    cfg.add_edge(start.node, retval_assign, start.edge);
+                    cfg.add_edge(start.node, retval_assign, start.actions);
                 }
                 match scope_end {
                     Some(scope_end) => {
@@ -386,7 +383,7 @@ fn stmts_to_cfg<'a>(
 
                 let stmt_node = cfg.add_node(Node::Statement(other));
                 for start in starts {
-                    cfg.add_edge(start.node, stmt_node, start.edge);
+                    cfg.add_edge(start.node, stmt_node, start.actions);
                 }
                 return stmts_to_cfg(
                     ty_stack,
@@ -401,17 +398,14 @@ fn stmts_to_cfg<'a>(
             }
         },
         //if stmt stack is empty we return ending node(s)
-        None => {
-            let start_nodes: Vec<NodeIndex> = starts.iter().map(|n| n.node).collect();
-            return start_nodes;
-        }
+        None => starts
     }
 }
 
 /// function generalizes over static, non-static calls/invocations and constructor calls
 fn routine_to_cfg<'a>(
     routine: Routine,
-    append_incoming: Edge,
+    append_incoming: Actions,
     args: Vec<Expression>,
     ty_stack: &mut TypeStack,
     f_env: &mut FunEnv,
@@ -472,7 +466,7 @@ fn routine_to_cfg<'a>(
             start.node,
             f_start_node,
             [
-                start.edge,
+                start.actions,
                 vec![enter_scope.clone(), assign_args.clone()],
                 check_specs.clone(),
                 append_incoming.clone(),
@@ -486,7 +480,7 @@ fn routine_to_cfg<'a>(
 
     return Start {
         node: f_end_node,
-        edge: vec![Action::LeaveScope {
+        actions: vec![Action::LeaveScope {
             from: fun_scope.clone(),
         }],
     };
@@ -533,8 +527,8 @@ fn routinebody_to_cfg<'a>(
     //leave ty_env scope after method body cfg is created
     ty_env.pop();
     //connect end of function to leave_function node
-    for node in fun_endings {
-        cfg.add_edge(node, leave_function, vec![]);
+    for Start {node, actions} in fun_endings {
+        cfg.add_edge(node, leave_function, actions);
     }
 
     return (enter_function, leave_function);
