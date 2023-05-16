@@ -1,0 +1,24 @@
+
+class Environment {
+   static void Environment() {
+      ;
+    }
+
+}
+
+class Actions {
+
+    static void Actions() {
+      Environment.Environment();
+    }
+
+}
+
+class Main {
+
+    static void main()
+    {
+       Actions.Actions();
+       assert false;
+    }
+ }
