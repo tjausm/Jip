@@ -134,6 +134,7 @@ fn print_debug(
     let dump_state = match node {
         Node::Statement(Statement::Assert(_)) => true,
         Node::Statement(Statement::Assume(_)) => true,
+        Node::End => true,
         _ => false,
     };
     if dump_state {
