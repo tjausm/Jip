@@ -5,11 +5,11 @@ class Main {
   static int ackermann(int m, int n) {
     if (m == 0) {
       return n + 1;
-    }
+    };
     if (n == 0) {
       int r_ := Main.ackermann(m-1,1);
       return r_ ;
-    }
+    };
     int r1_ := Main.ackermann(m,n-1) ;
     int r2_ := Main.ackermann(m-1,r1_);
     return r2_ ;

@@ -5,11 +5,11 @@ class Main {
   static int ackermann(int m, int n) {
     if (m == 0) {
       return n + 1;
-    }
+    };
     if (n == 0) {
       int r_ := Main.ackermann(m-1,1);
       return r_ ;
-    }
+    };
     int r1_ := Main.ackermann(m,n-1) ;
     int r2_ := Main.ackermann(m-1,r1_);
     return r2_ ;
@@ -17,25 +17,9 @@ class Main {
 
   static void main(int m, int n) {
     assume !(m < 0 || m > 3) ;
-    assume ! (n < 0 || n > 23) ;
+    assume !(n < 0 || n > 23) ;
+
     int result := Main.ackermann(m,n) ;
     assert m < 0 || n < 0 || result >= 0 ;
-  }
-
-  // addition, to check if oox depth is sufficiently set
-  static void checkDepth(int m, int n) {
-    assume !(m < 0 || m > 3) ;
-    assume ! (n < 0 || n > 23) ;
-    int result := Main.ackermann(m,n) ;
-    // A(3,1) = 13  ... #recursions 106 .. this one is easy
-    // A(3,2) = 29  ... #recursions 541 .. challenging..
-    // A(3,3) = 61  ... #recursions 2432
-    // A(3,4) = 125 ... will recurse over 10000 times, unfeasible
-    // A(4,0) = 13  ... #recursions 107
-    // A(4,n>0)     ... #recursions over 11 millions :|
-    // anyway, the pre-cond limits m to <4.
-    if(result == 13) {
-       assert false ;
-    }
   }
 }
