@@ -357,7 +357,7 @@ class Main {
        //assert #values == 4*maxLength ;
 
        Actions a := new Actions();
-         assert false;
+
        int counter := 0;
        while (counter < maxLength) {
           counter := counter + 1  ;
@@ -399,15 +399,6 @@ class Main {
        assume values != null ;
        assume #values == 12 ;
        Main.randomSequenceOfActions(3,values) ;
+       assert false;
     }
-
-    // for checking if oox has enough depth setup:
-    static void checkDepth(bool[] values)
-    {
-       assume values != null ;
-       assume #values == 12 ;
-       Main.randomSequenceOfActions(3,values) ;
-       assert false ; // should be detected
-    }
-
  }
