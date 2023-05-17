@@ -1,12 +1,13 @@
 
 class Environment {
 
+   - int waterLevel ;
+   - bool methaneLevelCritical ;
+
     static int WaterLevelEnum_low() { return 1 ; }
     static int WaterLevelEnum_normal() { return 2 ; }
     static int WaterLevelEnum_high() { return 3 ; }
 
-    int waterLevel ;
-    bool methaneLevelCritical ;
 
     Environment() {
       this.waterLevel := Environment.WaterLevelEnum_normal() ;
@@ -25,7 +26,7 @@ class Environment {
          if (waterLevel == normal) {
             int low := Environment.WaterLevelEnum_low() ;
             this.waterLevel := low ;
-         }
+         };
       }
     }
 
@@ -41,7 +42,7 @@ class Environment {
           if (waterLevel == normal) {
              int high := Environment.WaterLevelEnum_high() ;
              this.waterLevel := high ;
-          }
+          };
       }
     }
 
@@ -79,9 +80,9 @@ class Environment {
 
 class MinePump {
 
-    bool pumpRunning ;
-    bool systemActive ;
-    Environment env;
+    - bool pumpRunning ;
+    - bool systemActive ;
+    - Environment env;
 
     MinePump(Environment env_){
        this.pumpRunning := false;
@@ -94,9 +95,9 @@ class MinePump {
        if (pumpRunning) {
           Environment env := this.env ;
           env.lowerWaterLevel();
-       }
+       };
        bool systemActive := this.systemActive ;
-       if (systemActive) this.processEnvironment();
+       if (systemActive) this.processEnvironment();;
     }
 
     void processEnvironment__wrappee__base() { ; }
@@ -191,7 +192,7 @@ class MinePump {
       bool pumpRunning := this.pumpRunning ;
       if (pumpRunning) {
          this.deactivatePump();
-      }
+      };
       pumpRunning := this.pumpRunning ;
       assert !pumpRunning;
       this.systemActive := false ;
@@ -211,11 +212,11 @@ class MinePump {
 }
 
 class Actions {
-    Environment env;
-    MinePump p;
+    - Environment env;
+    - MinePump p;
 
-    bool methAndRunningLastTime ;
-    bool switchedOnBeforeTS ;
+    - bool methAndRunningLastTime ;
+    - bool switchedOnBeforeTS ;
 
     Actions() {
       this.methAndRunningLastTime := false;
@@ -238,13 +239,13 @@ class Actions {
     void stopSystem() {
        MinePump p := this.p ;
        bool sysactive := p.isSystemActive() ;
-       if (sysactive) p.stopSystem();
+       if (sysactive) p.stopSystem();;
     }
 
     void startSystem() {
        MinePump p := this.p ;
        bool sysactive := p.isSystemActive() ;
-       if (!sysactive) p.startSystem();
+       if (!sysactive) p.startSystem();;
     }
 
     void timeShift() {
@@ -252,7 +253,7 @@ class Actions {
       bool sysactive := p.isSystemActive() ;
 
       if (sysactive)
-         this.Specification5_1() ;
+         this.Specification5_1() ;;
 
       p.timeShift();
 
@@ -263,7 +264,7 @@ class Actions {
          this.Specification3();
          this.Specification4();
          this.Specification5_2();
-      }
+      };
     }
 
     //String getSystemState() {
@@ -279,7 +280,7 @@ class Actions {
 
        if (b1 && b2) {
           assert false;
-       }
+       };
     }
 
     // Specification 2: When the pump is running, and there is methane, then it is
@@ -315,7 +316,7 @@ class Actions {
        bool b3 := waterlevel == high;
        if (!b1 && b3 && !b2) {
           assert false;
-       }
+       };
     }
 
     // Specification 4: the pump is never on when the water level is low
@@ -328,7 +329,7 @@ class Actions {
        bool b3 := waterlevel == low;
        if (b3 && b2) {
           assert false;
-       }
+       };
     }
 
     // Specification 5: The Pump is never switched on when the water is below the
@@ -351,7 +352,7 @@ class Actions {
        bool switchedOnBeforeTS := this.switchedOnBeforeTS ;
        if (b2 && b1 && !switchedOnBeforeTS) {
           assert false;
-       }
+       };
     }
 
 }
@@ -377,19 +378,19 @@ class Main {
           bool action4 := false;
           if (!action3) {
              action4 := values[k+3];
-          }
+          };
 
           if (action1) {
              a.waterRise();
-          }
+          };
           if (action2) {
              a.methaneChange();
-          }
+          };
           if (action3) {
              a.startSystem();
           } else if (action4) {
              a.stopSystem();
-          }
+          };
           a.timeShift();
        }
 
@@ -404,7 +405,6 @@ class Main {
 
 
     static void main(bool[] values)
-        exceptional(false)
     {
        assume values != null ;
        assume #values == 12 ;
@@ -413,7 +413,6 @@ class Main {
 
     // for checking if oox has enough depth setup:
     static void checkDepth(bool[] values)
-        exceptional(false)
     {
        assume values != null ;
        assume #values == 12 ;
