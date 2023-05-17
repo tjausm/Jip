@@ -1,0 +1,113 @@
+class Main {
+
+  static void main(int N) {
+    assume(N > 0);
+
+    int[] data := new int[N];
+    int i := 0;
+    while (i < N){
+        data[i] := i;
+        i := i + 1;
+    }
+
+    Main.iterativeMergesort(data);
+  }
+
+  /////////////////////////////////////////
+  // Iterative mergeSort
+  /////////////////////////////////////////
+
+  static void iterativeMergesort(int[] a) {
+    int[] aux := new int[#a];
+    
+    int blockSize := 1;
+    while (blockSize < #a) {
+        int start := 0;
+        while (start < #a) {
+            Main.merge(a, aux, start, start + blockSize, start + 2 * blockSize);
+            start := start + (2 * blockSize);
+        }
+        blockSize := blockSize * 2;
+    }        
+  }
+
+  /////////////////////////////////////////
+  // Iterative mergeSort without copy
+  /////////////////////////////////////////
+
+//   static void iterativeMergesortWithoutCopy(int[] a) {
+//     int[] from := a, to := new int[#a];
+//     for (int blockSize := 1; blockSize < #a; blockSize *= 2) {
+//       for (int start := 0; start < #a; start += 2 * blockSize)
+//         mergeWithoutCopy(from, to, start, start + blockSize, start + 2 * blockSize);
+//       int[] temp := from;
+//       from := to;
+//       to := temp;
+//     }
+//     if (a != from)
+//       // copy back
+//       for (int k := 0; k < #a; k++) a[k] := from[k];
+//   }
+
+//   static void mergeWithoutCopy(int[] from, int[] to, int lo, int mid, int hi) {
+//     // DK: cannot just return if mid >= #a, but must still copy remaining elements!
+//     // DK: add two tests to first verify "mid" and "hi" are in range
+//     if (mid > from.length) mid := from.length;
+//     if (hi > from.length) hi := from.length;
+//     int i := lo, j := mid;
+//     for (int k := lo; k < hi; k++) {
+//       if (i == mid) to[k] := from[j++];
+//       else if (j == hi) to[k] := from[i++];
+//       else if (from[j] < from[i]) to[k] := from[j++];
+//       else to[k] := from[i++];
+//     }
+//     // DO NOT copy back
+//     // for (int k := lo; k < hi; k++)
+//     //   a[k] := aux[k];
+//   }
+
+  /////////////////////////////////////////
+  // Recursive mergeSort, adapted from:
+  // Sedgewick and Wayne, Introduction to Programming in Java
+  // http://www.cs.princeton.edu/introcs/42sort/MergeSort.java.html
+  /////////////////////////////////////////
+
+  static bool merge(int[] a, int[] aux, int lo, int mid, int hi) {
+    // DK: add two tests to first verify "mid" and "hi" are in range
+    if (mid >= #a) return false;;
+    if (hi > #a) hi := #a ;;
+    int i := lo; int j := mid;
+
+    int k := lo;
+    while (k < hi) {
+        if (i == mid) { aux[k] := a[j];    j := j + 1;}
+        else if (j == hi) {aux[k] := a[i]; i := i + 1;}
+        else {
+        int aj := a[j]; int ai := a[i];
+        if (aj < ai) {aux[k] := a[j]; j := j + 1;}
+        else { aux[k] := a[i]; i := i + 1; }} 
+        k := k + 1;
+    }
+
+    // copy back
+    int k := lo;
+    while (k < hi){ a[k] := aux[k]; k := k + 1; }
+  }
+
+  static bool recursiveMergesort2(int[] a, int[] aux, int lo, int hi) {
+    // base case
+    if (hi - lo <= 1) return false;;
+    // sort each half, recursively
+    int mid := lo + (hi - lo) / 2;
+    Main.recursiveMergesort2(a, aux, lo, mid);
+    Main.recursiveMergesort2(a, aux, mid, hi);
+    // merge back together
+    Main.merge(a, aux, lo, mid, hi);
+  }
+
+  static void recursiveMergesort(int[] a) {
+    int n := #a;
+    int[] aux := new int[n];
+    Main.recursiveMergesort2(a, aux, 0, n);
+  }
+}
