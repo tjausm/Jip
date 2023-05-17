@@ -1,0 +1,97 @@
+   class Node {
+      - int value;
+      - Node left;
+      - Node right;
+
+      Node(int v, Node l, Node r) {
+        this.value := v;
+        this.left := l;
+        this.right := r;
+      }
+    }
+
+  class BinaryTree {
+    //* Internal class representing a Node in the tree. */
+
+
+    - Node root;
+
+    BinaryTree(){
+        this.root := null;
+    }
+
+    //* Inserts a value in to the tree. */
+    bool insert(int v) {
+        
+      Node root := this.root;
+      if (root == null) {
+        this.root := new Node(v, null, null);
+        return false;
+      };
+
+      Node curr := null;// error, should be "root"
+      int break := false;
+      while (!break) {
+        int currvalue := curr.value;
+        int currright := curr.right;
+        int currleft := curr.left;
+
+        if (currvalue < v) {
+          if (currright == null) {
+            curr := curr.right;
+          } else {
+            curr.right := new Node(v, null, null);
+            break := true;
+          }
+        } else if (currvalue > v) {
+          if (currleft != null) {
+            curr := curr.left;
+          } else {
+            curr.left := new Node(v, null, null);
+            break := true;
+          }
+        } else {
+          break := true;
+        }
+      }
+    }
+
+    //* Searches for a value in the tree. */
+    bool search(int v) {
+      Node curr := this.root;
+      while (curr != null) { // N branches
+        int currvalue := curr.value;
+        if (currvalue == v) { // N-1 branches
+          return true;
+        } else if (currvalue < v) { // N-1 branches
+          curr := curr.right;
+        } else {
+          curr := curr.left;
+        }
+      }
+      return false;
+    }
+  }
+
+class Main {
+  static void main(int N, int[] nondetInt, int x) {
+
+    BinaryTree b := new BinaryTree();
+
+    assume #nondetInt == N;
+    int i := 1;
+    while (i < N){
+      int nondet := nondetInt[i];
+      b.insert(nondet);
+      i := i + 1;
+    }
+
+    // We only measure the complexity (i.e. path length) of the
+    // final search operation.  That is, we count branches only
+    // from this point forward in the execution.
+    // Concolic.ResetBranchCounting();
+
+    b.search(x); 
+    
+  }
+}
