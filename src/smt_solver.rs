@@ -161,7 +161,7 @@ impl SolverEnv<'_> {
             };
         };
 
-        self.diagnostics.z3_calls += 1;
+        self.diagnostics.smt_calls += 1;
         match &mut self.solver {
             Solver::Rsmt2(solver) => SolverEnv::verify_with_rsmt2(
                 &self.config,

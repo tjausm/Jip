@@ -49,15 +49,23 @@ pub struct Config {
 
 #[derive(Clone)]
 pub struct Diagnostics {
+    pub max_depth: i32,
+    pub run_time: String,
+    pub paths_pruned: i32,
+    pub locally_solved: i32,
     pub paths_explored: i32,
-    pub z3_calls: i32,
+    pub smt_calls: i32,
 }
 
 impl Default for Diagnostics {
     fn default() -> Self {
         return Diagnostics {
+            run_time: "not measured".to_string(),
+            max_depth: 0,
+            paths_pruned: 0,
+            locally_solved: 0,
             paths_explored: 0,
-            z3_calls: 0,
+            smt_calls: 0,
         };
     }
 }

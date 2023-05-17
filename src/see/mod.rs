@@ -38,61 +38,72 @@ pub fn bench(
 ) -> (ExitCode, String) {
     let end = end.unwrap_or(start) + 1;
     let depths = (start..end).step_by(step.try_into().unwrap());
-    println!("d           time (s)    paths expl. z3 calls");
+    println!("max. d      time (s)    paths expl. paths pr.   smt-calls   local sol.  verdict");
     for depth in depths {
         let now = Instant::now();
         let dia;
+        let verdict;
         // Code block to measure.
         {
-            match verify_program(program, depth, &config) {
-                Ok(d) => dia = d,
-                r => return print_result(r),
-            }
+            let result = verify_program(program, depth, &config);
+            dia = match result.clone() {
+                Ok(dia) => dia,
+                Err((dia, _)) => dia,
+            };
+            verdict = match result {
+                Ok(_) => "Valid".green(),
+                Err(_) => "Invalid".red(),
+            };
         }
 
         // format duration to string of length 5
         let dur = now.elapsed();
         let time = format!("{:?},{:0>3}", dur.as_secs(), dur.as_millis());
         println!(
-            "{:<12}{:<12}{:<12}{:<12}",
-            depth,
+            "{:<12}{:<12}{:<12}{:<12}{:<12}{:<12}{:<12}",
+            dia.max_depth,
             &time[0..5],
             dia.paths_explored,
-            dia.z3_calls
+            dia.paths_pruned,
+            dia.smt_calls,
+            dia.locally_solved,
+            verdict
         );
     }
     return (ExitCode::Valid, "Benchmark done!".to_owned());
 }
 
-fn print_result(r: Result<Diagnostics, Error>) -> (ExitCode, String) {
-    match r {
-        Err(Error::Other(why)) => (
-            ExitCode::Error,
-            format!("{} {}", "Error:".red().bold(), why),
-        ),
-        Err(Error::Verification(why)) => (
-            ExitCode::CounterExample,
-            format!("{} {}", "Counter-example:".red().bold(), why),
-        ),
-        Ok(d) => {
-            let mut msg = "".to_string();
-            if d.paths_explored == 0 {
-                msg.push_str(&format!("{} Jip has not finished exploring any paths. Is your search depth high enough? And are you sure the program terminates?\n", "Warning: ".yellow().bold()))
-            }
-            msg.push_str(&format!(
-                "{}\nPaths checked    {}\nZ3 invocations   {}",
-                "Program is correct".green().bold(),
-                d.paths_explored,
-                d.z3_calls
-            ));
+fn print_result(res: Result<Diagnostics, (Diagnostics, Error)>) -> (ExitCode, String) {
+    let dia = match res.clone() {
+        Ok(dia) => dia,
+        Err((dia, _)) => dia,
+    };
+
+    let mut msg = "".to_string();
+    msg.push_str(&format!("{}", "Results\n".bold()));
+    msg.push_str(&format!("max. depth          {}\n", dia.max_depth));
+    msg.push_str(&format!("Time (s)            {}\n", dia.run_time));
+    msg.push_str(&format!("paths explored      {}\n", dia.paths_explored));
+    msg.push_str(&format!("Paths pruned        {}\n", dia.paths_pruned));
+    msg.push_str(&format!("Smt calls           {}\n", dia.smt_calls));
+    msg.push_str(&format!("Locally solved      {}\n", dia.locally_solved));
+    match res {
+        Ok(_) => {
+            msg.push_str(&format!("verdict             {}\n", "valid".bold().green()));
             (ExitCode::Valid, msg)
         }
+        Err((_, Error::Verification(ce))) => {
+            msg.push_str(&format!("verdict             {}\n", "invalid".bold().red()));
+            msg.push_str(&format!("{} {}", "\nCounter-example:".red().bold(), ce));
+            (ExitCode::CounterExample, msg)
+        }
+        Err((_, Error::Other(err))) => (ExitCode::Error, format!("Error: {}", err)),
     }
 }
 
 pub fn load_program(file_name: String) -> Result<String, (ExitCode, String)> {
     match fs::read_to_string(file_name) {
-        Err(why) => Err(print_result(Err(Error::Other(format!("{}", why))))),
+        Err(why) => Err((ExitCode::Error, format!("{}", why))),
         Ok(content) => Ok(content),
     }
 }
@@ -147,7 +158,11 @@ fn print_debug(
     }
 }
 
-fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagnostics, Error> {
+fn verify_program(
+    prog_string: &str,
+    max_d: Depth,
+    config: &Config,
+) -> Result<Diagnostics, (Diagnostics, Error)> {
     let mut prune_p: u8 = if config.adaptive_pruning { 50 } else { 0 };
 
     //init solver, config & diagnostics
@@ -176,7 +191,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
         PathConstraints::default(),
         IntervalMap::default(),
         FxHashSet::default(),
-        d,
+        0,
         start_node,
         vec![],
     ));
@@ -187,12 +202,14 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
         mut pc,
         mut i,
         mut eval_refs,
-        d,
+        curr_d,
         curr_node,
         mut trace,
     )) = q.pop_front()
     {
-        if d == 0 {
+        // keep track of maximum reached depth
+        solver_env.diagnostics.max_depth = i32::max(solver_env.diagnostics.max_depth, curr_d);
+        if curr_d >= max_d {
             continue;
         }
 
@@ -292,7 +309,8 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                         &eval_refs,
                         &mut solver_env,
                         assertion,
-                    )?,
+                    )
+                    .map_err(|err| (solver_env.diagnostics.clone(), err))?,
                     Statement::Assignment((lhs, rhs)) => {
                         // try assignment, stop exploring path if it's infeasible
                         if !lhs_from_rhs(
@@ -303,7 +321,9 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                             &mut solver_env,
                             lhs,
                             rhs,
-                        )? {
+                        )
+                        .map_err(|err| (solver_env.diagnostics.clone(), err))?
+                        {
                             continue;
                         };
                     }
@@ -386,15 +406,18 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                             }
                         }
                         Lhs::AccessField(obj_name, field) => {
-                            match sym_memory.heap_access_object(
-                                &pc,
-                                &i,
-                                &mut eval_refs,
-                                &mut solver_env,
-                                obj_name,
-                                field,
-                                None,
-                            )? {
+                            match sym_memory
+                                .heap_access_object(
+                                    &pc,
+                                    &i,
+                                    &mut eval_refs,
+                                    &mut solver_env,
+                                    obj_name,
+                                    field,
+                                    None,
+                                )
+                                .map_err(|err| (solver_env.diagnostics.clone(), err))?
+                            {
                                 Some(SymExpression::Reference(r)) => sym_memory
                                     .stack_insert(this_id.to_string(), SymExpression::Reference(r)),
                                 None => continue 'q_edges,
@@ -405,15 +428,17 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                             };
                         }
                         Lhs::AccessArray(arr_name, index) => {
-                            let expr = sym_memory.heap_access_array(
-                                &mut pc,
-                                &i,
-                                &mut eval_refs,
-                                &mut solver_env,
-                                arr_name,
-                                index.clone(),
-                                None,
-                            )?;
+                            let expr = sym_memory
+                                .heap_access_array(
+                                    &mut pc,
+                                    &i,
+                                    &mut eval_refs,
+                                    &mut solver_env,
+                                    arr_name,
+                                    index.clone(),
+                                    None,
+                                )
+                                .map_err(|err| (solver_env.diagnostics.clone(), err))?;
                             match expr {
                                     Some(SymExpression::Reference(r)) => sym_memory.stack_insert(this_id.to_string(), SymExpression::Reference(r)),
                                     None => continue 'q_edges,
@@ -433,26 +458,30 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                             Lhs::Identifier(id) => sym_memory.stack_insert_below(id.to_string(), r),
 
                             Lhs::AccessField(obj_name, field) => {
-                                sym_memory.heap_access_object(
-                                    &mut pc,
-                                    &i,
-                                    &mut eval_refs,
-                                    &mut solver_env,
-                                    obj_name,
-                                    field,
-                                    Some(r),
-                                )?;
+                                sym_memory
+                                    .heap_access_object(
+                                        &mut pc,
+                                        &i,
+                                        &mut eval_refs,
+                                        &mut solver_env,
+                                        obj_name,
+                                        field,
+                                        Some(r),
+                                    )
+                                    .map_err(|err| (solver_env.diagnostics.clone(), err))?;
                             }
                             Lhs::AccessArray(arr_name, index) => {
-                                sym_memory.heap_access_array(
-                                    &mut pc,
-                                    &i,
-                                    &mut eval_refs,
-                                    &mut solver_env,
-                                    arr_name,
-                                    index.clone(),
-                                    Some(r),
-                                )?;
+                                sym_memory
+                                    .heap_access_array(
+                                        &mut pc,
+                                        &i,
+                                        &mut eval_refs,
+                                        &mut solver_env,
+                                        arr_name,
+                                        index.clone(),
+                                        Some(r),
+                                    )
+                                    .map_err(|err| (solver_env.diagnostics.clone(), err))?;
                             }
                         }
                     }
@@ -495,7 +524,8 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                                     &eval_refs,
                                     &mut solver_env,
                                     assertion,
-                                )?,
+                                )
+                                .map_err(|err| (solver_env.diagnostics.clone(), err))?,
                                 // otherwise process we assume
                                 (spec, _) => {
                                     let assumption = match spec {
@@ -527,7 +557,7 @@ fn verify_program(prog_string: &str, d: Depth, config: &Config) -> Result<Diagno
                 pc.clone(),
                 i.clone(),
                 eval_refs.clone(),
-                d - 1,
+                curr_d + 1,
                 next,
                 trace.clone(),
             ));
