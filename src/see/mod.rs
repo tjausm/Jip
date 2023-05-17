@@ -38,7 +38,7 @@ pub fn bench(
 ) -> (ExitCode, String) {
     let end = end.unwrap_or(start) + 1;
     let depths = (start..end).step_by(step.try_into().unwrap());
-    println!("max. d      time (s)    paths expl. paths pr.   smt-calls   local sol.  verdict");
+    println!("max. d      CFG cov.    time (s)    paths expl. paths pr.   smt-calls   verdict");
     for depth in depths {
         let now = Instant::now();
         let dia;
@@ -61,12 +61,12 @@ pub fn bench(
         let time = format!("{:?},{:0>3}", dur.as_secs(), dur.as_millis());
         println!(
             "{:<12}{:<12}{:<12}{:<12}{:<12}{:<12}{:<12}",
-            dia.max_depth,
+            dia.reached_depth,
+            format!("{:.1} %",dia.cfg_coverage.calculate()),
             &time[0..5],
             dia.paths_explored,
             dia.paths_pruned,
             dia.smt_calls,
-            dia.locally_solved,
             verdict
         );
     }
@@ -108,12 +108,12 @@ pub fn print_verification(program: &str, d: Depth, config: &Config) -> (ExitCode
 
     let mut msg = "".to_string();
     msg.push_str(&format!("{}", "Results\n".bold()));
-    msg.push_str(&format!("max. depth          {}\n", dia.max_depth));
+    msg.push_str(&format!("Depth reached       {}\n", dia.reached_depth));
+    msg.push_str(&format!("CFG coverage        {:.3}%\n", dia.cfg_coverage.calculate()));
     msg.push_str(&format!("Time (s)            {}\n", &run_time[0..5]));
     msg.push_str(&format!("paths explored      {}\n", dia.paths_explored));
     msg.push_str(&format!("Paths pruned        {}\n", dia.paths_pruned));
     msg.push_str(&format!("Smt calls           {}\n", dia.smt_calls));
-    msg.push_str(&format!("Locally solved      {}\n", dia.locally_solved));
     match result {
         Ok(_) => {
             msg.push_str(&format!("verdict             {}\n", "valid".bold().green()));
@@ -170,16 +170,16 @@ fn verify_program(
 ) -> Result<Diagnostics, (Diagnostics, Error)> {
     let mut prune_p: u8 = if config.adaptive_pruning { 50 } else { 0 };
 
-    //init solver, config & diagnostics
-    let ctx = SolverEnv::build_ctx();
-    let mut solver_env = SolverEnv::new(&config, &ctx);
-
     // init retval and this such that it outlives env
     let retval_id = &"retval".to_string();
     let this_id = &"this".to_string();
 
     let prog = parse_program(prog_string);
     let (start_node, cfg) = generate_cfg(prog.clone());
+    
+    //init solver, config & diagnostics
+    let ctx = SolverEnv::build_ctx();
+    let mut solver_env = SolverEnv::new(cfg.node_count(), &config, &ctx);
 
     //init our bfs through the cfg
     let mut q: VecDeque<(
@@ -212,11 +212,12 @@ fn verify_program(
         mut trace,
     )) = q.pop_front()
     {
-        // keep track of maximum reached depth
-        solver_env.diagnostics.max_depth = i32::max(solver_env.diagnostics.max_depth, curr_d);
+        // keep track of maximum reached depth and nodes visited
+        solver_env.diagnostics.reached_depth = i32::max(solver_env.diagnostics.reached_depth, curr_d);
         if curr_d >= max_d {
             continue;
         }
+        solver_env.diagnostics.cfg_coverage.seen(curr_node);
 
         if config.verbose {
             trace.push(&cfg[curr_node]);
@@ -304,6 +305,7 @@ fn verify_program(
                         );
                         prune_p = updated_p;
                         if !feasible {
+                            solver_env.diagnostics.paths_pruned += 1;
                             continue;
                         };
                     }
@@ -548,6 +550,7 @@ fn verify_program(
                                     );
                                     prune_p = updated_p;
                                     if !feasible {
+                                        solver_env.diagnostics.paths_pruned += 1;
                                         continue;
                                     };
                                 }
