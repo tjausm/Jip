@@ -73,33 +73,6 @@ pub fn bench(
     return (ExitCode::Valid, "Benchmark done!".to_owned());
 }
 
-fn print_result(res: Result<Diagnostics, (Diagnostics, Error)>) -> (ExitCode, String) {
-    let dia = match res.clone() {
-        Ok(dia) => dia,
-        Err((dia, _)) => dia,
-    };
-
-    let mut msg = "".to_string();
-    msg.push_str(&format!("{}", "Results\n".bold()));
-    msg.push_str(&format!("max. depth          {}\n", dia.max_depth));
-    msg.push_str(&format!("Time (s)            {}\n", dia.run_time));
-    msg.push_str(&format!("paths explored      {}\n", dia.paths_explored));
-    msg.push_str(&format!("Paths pruned        {}\n", dia.paths_pruned));
-    msg.push_str(&format!("Smt calls           {}\n", dia.smt_calls));
-    msg.push_str(&format!("Locally solved      {}\n", dia.locally_solved));
-    match res {
-        Ok(_) => {
-            msg.push_str(&format!("verdict             {}\n", "valid".bold().green()));
-            (ExitCode::Valid, msg)
-        }
-        Err((_, Error::Verification(ce))) => {
-            msg.push_str(&format!("verdict             {}\n", "invalid".bold().red()));
-            msg.push_str(&format!("{} {}", "\nCounter-example:".red().bold(), ce));
-            (ExitCode::CounterExample, msg)
-        }
-        Err((_, Error::Other(err))) => (ExitCode::Error, format!("Error: {}", err)),
-    }
-}
 
 pub fn load_program(file_name: String) -> Result<String, (ExitCode, String)> {
     match fs::read_to_string(file_name) {
@@ -121,8 +94,38 @@ pub fn print_cfg(program: &str) -> (ExitCode, String) {
 }
 
 pub fn print_verification(program: &str, d: Depth, config: &Config) -> (ExitCode, String) {
+    
+    /// bench and verify program
+    let now = Instant::now();
     let result = verify_program(program, d, config);
-    print_result(result.clone())
+    let dur = now.elapsed();
+    let run_time = format!("{:?},{:0>3}", dur.as_secs(), dur.as_millis());
+    
+    let dia = match result.clone() {
+        Ok(dia) => dia,
+        Err((dia, _)) => dia,
+    };
+
+    let mut msg = "".to_string();
+    msg.push_str(&format!("{}", "Results\n".bold()));
+    msg.push_str(&format!("max. depth          {}\n", dia.max_depth));
+    msg.push_str(&format!("Time (s)            {}\n", &run_time[0..5]));
+    msg.push_str(&format!("paths explored      {}\n", dia.paths_explored));
+    msg.push_str(&format!("Paths pruned        {}\n", dia.paths_pruned));
+    msg.push_str(&format!("Smt calls           {}\n", dia.smt_calls));
+    msg.push_str(&format!("Locally solved      {}\n", dia.locally_solved));
+    match result {
+        Ok(_) => {
+            msg.push_str(&format!("verdict             {}\n", "valid".bold().green()));
+            (ExitCode::Valid, msg)
+        }
+        Err((_, Error::Verification(ce))) => {
+            msg.push_str(&format!("verdict             {}\n", "invalid".bold().red()));
+            msg.push_str(&format!("{} {}", "\nCounter-example:".red().bold(), ce));
+            (ExitCode::CounterExample, msg)
+        }
+        Err((_, Error::Other(err))) => (ExitCode::Error, format!("Error: {}", err)),
+    }
 }
 
 /// prints the verbose debug info
@@ -158,6 +161,8 @@ fn print_debug(
     }
 }
 
+
+/// performs the symbolic execution of the program
 fn verify_program(
     prog_string: &str,
     max_d: Depth,
