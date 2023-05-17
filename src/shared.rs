@@ -55,6 +55,7 @@ pub struct Config {
 #[derive(Clone)]
 pub struct Diagnostics {
     pub reached_depth: i32,
+    prune_p: Vec<u8>,
     pub paths_pruned: i32,
     pub paths_explored: i32,
     pub smt_calls: i32,
@@ -91,6 +92,7 @@ impl Diagnostics {
     pub fn new(cfg_total_nodes: usize) -> Self {
         return Diagnostics {
             reached_depth: 0,
+            prune_p: vec![],
             paths_pruned: 0,
             paths_explored: 0,
             smt_calls: 0,
@@ -98,7 +100,20 @@ impl Diagnostics {
         };
     }
 
-
+    pub fn average_prune_p(&self) -> f64{
+            let numbers : Vec<f64> = self.prune_p.clone().into_iter().map(|i| i.into()).collect();
+            let sum : f64  = numbers.iter().sum();
+            let count = numbers.len() as f64;
+        
+            if count > 0.0 {
+                sum / count
+            } else {
+                0.0
+            }
+    }
+    pub fn add_prune_p(&mut self, p: u8) {
+        self.prune_p.push(p);
+    }
 }
 
 global_counter!(SCOPE_COUNTER, i32, 1);
