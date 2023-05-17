@@ -4,7 +4,7 @@ input_files:
   - RedBlackTree-MemUnsat01/
   - RedBlackTree-MemUnsat01/rbtree/
 properties:
-  - property_file: ../properties/assert.prp
+  - property_file: ../properties/assert_java.prp
     expected_verdict: false
 
 options:

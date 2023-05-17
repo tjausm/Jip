@@ -1,11 +1,10 @@
 format_version: "2.0"
 input_files:
   - ../common/
-  - RedBlackTree-FunSat01/
-  - RedBlackTree-FunSat01/rbtree/
+  - BellmanFord-MemUnsat01/
 properties:
   - property_file: ../properties/assert_java.prp
-    expected_verdict: true
+    expected_verdict: false
 
 options:
   language: Java
