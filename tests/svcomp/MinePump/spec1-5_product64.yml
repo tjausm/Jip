@@ -3,7 +3,7 @@ input_files:
   - ../common/
   - spec1-5_product64/
 properties:
-  - property_file: ../properties/assert.prp
+  - property_file: ../properties/assert_java.prp
     expected_verdict: true
 
 options:
