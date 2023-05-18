@@ -189,10 +189,6 @@ class MinePump {
     }
 
     void stopSystem() {
-      bool pumpRunning := this.pumpRunning ;
-      if (pumpRunning) {
-         this.deactivatePump();
-      };
       pumpRunning := this.pumpRunning ;
       assert !pumpRunning;
       this.systemActive := false ;
@@ -409,15 +405,6 @@ class Main {
        assume values != null ;
        assume #values == 12 ;
        Main.randomSequenceOfActions(3,values) ;
-    }
-
-    // for checking if oox has enough depth setup:
-    static void checkDepth(bool[] values)
-    {
-       assume values != null ;
-       assume #values == 12 ;
-       Main.randomSequenceOfActions(3,values) ;
-       assert false ; // should be detected
     }
 
  }

@@ -1,12 +1,13 @@
 
 class Environment {
 
-    - int waterLevel ;
-    - bool methaneLevelCritical ;
+   - int waterLevel ;
+   - bool methaneLevelCritical ;
 
     static int WaterLevelEnum_low() { return 1 ; }
     static int WaterLevelEnum_normal() { return 2 ; }
     static int WaterLevelEnum_high() { return 3 ; }
+
 
     Environment() {
       this.waterLevel := Environment.WaterLevelEnum_normal() ;
@@ -112,29 +113,38 @@ class MinePump {
        }
     }
 
-    void processEnvironment__wrappee__lowWaterSensor() {
+    void processEnvironment__wrappee__methaneQuery() {
        bool pumpRunning := this.pumpRunning ;
        bool low := this.isLowWaterLevel() ;
        if (pumpRunning && low) {
           this.deactivatePump();
-        } else {
-          this.processEnvironment__wrappee__highWaterSensor();
-      }
-    }
-
-
-    void processEnvironment() {
-       bool pumpRunning := this.pumpRunning ;
-       bool alarm := this.isMethaneAlarm() ;
-       if (pumpRunning && alarm) {
-          this.deactivatePump();
        } else {
-          this.processEnvironment__wrappee__lowWaterSensor();
+          this.processEnvironment__wrappee__highWaterSensor();
        }
     }
 
+    void processEnvironment() {
+       bool pumpRunning := this.pumpRunning ;
+       bool alarm := this.isLowWaterLevel() ;
+       if (pumpRunning && alarm) {
+          this.deactivatePump();
+       } else {
+          this.processEnvironment__wrappee__methaneQuery();
+       }
+    }
+
+    void activatePump__wrappee__lowWaterSensor() {
+        this.pumpRunning := true;
+    }
+
     void activatePump() {
-       this.pumpRunning := true;
+       bool alarm := this.isMethaneAlarm() ;
+       if (!alarm) {
+          this.activatePump__wrappee__lowWaterSensor();
+       } else {
+        // System.out.println("Pump not activated due to methane alarm")
+        ;
+       }
     }
 
     bool isPumpRunning() {
@@ -400,4 +410,5 @@ class Main {
        assume #values == 12 ;
        Main.randomSequenceOfActions(3,values) ;
     }
+
  }
