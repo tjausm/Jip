@@ -10,6 +10,6 @@ class Main {
 
   static void main(int x) {
     int y := Main.f(x);
-    assert x > 101 || y < 90; // holds
+    assert x > 101 || y < 90; // does not hold
   }
 }

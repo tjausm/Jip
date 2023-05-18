@@ -1,0 +1,82 @@
+class Main {
+
+  // Multiplies two integers n and m
+  static int mult(int n, int m) {
+    if (m < 0){
+      int mult := Main.mult(n, -m);
+      return mult;
+    };
+    if (m == 0) {
+      return 0;
+    };
+    if (m == 1) {
+        return 1;
+    };
+    int mult := Main.mult(n, m - 1);
+    return n + mult;
+  }
+
+  // Is n a multiple of m?
+  static int multiple_of(int n, int m) {
+    if (m < 0) {
+        int multiple_of := Main.multiple_of(n, -m);
+        return multiple_of;
+    };
+    if (n < 0) {
+        int multiple_of := Main.multiple_of(-n, m);
+        return multiple_of; // false
+    };
+    if (m == 0) {
+      return 0; // false
+    };
+    if (n == 0) {
+      return 1; // true
+    };
+    int multiple_of := Main.multiple_of(n - m, m);
+    return multiple_of;
+  }
+
+  // Is n prime?
+  static int is_prime(int n) {
+    int is_prime_ := Main.is_prime_(n, n - 1);
+    return is_prime_;
+  }
+
+  static int is_prime_(int n, int m) {
+    if (n <= 1) {
+      return 0; // false
+    } else if (n == 2) {
+      return 1; // true
+    } else {
+      if (m <= 1) {
+        return 1; // true
+      } else {
+        int multiple_of  := Main.multiple_of(n,m);
+        if (multiple_of == 0) {
+          return 0; // false
+        };
+        int is_prime_ := Main.is_prime_(n, m - 1);
+        return is_prime_;
+      }
+    }
+  }
+
+  static void main(int n, int f1, int f2) {
+    if (n < 1 || n > 46340) {
+      return;
+    };
+    int result := Main.is_prime(n);
+    if (f1 < 1 || f1 > 46340) {
+      return;
+    };
+    if (f1 < 1 || f1 > 46340) {
+      return;
+    };
+    int mult := Main.mult(f1, f2);
+    if (result == 1 && mult == n && f1 > 1 && f2 > 1) {
+      assert false;
+    } else {
+      return;
+    }
+  }
+}
