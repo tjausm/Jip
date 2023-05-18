@@ -14,10 +14,6 @@ class Main {
 
   static void main(int x) {
     int result := Main.fibonacci(x);
-    if (x < 8 || result >= 34) {
-      return;
-    } else {
-      assert false;
-    }
+    assert !(x < 8 || result >= 34);
   }
 }
