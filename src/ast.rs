@@ -116,6 +116,7 @@ pub enum Statement {
     Skip(Skip),
     Ite(Ite),
     Return(Expression),
+    ReturnVoid,
     Block(Box<Statements>),
     Assert(Expression),
     Assume(Expression),
@@ -236,6 +237,7 @@ impl fmt::Debug for Statement {
                 write!(f, "if ({:?}) then {:?} else {:?}", cond, if_expr, else_expr)
             }
             Statement::Return(expr) => write!(f, "return {:?};", expr),
+            Statement::ReturnVoid => write!(f, "return;"),
             Statement::Block(stmts) => write!(f, "{{ {:?} }}", stmts),
             Statement::Assert(expr) => write!(f, "assert {:?};", expr),
             Statement::Assume(expr) => write!(f, "assume {:?};", expr),

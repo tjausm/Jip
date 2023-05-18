@@ -60,7 +60,7 @@ pub fn generate_cfg(prog: Program) -> (NodeIndex, CFG) {
             }
 
             //generate the cfg
-            let program_endings = stmts_to_cfg(
+            let starts = stmts_to_cfg(
                 &mut ty_stack,
                 &mut f_env,
                 &prog,
@@ -68,11 +68,11 @@ pub fn generate_cfg(prog: Program) -> (NodeIndex, CFG) {
                 &mut cfg,
                 vec![start.clone()],
                 &(Scope { id: None }),
-                None,
+                end
             );
 
-            //connect ending(s) of generated cfg to the 'end' node
-            for Start {node, actions: edge} in program_endings {
+            //connect starts of generated cfg to the 'end' node
+            for Start {node, actions: edge} in starts {
                 cfg.add_edge(node, end, edge);
             }
 
@@ -93,7 +93,7 @@ fn stmts_to_cfg<'a>(
     cfg: &mut CFG,
     starts: Vec<Start>,
     curr_scope: &Scope,
-    scope_end: Option<NodeIndex>,
+    scope_end: NodeIndex
 ) -> Vec<Start> {
     match stmts.pop_front() {
         Some(stmt) => match stmt {
@@ -106,7 +106,7 @@ fn stmts_to_cfg<'a>(
                     cfg,
                     starts,
                     curr_scope,
-                    scope_end,
+                    scope_end
                 )
             }
             Statement::Ite((cond, s1, s2)) => {
@@ -131,7 +131,7 @@ fn stmts_to_cfg<'a>(
                     cfg,
                     vec![assume_start],
                     curr_scope,
-                    scope_end,
+                    scope_end
                 );
 
                 let else_ending = stmts_to_cfg(
@@ -142,7 +142,7 @@ fn stmts_to_cfg<'a>(
                     cfg,
                     vec![assume_not_start],
                     curr_scope,
-                    scope_end,
+                    scope_end
                 );
 
                 let all_endings: Vec<Start> = [if_ending, else_ending]
@@ -156,7 +156,7 @@ fn stmts_to_cfg<'a>(
                     cfg,
                     all_endings,
                     curr_scope,
-                    scope_end,
+                    scope_end
                 );
             }
             Statement::While((cond, body)) => {
@@ -172,7 +172,7 @@ fn stmts_to_cfg<'a>(
                     cfg.add_edge(start.node, assume_not_node, start.actions);
                 }
                 // calculate cfg for body of while and cfg for the remainder of the stmts
-                let body_ending = stmts_to_cfg(
+                let body_endings = stmts_to_cfg(
                     ty_stack,
                     f_env,
                     prog,
@@ -180,9 +180,9 @@ fn stmts_to_cfg<'a>(
                     cfg,
                     vec![to_start(assume_node)],
                     curr_scope,
-                    scope_end,
+                    scope_end
                 );
-                let end_remainder = stmts_to_cfg(
+                let remainder_endings = stmts_to_cfg(
                     ty_stack,
                     f_env,
                     prog,
@@ -190,15 +190,15 @@ fn stmts_to_cfg<'a>(
                     cfg,
                     vec![to_start(assume_not_node)],
                     curr_scope,
-                    scope_end,
+                    scope_end
                 );
                 // add edges from end of while body to begin and edge from while body to rest of stmts
-                for Start {node, actions} in body_ending {
+                for Start {node, actions} in body_endings {
                     cfg.add_edge(node, assume_node, actions.clone());
                     cfg.add_edge(node, assume_not_node, actions);
                 }
-
-                return end_remainder;
+                
+                return remainder_endings;
             }
 
             // generate
@@ -241,7 +241,7 @@ fn stmts_to_cfg<'a>(
                     cfg,
                     vec![f_end],
                     curr_scope,
-                    scope_end,
+                    scope_end
                 );
             }
 
@@ -297,7 +297,7 @@ fn stmts_to_cfg<'a>(
                     cfg,
                     vec![to_start(assign_retval)],
                     curr_scope,
-                    scope_end,
+                    scope_end
                 );
             }
             Statement::Assignment((lhs, Rhs::Newobject(class_name, args))) => {
@@ -336,7 +336,7 @@ fn stmts_to_cfg<'a>(
                     cfg,
                     vec![f_end],
                     curr_scope,
-                    scope_end,
+                    scope_end
                 );
             }
 
@@ -346,18 +346,17 @@ fn stmts_to_cfg<'a>(
                 for start in starts {
                     cfg.add_edge(start.node, retval_assign, start.actions);
                 }
-                match scope_end {
-                    Some(scope_end) => {
-                        cfg.add_edge(retval_assign, scope_end, vec![]);
-                    }
-                    None => panic_with_diagnostics(
-                        &format!(
-                            " '{:?}' has no scope to return to.",
-                            &Statement::Return(expr)
-                        ),
-                        &(),
-                    ),
+                cfg.add_edge(retval_assign, scope_end, vec![]);
+
+                return vec![];
+            }
+            // for 'return x' add edge to scope_end or add returnVoid to one of the program endings
+            Statement::ReturnVoid => {
+                let retval_assign = cfg.add_node(Node::Statement(Statement::ReturnVoid));
+                for start in starts {
+                    cfg.add_edge(start.node, retval_assign, start.actions);
                 }
+                cfg.add_edge(retval_assign, scope_end, vec![]);
                 return vec![];
             }
             // split declareassign by prepending a declaration and assignment
@@ -366,7 +365,7 @@ fn stmts_to_cfg<'a>(
                 stmts.push_front(Statement::Declaration((t, (&id).to_string())));
 
                 return stmts_to_cfg(
-                    ty_stack, f_env, prog, stmts, cfg, starts, curr_scope, scope_end,
+                    ty_stack, f_env, prog, stmts, cfg, starts, curr_scope, scope_end
                 );
             }
 
@@ -393,7 +392,7 @@ fn stmts_to_cfg<'a>(
                     cfg,
                     vec![to_start(stmt_node)],
                     curr_scope,
-                    scope_end,
+                    scope_end
                 );
             }
         },
@@ -522,7 +521,7 @@ fn routinebody_to_cfg<'a>(
         cfg,
         vec![to_start(enter_function)],
         curr_scope,
-        Some(leave_function),
+        leave_function,
     );
     //leave ty_env scope after method body cfg is created
     ty_env.pop();
