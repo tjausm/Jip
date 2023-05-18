@@ -1,0 +1,23 @@
+class Main {
+
+  static int fibonacci(int n) {
+    if (n < 1) {
+      return 0;
+    } else if (n == 1) {
+      return 1;
+    } else {
+      int fibmin1 := Main.fibonacci(n - 1);
+      int fibmin2 := Main.fibonacci(n - 2);
+      return fibmin1 + fibmin2;
+    }
+  }
+
+  static void main(int x) {
+    int result := Main.fibonacci(x);
+    if (x < 8 || result >= 34) {
+      return;
+    } else {
+      assert false;
+    }
+  }
+}

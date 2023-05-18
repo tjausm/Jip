@@ -1,0 +1,58 @@
+// add class to simulate global counter
+class Counter {
+    - int count;
+
+    Counter(){
+        this.count := 0;
+    }
+    void incr() {
+        int count := this.count;
+        this.count := count + 1;
+    }
+}
+
+class Main {
+
+  //
+   // This function returns the optimal amount of steps,
+   // needed to solve the problem for n-disks
+   ///
+  static int hanoi(int n) {
+    if (n == 1) {
+      return 1;
+    };
+    int hanoimin1 := Main.hanoi(n - 1);
+    return 2 * hanoimin1 + 1;
+  }
+
+  //
+   // This applies the known algorithm, without executing it (so no arrays).
+   // But the amount of steps is counted in a global variable.
+   ///
+  static void applyHanoi(int n, int from, int to, int via, Counter counter) {
+    if (n == 0) {
+      return;
+    };
+    // increment the number of steps
+    counter.incr();
+    Main.applyHanoi(n - 1, from, via, to, counter);
+    Main.applyHanoi(n - 1, via, to, from, counter);
+  }
+
+  static void main(int n) {
+
+    if (n < 1 || n > 31) {
+      return;
+    };
+    Counter counter := new Counter();
+    Main.applyHanoi(n, 1, 3, 2, counter);
+    int result := Main.hanoi(n);
+    // result and the counter should be the same!
+    int count := counter.count;
+    if (result == count) {
+      return;
+    } else {
+      assert false;
+    }
+  }
+}

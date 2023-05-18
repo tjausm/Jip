@@ -3,7 +3,7 @@ input_files:
   - ../common/
   - UnsatAckermann01/
 properties:
-  - property_file: ../properties/assert.prp
+  - property_file: ../properties/assert_java.prp
     expected_verdict: false
 
 options:

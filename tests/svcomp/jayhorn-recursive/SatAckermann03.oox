@@ -1,0 +1,25 @@
+// expected_verdict: VALID.
+
+class Main {
+
+  static int ackermann(int m, int n) {
+    if (m == 0) {
+      return n + 1;
+    };
+    if (n == 0) {
+      int r_ := Main.ackermann(m-1,1);
+      return r_ ;
+    };
+    int r1_ := Main.ackermann(m,n-1) ;
+    int r2_ := Main.ackermann(m-1,r1_);
+    return r2_ ;
+  }
+
+  static void main(int m, int n) {
+    assume !(m < 0 || m > 3) ;
+    assume !(n < 0 || n > 23) ;
+
+    int result := Main.ackermann(m,n) ;
+    assert m < 2 || n < 2 || result >= 7 ;
+  }
+}
