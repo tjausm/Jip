@@ -60,6 +60,7 @@ pub struct Diagnostics {
     pub paths_explored: i32,
     pub smt_calls: i32,
     pub cfg_coverage: CFGCoverage ,
+    pub cache_hits: i32
 }
 
 #[derive(Clone)]
@@ -97,6 +98,7 @@ impl Diagnostics {
             paths_explored: 0,
             smt_calls: 0,
             cfg_coverage: CFGCoverage::new(cfg_total_nodes),
+            cache_hits: 0
         };
     }
 

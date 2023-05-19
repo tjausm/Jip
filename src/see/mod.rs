@@ -29,6 +29,7 @@ use std::time::Instant;
 
 type Trace<'a> = Vec<&'a Node>;
 
+
 pub fn bench(
     program: &str,
     start: Depth,
@@ -38,7 +39,7 @@ pub fn bench(
 ) -> (ExitCode, String) {
     let end = end.unwrap_or(start) + 1;
     let depths = (start..end).step_by(step.try_into().unwrap());
-    println!("max. d      CFG cov.    time (s)    paths expl. paths pr.  avg. prune p.  smt-calls   verdict");
+    println!("max. d      CFG cov.    time (s)    paths expl. paths pr.  avg. prune p.   cache hits  smt-calls   verdict");
     for depth in depths {
         let now = Instant::now();
         let dia;
@@ -60,13 +61,14 @@ pub fn bench(
         let dur = now.elapsed();
         let time = format!("{:?},{:0>3}", dur.as_secs(), dur.as_millis());
         println!(
-            "{:<12}{:<12}{:<12}{:<12}{:<12}{:<15}{:<12}{:<12}",
+            "{:<12}{:<12}{:<12}{:<12}{:<12}{:<14}{:<12}{:<12}{:<12}",
             dia.reached_depth,
             format!("{:.1} %",dia.cfg_coverage.calculate()),
             &time[0..5],
             dia.paths_explored,
             dia.paths_pruned,
             format!("{:.1} %",dia.average_prune_p()),
+            dia.cache_hits,
             dia.smt_calls,
             verdict
         );
@@ -115,6 +117,7 @@ pub fn print_verification(program: &str, d: Depth, config: &Config) -> (ExitCode
     msg.push_str(&format!("paths explored      {}\n", dia.paths_explored));
     msg.push_str(&format!("Paths pruned        {}\n", dia.paths_pruned));
     msg.push_str(&format!("Avg. prune prob.    {:.1}%\n", dia.average_prune_p()));
+    msg.push_str(&format!("Form. cache hits    {}\n", dia.cache_hits));
     msg.push_str(&format!("Smt calls           {}\n", dia.smt_calls));
     match result {
         Ok(_) => {
