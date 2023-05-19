@@ -81,6 +81,7 @@ fn write_header(test_file: &mut File) {
         test_file,
         r#"
 use assert_cmd::Command;
+use predicates::prelude::*;
 "#
     )
     .unwrap();
