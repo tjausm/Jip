@@ -18,6 +18,7 @@ pub enum ExitCode {
 }
 
 pub type Depth = i32;
+pub type Timeout = i32;
 
 pub type Feasible = bool;
 

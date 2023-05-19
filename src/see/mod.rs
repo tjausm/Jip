@@ -10,7 +10,7 @@ use crate::ast::*;
 use crate::cfg::types::{Action, Node};
 use crate::cfg::{generate_cfg, generate_dot_cfg};
 use crate::see::utils::*;
-use crate::shared::Config;
+use crate::shared::{Config, Timeout};
 use crate::shared::ExitCode;
 use crate::shared::{panic_with_diagnostics, Depth, Diagnostics, Error};
 use crate::smt_solver::SolverEnv;
@@ -21,6 +21,7 @@ use crate::symbolic::ref_values::{EvaluatedRefs, IntervalMap, Reference, SymRefT
 use colored::Colorize;
 use petgraph::stable_graph::NodeIndex;
 use petgraph::visit::EdgeRef;
+use predicates::path;
 use rustc_hash::FxHashSet;
 
 use core::fmt;
@@ -46,14 +47,14 @@ pub fn bench(
 ) -> (ExitCode, String) {
     let end = end.unwrap_or(start) + 1;
     let depths = (start..end).step_by(step.try_into().unwrap());
-    println!("max. d      CFG cov.    time (s)    paths expl. paths pr.  avg. prune p.   cache hits  smt-calls   verdict");
+    println!("max. d      CFG cov.    time (s)    paths expl. paths pr.   avg. prune p. cache hits  smt-calls   verdict");
     for depth in depths {
         let now = Instant::now();
         let dia;
         let verdict;
         // Code block to measure.
         {
-            let result = verify_program(program, depth, &config);
+            let result = verify_program(program, Some(depth), None, &config);
             
             dia = match result.clone() {
                 Ok((dia, _, )) => dia,
@@ -104,10 +105,10 @@ pub fn print_cfg(program: &str) -> (ExitCode, String) {
     (ExitCode::VerdictTrue, generate_dot_cfg(program))
 }
 
-pub fn print_verification(program: &str, d: Depth, config: &Config) -> (ExitCode, String) {
+pub fn print_verification(program: &str, max_d: Option<Depth>, max_t :Option<Timeout>, config: &Config) -> (ExitCode, String) {
     /// bench and verify program
     let now = Instant::now();
-    let result = verify_program(program, d, config);
+    let result = verify_program(program, max_d, max_t, config);
     let dur = now.elapsed();
     let run_time = format!("{:?},{:0>3}", dur.as_secs(), dur.as_millis());
 
@@ -185,12 +186,23 @@ fn print_debug(
     }
 }
 
-/// performs the symbolic execution of the program
+/// Performs the symbolic execution of the program up to the given max depth and / or timeout.
+/// Default depth = 50.
 fn verify_program(
     prog_string: &str,
-    max_d: Depth,
+    max_d: Option<Depth>,
+    max_t: Option<Timeout>,
     config: &Config,
 ) -> Result<(Diagnostics, Verdict), String> {
+
+    // unwrap max_depth and timeout, set max_d to 50 if both are None
+    let (max_d, max_t) = match (max_d, max_t) {
+        (None, None) => (50, i32::MAX),
+        (d, t) => (d.unwrap_or(i32::MAX), t.unwrap_or(i32::MAX)),
+    };
+
+    // start timeout
+    let timeout = Instant::now();
 
     // tracks whether we have left paths unexplored due to max_depth
     let mut paths_unexplored = false;
@@ -247,6 +259,12 @@ fn verify_program(
             continue;
         }
         solver_env.diagnostics.cfg_coverage.seen(curr_node);
+
+        // check if we've reached time-out
+        if(max_t <= timeout.elapsed().as_secs() as i32){
+            paths_unexplored = true;
+            break;
+        }
 
         if config.verbose {
             trace.push(&cfg[curr_node]);
