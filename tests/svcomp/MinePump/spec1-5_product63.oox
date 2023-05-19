@@ -1,8 +1,7 @@
-
 class Environment {
 
-   - int waterLevel ;
-   - bool methaneLevelCritical ;
+    - int waterLevel ;
+    - bool methaneLevelCritical ;
 
     static int WaterLevelEnum_low() { return 1 ; }
     static int WaterLevelEnum_normal() { return 2 ; }
@@ -189,14 +188,19 @@ class MinePump {
     }
 
     void stopSystem() {
+      bool pumpRunning := this.pumpRunning ;
+      if (pumpRunning) {
+         this.deactivatePump();
+      };
       pumpRunning := this.pumpRunning ;
       assert !pumpRunning;
       this.systemActive := false ;
     }
 
     void startSystem() {
-       ; //feature not present
+       ; //feature is missing
     }
+
     bool isSystemActive() {
        bool systemActive := this.systemActive ;
        return systemActive;
@@ -403,5 +407,4 @@ class Main {
        assume #values == 12 ;
        Main.randomSequenceOfActions(3,values) ;
     }
-
  }
