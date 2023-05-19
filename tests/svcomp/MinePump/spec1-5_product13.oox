@@ -87,10 +87,30 @@ class MinePump {
        if (systemActive) this.processEnvironment();;
     }
 
-    void processEnvironment() {;}
+    void processEnvironment__wrappee__methaneQuery() {;}
+
+    void processEnvironment() {
+       bool pumpRunning := this.pumpRunning ;
+       bool alarm := this.isMethaneAlarm() ;
+       if (pumpRunning && alarm) {
+          this.deactivatePump();
+       } else {
+          this.processEnvironment__wrappee__methaneQuery();
+       }
+    }
+
+    void activatePump__wrappee__base() {
+        this.pumpRunning := true;
+    }
 
     void activatePump() {
-        this.pumpRunning := true;
+       bool alarm := this.isMethaneAlarm() ;
+       if (!alarm) {
+          this.activatePump__wrappee__base();
+       } else {
+        // System.out.println("Pump not activated due to methane alarm")
+        ;
+       }
     }
 
     bool isPumpRunning() {
@@ -123,7 +143,7 @@ class MinePump {
     }
 
     void stopSystem() {
-      ; // feature not present
+      ; //feature not present
     }
 
     void startSystem() {

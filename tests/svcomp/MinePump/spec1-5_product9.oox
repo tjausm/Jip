@@ -87,10 +87,22 @@ class MinePump {
        if (systemActive) this.processEnvironment();;
     }
 
+    void processEnvironment__wrappee__methaneQuery() {;}
+
     void processEnvironment() {;}
 
-    void activatePump() {
+    void activatePump__wrappee__base() {
         this.pumpRunning := true;
+    }
+
+    void activatePump() {
+       bool alarm := this.isMethaneAlarm() ;
+       if (!alarm) {
+          this.activatePump__wrappee__base();
+       } else {
+        // System.out.println("Pump not activated due to methane alarm")
+        ;
+       }
     }
 
     bool isPumpRunning() {

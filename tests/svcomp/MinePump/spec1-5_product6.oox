@@ -87,7 +87,17 @@ class MinePump {
        if (systemActive) this.processEnvironment();;
     }
 
-    void processEnvironment() {;}
+    void processEnvironment__wrappee__base() {;}
+
+    void processEnvironment() {
+       bool pumpRunning := this.pumpRunning ;
+       bool alarm := this.isMethaneAlarm() ;
+       if (pumpRunning && alarm) {
+          this.deactivatePump();
+       } else {
+          this.processEnvironment__wrappee__base();
+       }
+    }
 
     void activatePump() {
         this.pumpRunning := true;
@@ -123,11 +133,13 @@ class MinePump {
     }
 
     void stopSystem() {
-      ; // feature not present
+      ; //feature not present
     }
 
     void startSystem() {
-       ; // feature not present
+       bool pumpRunning := this.pumpRunning ;
+       assert !pumpRunning;
+       this.systemActive := true;
     }
 
     bool isSystemActive() {

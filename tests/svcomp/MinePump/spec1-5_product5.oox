@@ -87,7 +87,17 @@ class MinePump {
        if (systemActive) this.processEnvironment();;
     }
 
-    void processEnvironment() {;}
+    void processEnvironment__wrappee__base() {;}
+
+    void processEnvironment() {
+       bool pumpRunning := this.pumpRunning ;
+       bool alarm := this.isMethaneAlarm() ;
+       if (pumpRunning && alarm) {
+          this.deactivatePump();
+       } else {
+          this.processEnvironment__wrappee__base();
+       }
+    }
 
     void activatePump() {
         this.pumpRunning := true;
