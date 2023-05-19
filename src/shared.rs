@@ -11,9 +11,10 @@ use rustc_hash::FxHashSet;
 use crate::cfg;
 /// Indicates if program is valid, counterexample was found or other error occured
 pub enum ExitCode {
-    Valid = 0,
-    CounterExample = 1,
+    VerdictTrue = 0,
+    VerdictFalse = 1,
     Error = 2,
+    VerdictUnknown = 3,
 }
 
 pub type Depth = i32;

@@ -23,12 +23,19 @@ use petgraph::stable_graph::NodeIndex;
 use petgraph::visit::EdgeRef;
 use rustc_hash::FxHashSet;
 
+use core::fmt;
 use std::collections::VecDeque;
 use std::fs;
 use std::time::Instant;
 
 type Trace<'a> = Vec<&'a Node>;
 
+#[derive(Clone)]
+enum Verdict {
+    True,
+    False(String),
+    Unknown,
+}
 
 pub fn bench(
     program: &str,
@@ -47,13 +54,15 @@ pub fn bench(
         // Code block to measure.
         {
             let result = verify_program(program, depth, &config);
+            
             dia = match result.clone() {
-                Ok(dia) => dia,
-                Err((dia, _)) => dia,
+                Ok((dia, _, )) => dia,
+                Err(_) => Diagnostics::new(0),
             };
+
             verdict = match result {
-                Ok(_) => "Valid".green(),
-                Err(_) => "Invalid".red(),
+                Ok((_, v)) => v,
+                Err(err) => return (ExitCode::Error, format!("{}: {}", "Error".red(), err )),
             };
         }
 
@@ -63,19 +72,18 @@ pub fn bench(
         println!(
             "{:<12}{:<12}{:<12}{:<12}{:<12}{:<14}{:<12}{:<12}{:<12}",
             dia.reached_depth,
-            format!("{:.1} %",dia.cfg_coverage.calculate()),
+            format!("{:.1} %", dia.cfg_coverage.calculate()),
             &time[0..5],
             dia.paths_explored,
             dia.paths_pruned,
-            format!("{:.1} %",dia.average_prune_p()),
+            format!("{:.1} %", dia.average_prune_p()),
             dia.cache_hits,
             dia.smt_calls,
             verdict
         );
     }
-    return (ExitCode::Valid, "Benchmark done!".to_owned());
+    return (ExitCode::VerdictTrue, "Benchmark done!".to_owned());
 }
-
 
 pub fn load_program(file_name: String) -> Result<String, (ExitCode, String)> {
     match fs::read_to_string(file_name) {
@@ -93,43 +101,54 @@ fn parse_program(program: &str) -> Program {
 
 pub fn print_cfg(program: &str) -> (ExitCode, String) {
     let program = parse_program(program);
-    (ExitCode::Valid, generate_dot_cfg(program))
+    (ExitCode::VerdictTrue, generate_dot_cfg(program))
 }
 
 pub fn print_verification(program: &str, d: Depth, config: &Config) -> (ExitCode, String) {
-    
     /// bench and verify program
     let now = Instant::now();
     let result = verify_program(program, d, config);
     let dur = now.elapsed();
     let run_time = format!("{:?},{:0>3}", dur.as_secs(), dur.as_millis());
-    
-    let dia = match result.clone() {
-        Ok(dia) => dia,
-        Err((dia, _)) => dia,
+
+    let (dia, verdict) = match result.clone() {
+        Ok(res) => res,
+        Err(err) => return (ExitCode::Error, format!("{}: {}", "Error".red(), err )),
     };
 
     let mut msg = "".to_string();
+    
+    if dia.paths_explored == 0 {
+        msg.push_str(&format!("{} Jip has not finished exploring any paths. Is your search depth high enough? And are you sure the program terminates?\n", "Warning: ".yellow().bold()))
+    }
+
     msg.push_str(&format!("{}", "Results\n".bold()));
     msg.push_str(&format!("Depth reached       {}\n", dia.reached_depth));
-    msg.push_str(&format!("CFG coverage        {:.1}%\n", dia.cfg_coverage.calculate()));
+    msg.push_str(&format!(
+        "CFG coverage        {:.1}%\n",
+        dia.cfg_coverage.calculate()
+    ));
     msg.push_str(&format!("Time (s)            {}\n", &run_time[0..5]));
     msg.push_str(&format!("paths explored      {}\n", dia.paths_explored));
     msg.push_str(&format!("Paths pruned        {}\n", dia.paths_pruned));
-    msg.push_str(&format!("Avg. prune prob.    {:.1}%\n", dia.average_prune_p()));
+    msg.push_str(&format!(
+        "Avg. prune prob.    {:.1}%\n",
+        dia.average_prune_p()
+    ));
     msg.push_str(&format!("Form. cache hits    {}\n", dia.cache_hits));
     msg.push_str(&format!("Smt calls           {}\n", dia.smt_calls));
-    match result {
-        Ok(_) => {
-            msg.push_str(&format!("verdict             {}\n", "valid".bold().green()));
-            (ExitCode::Valid, msg)
-        }
-        Err((_, Error::Verification(ce))) => {
-            msg.push_str(&format!("verdict             {}\n", "invalid".bold().red()));
+    msg.push_str(&format!("Verdict             {}\n", verdict));
+    match verdict {
+        Verdict::True => (ExitCode::VerdictTrue, msg),
+        Verdict::Unknown => (ExitCode::VerdictUnknown, msg),
+        Verdict::False(c) if c.is_empty() => {
+            msg.push_str(&format!("{}: no counter-example was generated, this can be caused by turning on heuristics or when a program is trivially invalid", "Warning".bold().on_yellow()));
+            (ExitCode::VerdictFalse, msg)
+        },  
+        Verdict::False(ce)  => {
             msg.push_str(&format!("{} {}", "\nCounter-example:".red().bold(), ce));
-            (ExitCode::CounterExample, msg)
-        }
-        Err((_, Error::Other(err))) => (ExitCode::Error, format!("Error: {}", err)),
+            (ExitCode::VerdictFalse, msg)
+        },  
     }
 }
 
@@ -166,13 +185,16 @@ fn print_debug(
     }
 }
 
-
 /// performs the symbolic execution of the program
 fn verify_program(
     prog_string: &str,
     max_d: Depth,
     config: &Config,
-) -> Result<Diagnostics, (Diagnostics, Error)> {
+) -> Result<(Diagnostics, Verdict), String> {
+
+    // tracks whether we have left paths unexplored due to max_depth
+    let mut paths_unexplored = false;
+
     let mut prune_p: u8 = if config.adaptive_pruning { 50 } else { 0 };
 
     // init retval and this such that it outlives env
@@ -181,7 +203,7 @@ fn verify_program(
 
     let prog = parse_program(prog_string);
     let (start_node, cfg) = generate_cfg(prog.clone());
-    
+
     //init solver, config & diagnostics
     let ctx = SolverEnv::build_ctx();
     let mut solver_env = SolverEnv::new(cfg.node_count(), &config, &ctx);
@@ -218,8 +240,10 @@ fn verify_program(
     )) = q.pop_front()
     {
         // keep track of maximum reached depth and nodes visited
-        solver_env.diagnostics.reached_depth = i32::max(solver_env.diagnostics.reached_depth, curr_d);
+        solver_env.diagnostics.reached_depth =
+            i32::max(solver_env.diagnostics.reached_depth, curr_d);
         if curr_d >= max_d {
+            paths_unexplored = true;
             continue;
         }
         solver_env.diagnostics.cfg_coverage.seen(curr_node);
@@ -315,18 +339,24 @@ fn verify_program(
                             continue;
                         };
                     }
-                    Statement::Assert(assertion) => assert(
+                    Statement::Assert(assertion) => match assert(
                         &mut sym_memory,
                         &mut pc,
                         &mut i,
                         &eval_refs,
                         &mut solver_env,
                         assertion,
-                    )
-                    .map_err(|err| (solver_env.diagnostics.clone(), err))?,
+                    ) {
+                        Ok(_) => (),
+                        Err(Error::Other(err)) => return Err(err),
+                        Err(Error::Verification(ce)) => {
+                            return Ok((solver_env.diagnostics, Verdict::False(ce)))
+                        }
+                    },
+
+                    // try assignment, stop exploring path if it's infeasible
                     Statement::Assignment((lhs, rhs)) => {
-                        // try assignment, stop exploring path if it's infeasible
-                        if !lhs_from_rhs(
+                        match lhs_from_rhs(
                             &mut sym_memory,
                             &mut pc,
                             &mut i,
@@ -334,12 +364,18 @@ fn verify_program(
                             &mut solver_env,
                             lhs,
                             rhs,
-                        )
-                        .map_err(|err| (solver_env.diagnostics.clone(), err))?
-                        {
-                            continue;
-                        };
+                        ) {
+                            Ok(true) => (),
+                            Ok(false) => {
+                                continue;
+                            }
+                            Err(Error::Other(err)) => return Err(err),
+                            Err(Error::Verification(ce)) => {
+                                return Ok((solver_env.diagnostics, Verdict::False(ce)))
+                            }
+                        }
                     }
+
                     Statement::Return(expr) => {
                         // stop path if current scope `id == None`, indicating we are in main scope
                         if sym_memory.get_scope(0).id == None {
@@ -419,21 +455,22 @@ fn verify_program(
                             }
                         }
                         Lhs::AccessField(obj_name, field) => {
-                            match sym_memory
-                                .heap_access_object(
-                                    &pc,
-                                    &i,
-                                    &mut eval_refs,
-                                    &mut solver_env,
-                                    obj_name,
-                                    field,
-                                    None,
-                                )
-                                .map_err(|err| (solver_env.diagnostics.clone(), err))?
-                            {
-                                Some(SymExpression::Reference(r)) => sym_memory
+                            match sym_memory.heap_access_object(
+                                &pc,
+                                &i,
+                                &mut eval_refs,
+                                &mut solver_env,
+                                obj_name,
+                                field,
+                                None,
+                            ) {
+                                Ok(Some(SymExpression::Reference(r))) => sym_memory
                                     .stack_insert(this_id.to_string(), SymExpression::Reference(r)),
-                                None => continue 'q_edges,
+                                Ok(None) => continue 'q_edges,
+                                Err(Error::Other(err)) => return Err(err),
+                                Err(Error::Verification(ce)) => {
+                                    return Ok((solver_env.diagnostics, Verdict::False(ce)))
+                                }
                                 _ => panic_with_diagnostics(
                                     &format!("Can't access field {}.{}", obj_name, field),
                                     &sym_memory,
@@ -441,20 +478,19 @@ fn verify_program(
                             };
                         }
                         Lhs::AccessArray(arr_name, index) => {
-                            let expr = sym_memory
-                                .heap_access_array(
-                                    &mut pc,
-                                    &i,
-                                    &mut eval_refs,
-                                    &mut solver_env,
-                                    arr_name,
-                                    index.clone(),
-                                    None,
-                                )
-                                .map_err(|err| (solver_env.diagnostics.clone(), err))?;
-                            match expr {
-                                    Some(SymExpression::Reference(r)) => sym_memory.stack_insert(this_id.to_string(), SymExpression::Reference(r)),
-                                    None => continue 'q_edges,
+                            match sym_memory.heap_access_array(
+                                &mut pc,
+                                &i,
+                                &mut eval_refs,
+                                &mut solver_env,
+                                arr_name,
+                                index.clone(),
+                                None,
+                            ) {
+                                    Ok(Some(SymExpression::Reference(r))) => sym_memory.stack_insert(this_id.to_string(), SymExpression::Reference(r)),
+                                    Ok(None) => continue 'q_edges,
+                                    Err(Error::Other(err)) => return Err(err),
+                                    Err(Error::Verification(ce)) => return Ok((solver_env.diagnostics, Verdict::False(ce))),
                                     _ => panic_with_diagnostics(&format!("Can't assign '{} this' because there is no reference at {}[{:?}]", class, arr_name, index), &sym_memory),
                                 };
                         }
@@ -471,7 +507,7 @@ fn verify_program(
                             Lhs::Identifier(id) => sym_memory.stack_insert_below(id.to_string(), r),
 
                             Lhs::AccessField(obj_name, field) => {
-                                sym_memory
+                                match sym_memory
                                     .heap_access_object(
                                         &mut pc,
                                         &i,
@@ -481,10 +517,14 @@ fn verify_program(
                                         field,
                                         Some(r),
                                     )
-                                    .map_err(|err| (solver_env.diagnostics.clone(), err))?;
+                                    {
+                                        Err(Error::Verification(ce)) => return Ok((solver_env.diagnostics, Verdict::False(ce))),
+                                        Err(Error::Other(err)) => return Err(err),
+                                        _ => (),
+                                    };
                             }
                             Lhs::AccessArray(arr_name, index) => {
-                                sym_memory
+                                match sym_memory
                                     .heap_access_array(
                                         &mut pc,
                                         &i,
@@ -494,7 +534,11 @@ fn verify_program(
                                         index.clone(),
                                         Some(r),
                                     )
-                                    .map_err(|err| (solver_env.diagnostics.clone(), err))?;
+                                    {
+                                        Err(Error::Verification(ce)) => return Ok((solver_env.diagnostics, Verdict::False(ce))),
+                                        Err(Error::Other(err)) => return Err(err),
+                                        _ => (),
+                                    };
                             }
                         }
                     }
@@ -530,7 +574,7 @@ fn verify_program(
                         for specification in specifications {
                             match (specification, from_main_scope) {
                                 // if require is called outside main scope we assert
-                                (Specification::Requires(assertion), false) => assert(
+                                (Specification::Requires(assertion), false) => match assert(
                                     &mut sym_memory,
                                     &mut pc,
                                     &mut i,
@@ -538,7 +582,11 @@ fn verify_program(
                                     &mut solver_env,
                                     assertion,
                                 )
-                                .map_err(|err| (solver_env.diagnostics.clone(), err))?,
+                                {
+                                    Err(Error::Verification(ce)) => return Ok((solver_env.diagnostics, Verdict::False(ce))),
+                                    Err(Error::Other(err)) => return Err(err),
+                                    _ => ()
+                                },
                                 // otherwise process we assume
                                 (spec, _) => {
                                     let assumption = match spec {
@@ -578,7 +626,23 @@ fn verify_program(
             ));
         }
     }
-    return Ok(solver_env.diagnostics);
+
+    if paths_unexplored {
+        Ok((solver_env.diagnostics, Verdict::Unknown))
+    } else{
+        Ok((solver_env.diagnostics, Verdict::True))
+    }
+}
+
+impl fmt::Display for Verdict {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Verdict::True => write!(f,"{}", "True".green().bold()),
+            Verdict::False(_) => write!(f,"{}", "False".red().bold()),
+            Verdict::Unknown => write!(f,"{}", "Unknown".bright_white().bold()),
+        }
+
+    }
 }
 
 /// Contains parser tests since parser mod is auto-generated
