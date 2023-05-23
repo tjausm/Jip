@@ -4,9 +4,8 @@
     1. **Ubuntu**: `sudo apt install z3`
     2. **Windows** download z3 version 4.8.5 [z3](https://github.com/Z3Prover/z3/releases) and make sure z3 is available as a binary on PATH
 3.
-    1. **Ubuntu**: ```sudo apt install cmake llvm clang```
+    1. **Ubuntu**: ```sudo apt install cmake llvm clang libclang-dev```
     2. **Windows**: download [cmake](https://cmake.org/download/) and [llvm](https://llvm.org/builds/)
-4. **Ubuntu**: `sudo apt-get install libclang-dev`
 5. run `cargo build  --release` in the root folder (it can take 20 - 30 min to build due to z3 the package)
 6. Run with cmd `target/release/jip`
 
