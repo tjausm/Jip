@@ -13,8 +13,8 @@ class Main {
     Main.iterativeMergesort(data);
 
     if(#data > 1) {
-      assert forall a, i1, v1 :
-        forall a, i2, v2 : i1 < i2 ==> v1 < v2;
+      assert forall data, i1, v1 :
+        forall data, i2, v2 : i1 < i2 ==> v1 < v2;
     };
   }
 

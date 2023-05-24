@@ -10,23 +10,23 @@ class Object {
 class RedBlackTreeNode {
 
   // The key of the node.
-  int key;
+  - int key;
   // The satellite data in the node.
-  Object data; // Refers to the satellite data
+  - Object data; // Refers to the satellite data
 
   // The color node of current node.
   // oox has no support for sting yet:
   // string color ;
-  int color ; // 0 for black, non-0 for red
+  - int color ; // 0 for black, non-0 for red
 
   // The parent node of current node.
-  RedBlackTreeNode p;
+  - RedBlackTreeNode p;
 
   // The left child node of current node.
-  RedBlackTreeNode left;
+  - RedBlackTreeNode left;
 
   // The right child node of current node.
-  RedBlackTreeNode right;
+  - RedBlackTreeNode right;
 
   // Constructs a new node. The satellite data is set to <code>null>/code>.
   RedBlackTreeNode(int keyx) {
@@ -55,6 +55,7 @@ class RedBlackTreeNode {
 
   // Returns the key of the node.
   int key() {
+    
     int r_ := this.key ;
     return r_ ; }
 
@@ -131,7 +132,10 @@ class RedBlackTreeNode {
   }
 
   // Set the parent node to parent.
-  void parentTo(RedBlackTreeNode parent) { this.p := parent; }
+  void parentTo(RedBlackTreeNode parent) { 
+    this.p := parent; 
+    
+    }
 
   // Set the right child node to parent.
   void rightTo(RedBlackTreeNode r) { this.right := r; }
@@ -142,7 +146,7 @@ class RedBlackTreeNode {
 } // End class RedBlackTreeNode
 
 class RedBlackTree {
-  RedBlackTreeNode root;
+  - RedBlackTreeNode root;
 
   // Constructs a new empty tree.
   RedBlackTree() { this.root := null; }
@@ -155,8 +159,9 @@ class RedBlackTree {
   // Inserts a node to the tree. Runs in O(lg n) time.
   void treeInsert(RedBlackTreeNode x) {
       RedBlackTreeNode y := null;
+      
       RedBlackTreeNode z := this.root;
-
+      
       while (z != null) {
         y := z;
         int xkey_ := x.key() ;
@@ -184,13 +189,15 @@ class RedBlackTree {
       x.setRed();
 
       // checking the loop-guard, translating short-circuiting:
+    
       RedBlackTreeNode myroot_ := this.root ;
+      
       bool condition_ := x != myroot_ ;
       if (condition_) {
            RedBlackTreeNode xparent_ := x.parent() ;
            bool xparent_red_ := xparent_.isRed() ;
            condition_ := condition_ && xparent_red_ ;
-      }
+      };
       while (condition_) { // x != this.root && (x.parent()).isRed()
           RedBlackTreeNode xparent_ := x.parent() ;
           RedBlackTreeNode xparent_parent_ := xparent_.parent() ;
@@ -202,7 +209,7 @@ class RedBlackTree {
               if (condition1_) {
                  bool y_red_ := y.isRed() ;
                  condition1_ := condition1_ && y_red_ ;
-              }
+              };
               if (condition1_) {  // y != null && y.isRed
                  xparent_ := x.parent() ;
                  xparent_.setBlack();
@@ -218,7 +225,7 @@ class RedBlackTree {
                  if (x == xparent_right_) {
                     x := x.parent();
                     this.leftRotate(x);
-                 }
+                 };
                  xparent_ := x.parent() ;
                  xparent_.setBlack();
                  xparent_parent_ := xparent_.parent() ;
@@ -233,7 +240,7 @@ class RedBlackTree {
               if (condition2_) {
                  bool y_isred_ := y.isRed() ;
                  condition2_ := condition2_ && y_isred_ ;
-              }
+              };
               if (condition2_) { // y != null && y.isRed()
                  xparent_ := x.parent() ;
                  xparent_.setBlack();
@@ -249,7 +256,7 @@ class RedBlackTree {
                  if (x == xparent_left_) {
                     x := xparent_ ;
                     this.rightRotate(x);
-                 }
+                 };
 
                 xparent_ := x.parent() ;
                 xparent_.setBlack();
@@ -266,7 +273,7 @@ class RedBlackTree {
                xparent_ := x.parent() ;
                bool xparent_red_ := xparent_.isRed() ;
                condition_ := condition_ && xparent_red_ ;
-          }
+          };
       } // End while
 
       myroot_ := this.root ;
@@ -282,7 +289,7 @@ class RedBlackTree {
       if (yleft_ != null) {
          yleft_ := y.left() ;
          yleft_.parentTo(x);
-      }
+      };
       RedBlackTreeNode xparent_ := x.parent() ;
       y.parentTo(xparent_) ;
 
@@ -313,7 +320,7 @@ class RedBlackTree {
       yright_ := y.right() ;
       if (yright_ != null) {
         yright_.parentTo(x);
-      }
+      };
       RedBlackTreeNode xparent_ := x.parent() ;
       y.parentTo(xparent_);
       xparent_ := x.parent() ;
@@ -331,7 +338,7 @@ class RedBlackTree {
         }
       }
       y.rightTo(x);
-      x.parentTo(y)
+      x.parentTo(y);
   }
 
   // Delete the given node from the tree. Runs in O(lg n) time.
@@ -364,9 +371,10 @@ class RedBlackTree {
   //
   RedBlackTreeNode treeSearch(RedBlackTreeNode x, int k) {
       int xkey_ := x.key() ; // error, x might be null
-      if (k == xkey_) {
+      if (x == xkey_) { // x == null || k == x.key()
         return x;
-      }
+      };
+      int xkey_ := x.key() ;
       if (k < xkey_) {
         RedBlackTreeNode xleft_ := x.left() ;
         RedBlackTreeNode r_ := this.treeSearch(xleft_, k);
@@ -425,33 +433,26 @@ class RedBlackTree {
 
 }
 
-
-
 class Main {
 
-  static void main(int N, int[] values, int z) {
-     assume N > 0 ;
-     assume #values == N ;
-
-     try {
-       RedBlackTree tree := new RedBlackTree();
-       int i:=0 ;
-       while (i < N) {
-         //int data = Verifier.nondetInt();
-         int data := values[i] ;
-         RedBlackTreeNode o_ := new RedBlackTreeNode(data);
-         tree.treeInsert(o_);
-         i := i+1 ;
-       }
-
-       //int data = Verifier.nondetInt();
-       int data := z ;
-       RedBlackTreeNode treeroot_ := tree.root() ;
-       RedBlackTreeNode node := tree.treeSearch(treeroot_, data);
+  static void main(int N, int[] nondet) {
+     assume N > 0 && #nondet == N + 1;
+     
+     RedBlackTree tree := new RedBlackTree();
+     
+     int i:=0 ;
+     while (i < N) {
+       int data := nondet[i];
+       RedBlackTreeNode o_ := new RedBlackTreeNode(data);
+       tree.treeInsert(o_);
+       i := i+1 ;
      }
-     catch
-     {
-       assert false;
-     }
+
+     //int data = Verifier.nondetInt();
+     int data := nondet[N];
+     
+     RedBlackTreeNode treeroot_ := tree.root() ;
+     RedBlackTreeNode node := tree.treeSearch(treeroot_, data);
    }
+
 }
