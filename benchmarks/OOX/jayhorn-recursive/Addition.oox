@@ -1,0 +1,26 @@
+class Main {
+
+  static int addition(int m, int n) {
+    if (n == 0) {
+      return m;
+    };
+    if (n > 0) {
+      int res := Main.addition(m + 1, n - 1); 
+      return res;
+    } else {
+      int res := Main.addition(m - 1, n + 1);
+      return res;
+    }
+  }
+
+  static void main(int m, int n) {
+    if (m < 0 || m >= 10000) {
+      return;
+    };
+    if (n < 0 || n >= 10000) {
+      return;
+    };
+    int result := Main.addition(m, n);
+    assert result == m + n;
+  }
+}

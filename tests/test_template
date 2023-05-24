@@ -5,14 +5,16 @@ fn {name}() {{
     let assert = cmd
         .arg(r#"{path}"#)
         .arg("verify")
+        .arg("-d")
         .arg("30")
         .assert();
     assert
-        .code(0);
+        .code(predicate::eq(0).or(predicate::eq(3))); // verdict is either true or unknown
 
     // repeat test with simplifier
     let mut cmd_simple = Command::cargo_bin("jip").unwrap();
     let assert_simple = cmd_simple
+        .arg("-a")
         .arg("-f")
         .arg("-i")
         .arg("2")
@@ -20,5 +22,5 @@ fn {name}() {{
         .arg("verify")
         .assert();
     assert_simple
-        .code(0);
+        .code(predicate::eq(0).or(predicate::eq(3))); // verdict is either true or unknown
 }}

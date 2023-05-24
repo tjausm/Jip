@@ -1,0 +1,22 @@
+class Main {
+  static int addition(int m, int n) {
+    if (n == 0) {
+      return m;
+    } else if (n > 0) {
+        int addition := Main.addition(m + 1, n - 1);
+        return addition;
+    } else {
+        int addition := Main.addition(m - 1, n + 1);
+        return addition;
+    }
+  }
+
+  static void main(int m, int n) {
+    int result := Main.addition(m, n);
+    if (result == m - n) {
+      return;
+    } else {
+      assert false;
+    }
+  }
+}

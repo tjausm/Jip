@@ -1,0 +1,30 @@
+class Main {
+
+  static int ack(int m, int n) {
+    if (m == 0) {
+      return n + 1;
+    };
+    if (n == 0) {
+      int ack := Main.ack(m - 1, 1); 
+      return ack;
+    };
+    int ack1 := Main.ack(m,n - 1);
+    int ack2 := Main.ack(m - 1, ack1);
+    return ack2;
+  }
+
+  static void main(int m, int n) {
+    if (m < 0 || m > 3) {
+      return;
+    };
+    if (n < 0 || n > 23) {
+      return;
+    };
+    int result := Main.ack(m, n);
+    if (m < 0 || n < 0 || result >= 0) {
+      assert false;
+    } else {
+      assert true;
+    }
+  }
+}

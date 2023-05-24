@@ -1,0 +1,35 @@
+class Main {
+
+  static void sort(int[] a) {
+    int i := 1;
+    while (i < #a){
+      int j := i;
+      int x := a[i];
+      // First branch (j >= 0):  2 + 3 + ... + N = N(N+1)/2 - 1 branches
+      // Second branch (a[j] > x):  1 + 2 + ... + N-1 = (N-1)N/2 branches
+      int aj := a[j];
+      while ((j >= 0) && (aj > x)) {
+        a[j + 1] := a[j];
+        j := j - 1;
+        aj := a[j];
+      }
+      a[j + 1] := x;
+      i := i + 1;
+    }
+        
+  }
+
+  static void main(int N, int i1, int i2) 
+  {
+    assume(N > 0);
+
+    int[] a := new int[N];
+    int i := 0;
+    while (i < N) {
+      a[i] := N - i;
+      i := i + 1;
+    }
+
+    Main.sort(a);
+  }
+}

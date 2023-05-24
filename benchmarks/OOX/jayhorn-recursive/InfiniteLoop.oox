@@ -1,0 +1,10 @@
+class Main {
+  static void main(bool b) {
+    int i := 0;
+
+    while (true) {
+      i := i + 1;
+      assert b;
+    }
+  }
+}

@@ -1,0 +1,15 @@
+class Main {
+  static int f(int n) {
+    if (n > 100) return n - 10;
+    else {
+        int fn := Main.f(n + 11);
+        int ffn := Main.f(fn);
+        return ffn;
+  }
+  }
+
+  static void main(int x) {
+    int y := Main.f(x);
+    assert x > 101 || y < 90; // does not hold
+  }
+}

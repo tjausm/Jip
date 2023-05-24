@@ -14,13 +14,14 @@ regex = "1"
 petgraph = "0.5.1"
 clap = { version = "3.1.18", features = ["derive"] }
 assert_cmd = "2.0.4" #integration testing through cmd line
+predicates = "2.1.1" # predicates fo cmd line testing
 rustc-hash = "1.1.0" #more efficient hashmap/hashset
 colored = "2.0.0" # pretty prenting in terminal
 rsmt2 = "0.16.2"
-z3 = {version="0.11.2", features = ["static-link-z3"]}
 rand = "0.8.5" # random number generation
 global_counter = "0.2.2" # reference generation
 infinitable = "1.5.0" #extends integer with infinity
+z3 = {version="0.11.2", features = ["static-link-z3"]}
 
 [profile.release]
 debug=true # only turn on for profiling

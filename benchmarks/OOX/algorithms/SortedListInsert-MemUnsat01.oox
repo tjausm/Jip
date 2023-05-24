@@ -1,0 +1,49 @@
+// This one uses javascript syntax which i don't get
+  
+  class List {
+    - int x;
+    - List next;
+
+    static int SENTINEL() {return 2147483647;}
+    
+    List(int x, List next) {
+      this.x := x;
+      this.next := next;
+    }
+
+    static List EmptyList() {
+      int x := List.SENTINEL();
+      List l := new List(x, null);
+      return l;
+    }
+
+    void insert(int data) {
+      List next := this.next;
+      int thisx := this.x;
+
+      // added null check because original
+      // would cause null ref err in OOX
+      if (data < thisx || next == null) { // error, must be "<="
+        this.next := new List(thisx, next);
+        this.x := data;
+      } else {
+        next.insert(data);
+      }
+    }
+  }
+
+class Main {
+  static void main(int N, int[] nondet) {
+    assume #nondet == N;
+    assume N > 1;
+
+    List list := List.EmptyList();
+
+    int i := 0;
+    while (i < N){
+      int n := nondet[i];
+      list.insert(n);
+      i := i + 1;
+    }
+  }
+}

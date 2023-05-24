@@ -82,6 +82,7 @@ pub Statement : Statement = {
         Skip => Statement::Skip(<>),
         Ite => Statement::Ite(<>),
         "return" <Expression> ";" => Statement::Return(<>),
+        "return" ";" => Statement::ReturnVoid,
         Block => Statement::Block(<>),
         Assert => Statement::Assert(<>),
         Assume => Statement::Assume(<>),

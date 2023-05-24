@@ -8,7 +8,7 @@ extern crate lalrpop_util;
 extern crate global_counter;
 
 use clap::{Parser, Subcommand};
-use shared::{Config, Depth, ExitCode, SolverType};
+use shared::{Config, Depth, ExitCode, SolverType, Timeout};
 use std::process::exit;
 
 // module declarations
@@ -67,9 +67,13 @@ struct Cli {
 enum Mode {
     /// Verify program and print result
     Verify {
-        /// Up to which depth program is evaluated
-        #[clap(default_value_t = 50)]
-        depth: Depth,
+        /// The maximum verification depth
+        #[clap(short)]
+        depth: Option<Depth>,
+
+        /// The maximum run-time in seconds
+        #[clap(short)]
+        timeout: Option<Timeout>,
 
         /// Report detailed information about proceedings of SEE
         #[clap(short, long)]
@@ -113,7 +117,11 @@ fn main() {
     // if program loaded execute function corresponding to cmd and exit with the result
     match cli.mode {
         Mode::PrintCFG => exit(see::print_cfg(&program)),
-        Mode::Verify { depth, verbose } => {
+        Mode::Verify {
+            depth,
+            timeout,
+            verbose,
+        } => {
             let config = Config {
                 expression_evaluation: cli.expression_evaluator || cli.infer_size > 0,
                 infer_size: cli.infer_size,
@@ -123,7 +131,7 @@ fn main() {
                 solver_type: solver_type,
                 verbose: verbose,
             };
-            exit(see::print_verification(&program, depth, &config))
+            exit(see::print_verification(&program, depth, timeout, &config))
         }
         Mode::Bench {
             start,

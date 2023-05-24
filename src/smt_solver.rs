@@ -98,7 +98,7 @@ impl SolverEnv<'_> {
 
     /// Creates a new solver using the configured backend.
     /// For both Yices and Cvc we pas a set of flags to make them work with the rust interface
-    pub fn new<'ctx>(config: &'ctx Config, ctx: &'ctx z3::Context) -> SolverEnv<'ctx> {
+    pub fn new<'ctx>(cfg_size: usize, config: &'ctx Config, ctx: &'ctx z3::Context) -> SolverEnv<'ctx> {
         let mut solver = match &config.solver_type {
             SolverType::Z3(arg) => {
                 let conf = rsmt2::SmtConf::z3(arg);
@@ -142,7 +142,7 @@ impl SolverEnv<'_> {
             solver,
             formula_cache: HashMap::default(),
             config: config.clone(),
-            diagnostics: Diagnostics::default(),
+            diagnostics: Diagnostics::new(cfg_size),
         }
     }
 
@@ -161,7 +161,7 @@ impl SolverEnv<'_> {
             };
         };
 
-        self.diagnostics.z3_calls += 1;
+        self.diagnostics.smt_calls += 1;
         match &mut self.solver {
             Solver::Rsmt2(solver) => SolverEnv::verify_with_rsmt2(
                 &self.config,

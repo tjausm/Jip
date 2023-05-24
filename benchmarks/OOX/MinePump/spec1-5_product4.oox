@@ -1,0 +1,348 @@
+class Environment {
+
+    - int waterLevel ;
+    - bool methaneLevelCritical ;
+
+    static int WaterLevelEnum_low() { return 1 ; }
+    static int WaterLevelEnum_normal() { return 2 ; }
+    static int WaterLevelEnum_high() { return 3 ; }
+
+
+    Environment() {
+      this.waterLevel := Environment.WaterLevelEnum_normal() ;
+      this.methaneLevelCritical := false ;
+    }
+
+    void lowerWaterLevel() {
+      int waterLevel := this.waterLevel ;
+      int high := Environment.WaterLevelEnum_high() ;
+      if (waterLevel == high) {
+         int normal :=  Environment.WaterLevelEnum_normal() ;
+         this.waterLevel := normal ;
+      }
+      else {
+         int normal :=  Environment.WaterLevelEnum_normal() ;
+         if (waterLevel == normal) {
+            int low := Environment.WaterLevelEnum_low() ;
+            this.waterLevel := low ;
+         };
+      }
+    }
+
+    void waterRise() {
+      int waterLevel := this.waterLevel ;
+      int low := Environment.WaterLevelEnum_low() ;
+      if (waterLevel == low) {
+          int normal :=  Environment.WaterLevelEnum_normal() ;
+          this.waterLevel := normal ;
+      }
+      else {
+          int normal :=  Environment.WaterLevelEnum_normal() ;
+          if (waterLevel == normal) {
+             int high := Environment.WaterLevelEnum_high() ;
+             this.waterLevel := high ;
+          };
+      }
+    }
+
+    void changeMethaneLevel() {
+       bool methaneLevelCritical := this.methaneLevelCritical ;
+       this.methaneLevelCritical := !methaneLevelCritical;
+    }
+
+    bool isMethaneLevelCritical() {
+      bool methaneLevelCritical := this.methaneLevelCritical ;
+      return methaneLevelCritical;
+    }
+
+    //String toString() {
+       //return "Env(Water:" + waterLevel + ",Meth:" + (methaneLevelCritical ? "CRIT" : "OK") + ")";
+    //}
+
+    int getWaterLevel() {
+       int waterLevel := this.waterLevel ;
+       return waterLevel;
+    }
+}
+
+class MinePump {
+
+    - bool pumpRunning ;
+    - bool systemActive ;
+    - Environment env;
+
+    MinePump(Environment env_){
+       this.pumpRunning := false;
+       this.systemActive := true;
+       this.env := env_ ;
+    }
+
+    void timeShift() {
+       bool pumpRunning := this.pumpRunning ;
+       if (pumpRunning) {
+          Environment env := this.env ;
+          env.lowerWaterLevel();
+       };
+       bool systemActive := this.systemActive ;
+       if (systemActive) this.processEnvironment();;
+    }
+
+    void processEnvironment() {;}
+
+    void activatePump() {
+        this.pumpRunning := true;
+    }
+
+    bool isPumpRunning() {
+       bool pumpRunning := this.pumpRunning ;
+       return pumpRunning;
+    }
+
+    void deactivatePump() {
+      this.pumpRunning := false;
+    }
+
+    bool isMethaneAlarm() {
+      Environment env := this.env ;
+      bool critical := env.isMethaneLevelCritical() ;
+      return critical ;
+    }
+
+    //String toString() {
+    //return "Pump(System:"
+    //    + (systemActive ? "On" : "Off")
+    //    + ",Pump:"
+    //    + (pumpRunning ? "On" : "Off")
+    //    + ") "
+    //    + env.toString();
+    // }
+
+    Environment getEnv() {
+       Environment env := this.env ;
+       return env;
+    }
+
+    void stopSystem() {
+      bool pumpRunning := this.pumpRunning ;
+      if (pumpRunning) {
+         this.deactivatePump();
+      };
+      pumpRunning := this.pumpRunning ;
+      assert !pumpRunning;
+      this.systemActive := false ;
+    }
+
+    void startSystem() {
+       bool pumpRunning := this.pumpRunning ;
+       assert !pumpRunning;
+       this.systemActive := true;
+    }
+
+    bool isSystemActive() {
+       bool systemActive := this.systemActive ;
+       return systemActive;
+    }
+
+}
+
+class Actions {
+    - Environment env;
+    - MinePump p;
+
+    - bool methAndRunningLastTime ;
+    - bool switchedOnBeforeTS ;
+
+    Actions() {
+      this.methAndRunningLastTime := false;
+      this.switchedOnBeforeTS := false;
+      this.env := new Environment();
+      Environment env := this.env ;
+      this.p := new MinePump(env);
+    }
+
+    void waterRise() {
+       Environment env := this.env ;
+       env.waterRise();
+    }
+
+    void methaneChange() {
+       Environment env := this.env ;
+       env.changeMethaneLevel();
+    }
+
+    void stopSystem() {
+       MinePump p := this.p ;
+       bool sysactive := p.isSystemActive() ;
+       if (sysactive) p.stopSystem();;
+    }
+
+    void startSystem() {
+       MinePump p := this.p ;
+       bool sysactive := p.isSystemActive() ;
+       if (!sysactive) p.startSystem();;
+    }
+
+    void timeShift() {
+      MinePump p := this.p ;
+      bool sysactive := p.isSystemActive() ;
+
+      if (sysactive)
+         this.Specification5_1() ;;
+
+      p.timeShift();
+
+      sysactive := p.isSystemActive() ;
+      if (sysactive) {
+         this.Specification1();
+         this.Specification2();
+         this.Specification3();
+         this.Specification4();
+         this.Specification5_2();
+      };
+    }
+
+    //String getSystemState() {
+    //   return p.toString();
+    //}
+
+    // Specification 1 methan is Critical and pumping leads to Error
+    void Specification1() {
+       MinePump p := this.p ;
+       Environment e := p.getEnv();
+       bool b1 := e.isMethaneLevelCritical();
+       bool b2 := p.isPumpRunning();
+
+       if (b1 && b2) {
+          assert false;
+       };
+    }
+
+    // Specification 2: When the pump is running, and there is methane, then it is
+    // in switched off at most 1 timesteps.
+    void Specification2() {
+       MinePump p := this.p ;
+       Environment e := p.getEnv();
+
+       bool b1 := e.isMethaneLevelCritical();
+       bool b2 := p.isPumpRunning();
+
+       if (b1 && b2) {
+          bool methAndRunningLastTime := this.methAndRunningLastTime ;
+          if (methAndRunningLastTime) {
+            assert false;
+          } else {
+            this.methAndRunningLastTime := true;
+          }
+       } else {
+            this.methAndRunningLastTime := false;
+       }
+    }
+
+    // Specification 3: When the water is high and there is no methane, then the
+    // pump is on.
+    void Specification3() {
+       MinePump p := this.p ;
+       Environment e := p.getEnv();
+       bool b1 := e.isMethaneLevelCritical();
+       bool b2 := p.isPumpRunning();
+       int high := Environment.WaterLevelEnum_high() ;
+       int waterlevel := e.getWaterLevel() ;
+       bool b3 := waterlevel == high;
+       if (!b1 && b3 && !b2) {
+          assert false;
+       };
+    }
+
+    // Specification 4: the pump is never on when the water level is low
+    void Specification4() {
+       MinePump p := this.p ;
+       Environment e := p.getEnv();
+       bool b2 := p.isPumpRunning();
+       int low := Environment.WaterLevelEnum_low() ;
+       int waterlevel := e.getWaterLevel() ;
+       bool b3 := waterlevel == low;
+       if (b3 && b2) {
+          assert false;
+       };
+    }
+
+    // Specification 5: The Pump is never switched on when the water is below the
+    // highWater sensor.
+    void Specification5_1() {
+      MinePump p := this.p ;
+      this.switchedOnBeforeTS := p.isPumpRunning();
+    }
+
+    // Specification 5: The Pump is never switched on when the water is below the
+    // highWater sensor.
+    void Specification5_2() {
+       MinePump p := this.p ;
+       Environment e := p.getEnv();
+       bool b1 := p.isPumpRunning();
+       int high := Environment.WaterLevelEnum_high() ;
+       int waterlevel := e.getWaterLevel() ;
+       bool b2 := waterlevel !=  high;
+
+       bool switchedOnBeforeTS := this.switchedOnBeforeTS ;
+       if (b2 && b1 && !switchedOnBeforeTS) {
+          assert false;
+       };
+    }
+
+}
+
+class Main {
+
+    static int cleanupTimeShifts() { return 2; }
+
+    static void randomSequenceOfActions(int maxLength, bool[] values) {
+
+       //assert values != null ;
+       //assert #values == 4*maxLength ;
+
+       Actions a := new Actions();
+
+       int counter := 0;
+       while (counter < maxLength) {
+          counter := counter + 1  ;
+          int k := 4*(counter-1) ;
+          bool action1 := values[k+0] ;
+          bool action2 := values[k+1] ;
+          bool action3 := values[k+2] ;
+          bool action4 := false;
+          if (!action3) {
+             action4 := values[k+3];
+          };
+
+          if (action1) {
+             a.waterRise();
+          };
+          if (action2) {
+             a.methaneChange();
+          };
+          if (action3) {
+             a.startSystem();
+          } else if (action4) {
+             a.stopSystem();
+          };
+          a.timeShift();
+       }
+
+       counter := 0 ;
+       int cleanupTimeShifts := Main.cleanupTimeShifts() ;
+       while (counter < cleanupTimeShifts) {
+          a.timeShift();
+          counter := counter + 1 ;
+       }
+    }
+
+
+
+    static void main(bool[] values)
+    {
+       assume values != null ;
+       assume #values == 12 ;
+       Main.randomSequenceOfActions(3,values) ;
+    }
+
+ }
