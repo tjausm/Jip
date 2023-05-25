@@ -181,7 +181,6 @@ impl Default for Interval {
 }
 
 impl Add for Interval {
-    // The multiplication of rational numbers is a closed operation.
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self {
@@ -200,7 +199,6 @@ impl Add for Interval {
     }
 }
 impl Sub for Interval {
-    // The multiplication of rational numbers is a closed operation.
     type Output = Self;
 
     fn sub(self, rhs: Self) -> Self {
@@ -221,16 +219,24 @@ impl Sub for Interval {
 }
 
 impl Mul for Interval {
-    // The multiplication of rational numbers is a closed operation.
     type Output = Self;
 
     fn mul(self, rhs: Self) -> Self {
         let ((a, b), (c, d)) = (self.get(), rhs.get());
-        let products = [a * c, a * d, b * c, b * d];
-        Interval::new(
-            *products.iter().min().unwrap(),
-            *products.iter().max().unwrap(),
-        )
+
+        // if one of the 2 sides is infinite, just return
+        match (a.is_finite() && b.is_finite(), c.is_finite() && d.is_finite()) {
+            (false, _) => self,
+            (_, false) => rhs,
+            _ => {
+                let products = [a * c, a * d, b * c, b * d];
+                Interval::new(
+                    *products.iter().min().unwrap_or(&a.min(c)),
+                    *products.iter().max().unwrap_or(&b.max(d)),
+                )
+            },
+        }
+
     }
 }
 
