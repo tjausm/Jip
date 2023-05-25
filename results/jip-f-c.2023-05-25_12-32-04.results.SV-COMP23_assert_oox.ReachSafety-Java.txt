@@ -1,0 +1,35 @@
+   BENCHMARK INFORMATION
+benchmark definition:    sv-benchmarks/jip-f-c.xml
+name:                    jip-f-c
+run sets:                SV-COMP23_assert_oox.ReachSafety-Java
+date:                    Thu, 2023-05-25 12:32:04 CEST
+tool:                    Jip jip 0.1.0
+tool executable:         ./jip
+options:                 -c -f
+resource limits:
+- memory:                5000.0 MB
+- time:                  20 s
+- cpu cores:             1
+hardware requirements:
+- cpu cores:             1
+- memory:                5000.0 MB
+------------------------------------------------------------
+
+   SYSTEM INFORMATION
+host:                    tjeerd
+os:                      Linux-5.19.0-42-generic-x86_64-with-glibc2.35
+cpu:                     Intel Core i7-4770K CPU @ 3.50GHz
+- cores:                 8
+- max frequency:         3900.0 MHz
+- turbo boost enabled:   True
+ram:                     16710.565888 MB
+------------------------------------------------------------
+
+
+
+SV-COMP23_assert_oox.ReachSafety-Java
+Run set 1 of 1 with options '-c -f' and propertyfile 'None'
+
+inputfile                                       status                       cpu time   wall time        host
+-------------------------------------------------------------------------------------------------------------
+jayhorn-recursive/Ackermann01.yml               false                            0.02        0.06        None
