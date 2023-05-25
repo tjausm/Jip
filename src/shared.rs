@@ -40,13 +40,17 @@ pub enum SolverType {
     Default,
 }
 
+/// tupple representing the prune probability and the adjustment rate
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PruneProbability(pub u8, pub u8);
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Config {
     pub expression_evaluation: bool,
     pub infer_size: i8,
     pub symbolic_array_size: Option<i64>,
     pub formula_caching: bool,
-    pub adaptive_pruning: bool,
+    pub prune_probability: PruneProbability,
     pub solver_type: SolverType,
     pub verbose: bool,
 }
@@ -112,8 +116,8 @@ impl Diagnostics {
                 0.0
             }
     }
-    pub fn add_prune_p(&mut self, p: u8) {
-        self.prune_p.push(p);
+    pub fn track_prune_p(&mut self, p: PruneProbability) {
+        self.prune_p.push(p.0);
     }
 }
 

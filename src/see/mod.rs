@@ -10,7 +10,7 @@ use crate::ast::*;
 use crate::cfg::types::{Action, Node};
 use crate::cfg::{generate_cfg, generate_dot_cfg};
 use crate::see::utils::*;
-use crate::shared::{Config, Timeout};
+use crate::shared::{Config, Timeout, PruneProbability};
 use crate::shared::ExitCode;
 use crate::shared::{panic_with_diagnostics, Depth, Diagnostics, CounterExample};
 use crate::smt_solver::SolverEnv;
@@ -160,13 +160,13 @@ fn print_debug(
     sym_memory: &SymMemory,
     pc: &PathConstraints,
     i: &IntervalMap,
-    prune_p: u8,
+    prune_p: PruneProbability,
     eval_refs: &EvaluatedRefs,
     trace: &Trace,
 ) {
     let print_eval_refs = format!("Evaluated refs: {:?}", eval_refs);
     let print_trace = format!("trace: {:?}", trace);
-    let print_prune_p = format!("prune probability: {}/127", prune_p);
+    let print_prune_p = format!("prune (probability, addaption): ({}, {})", prune_p.0, prune_p.1);
 
     let pc = pc.combine_over_true();
     let print_pc = format!("Path constraints -> {:?}", pc);
@@ -208,7 +208,7 @@ fn verify_program(
     // tracks whether we have left paths unexplored due to max_depth
     let mut paths_unexplored = false;
 
-    let mut prune_p: u8 = if config.adaptive_pruning { 50 } else { 0 };
+    let mut prune_p: PruneProbability = config.prune_probability;
 
     // init retval and this such that it outlives env
     let retval_id = &"retval".to_string();
@@ -351,7 +351,7 @@ fn verify_program(
                             &mut solver_env,
                             assumption,
                         );
-                        solver_env.diagnostics.add_prune_p(updated_p);
+                        solver_env.diagnostics.track_prune_p(updated_p);
                         prune_p = updated_p;
                         if !feasible {
                             solver_env.diagnostics.paths_pruned += 1;
@@ -621,7 +621,7 @@ fn verify_program(
                                         &mut solver_env,
                                         assumption,
                                     );
-                                    solver_env.diagnostics.add_prune_p(updated_p);
+                                    solver_env.diagnostics.track_prune_p(updated_p);
                                     prune_p = updated_p;
                                     if !feasible {
                                         solver_env.diagnostics.paths_pruned += 1;
