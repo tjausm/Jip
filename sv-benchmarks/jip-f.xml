@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<!DOCTYPE benchmark PUBLIC "+//IDN sosy-lab.org//DTD BenchExec benchmark 1.9//EN" "https://www.sosy-lab.org/benchexec/benchmark-2.3.dtd">
+<benchmark tool="jip" timelimit="20 s" memlimit="5 GB" cpuCores="1">
+<option name="-f"></option>
+<rundefinition name="SV-COMP23_assert_oox">
+  <tasks name="ReachSafety-Java">
+  	  <propertyfile>./java/properties/assert_java.prp</propertyfile>
+    <includesfile>./java/ReachSafety-Java.set</includesfile>
+  </tasks>
+</rundefinition>
+
+</benchmark>

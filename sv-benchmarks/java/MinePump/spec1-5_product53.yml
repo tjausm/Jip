@@ -1,0 +1,8 @@
+format_version: "2.0"
+input_files:
+  - spec1-5_product53.oox
+properties:
+  - property_file: ../properties/assert_java.prp
+    expected_verdict: false
+
+

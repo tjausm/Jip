@@ -8,7 +8,7 @@ extern crate lalrpop_util;
 extern crate global_counter;
 
 use clap::{Parser, Subcommand};
-use shared::{Config, Depth, ExitCode, SolverType, Timeout};
+use shared::{Config, Depth, ExitCode, SolverType, Timeout, PruneProbability};
 use std::process::exit;
 
 // module declarations
@@ -45,7 +45,15 @@ struct Cli {
     #[clap(short, long)]
     formula_caching: bool,
 
-    /// Turns on adaptive pruning
+    /// Turns on constant pruning (SEE will try to prune all paths)
+    #[clap(short, long)]
+    constant_pruning: bool,
+
+    /// Turns on probabilistic pruning (SEE will try to prune 25% of all paths)
+    #[clap(short, long)]
+    probabilistic_pruning: bool,
+
+    /// Turns on adaptive adaptive probabilistic pruning (prune probability will increase with succesfull prunes and vice versa)
     #[clap(short, long)]
     adaptive_pruning: bool,
 
@@ -114,6 +122,13 @@ fn main() {
         Ok(program) => program,
     };
 
+    let prune_probability = match (cli.constant_pruning, cli.probabilistic_pruning, cli.adaptive_pruning){
+        (true, _, _) => PruneProbability(100, 0),
+        (_, true, _) => PruneProbability(25, 0),
+        (_, _, true) => PruneProbability(50, 5),
+        _ => PruneProbability(0, 0)
+    };
+
     // if program loaded execute function corresponding to cmd and exit with the result
     match cli.mode {
         Mode::PrintCFG => exit(see::print_cfg(&program)),
@@ -127,7 +142,7 @@ fn main() {
                 infer_size: cli.infer_size,
                 symbolic_array_size: cli.symbolic_array_size,
                 formula_caching: cli.formula_caching,
-                adaptive_pruning: cli.adaptive_pruning,
+                prune_probability,
                 solver_type: solver_type,
                 verbose: verbose,
             };
@@ -143,7 +158,7 @@ fn main() {
                 infer_size: cli.infer_size,
                 symbolic_array_size: cli.symbolic_array_size,
                 formula_caching: cli.formula_caching,
-                adaptive_pruning: cli.adaptive_pruning,
+                prune_probability,
                 solver_type: solver_type,
                 verbose: false,
             };

@@ -8,7 +8,7 @@ use std::process::exit;
 use petgraph::stable_graph::NodeIndex;
 use rustc_hash::FxHashSet;
 
-use crate::cfg;
+
 /// Indicates if program is valid, counterexample was found or other error occured
 pub enum ExitCode {
     VerdictTrue = 0,
@@ -23,10 +23,7 @@ pub type Timeout = i32;
 pub type Feasible = bool;
 
 #[derive(Debug, Clone)]
-pub enum Error {
-    Verification(String),
-    Other(String),
-}
+pub struct CounterExample(pub String);
 
 /// Either has a scope id or None if we are at the entry scope of the program
 #[derive(Debug, Clone, PartialEq)]
@@ -43,13 +40,17 @@ pub enum SolverType {
     Default,
 }
 
+/// tupple representing the prune probability and the adjustment rate
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PruneProbability(pub u8, pub u8);
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Config {
     pub expression_evaluation: bool,
     pub infer_size: i8,
     pub symbolic_array_size: Option<i64>,
     pub formula_caching: bool,
-    pub adaptive_pruning: bool,
+    pub prune_probability: PruneProbability,
     pub solver_type: SolverType,
     pub verbose: bool,
 }
@@ -115,8 +116,8 @@ impl Diagnostics {
                 0.0
             }
     }
-    pub fn add_prune_p(&mut self, p: u8) {
-        self.prune_p.push(p);
+    pub fn track_prune_p(&mut self, p: PruneProbability) {
+        self.prune_p.push(p.0);
     }
 }
 

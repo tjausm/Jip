@@ -1,6 +1,6 @@
 [package]
 name = "jip"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2021"
 build = "build.rs" # LALRPOP preprocessing
 resolver = "1" #solves issue with lexer (https://github.com/lalrpop/lalrpop/issues/616)

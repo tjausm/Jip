@@ -1,0 +1,6 @@
+./jip -i 1 -p sv-benchmarks/java/algorithms/BellmanFord-MemSat01.oox verify -t 10000
+
+
+--------------------------------------------------------------------------------
+
+

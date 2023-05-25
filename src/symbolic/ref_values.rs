@@ -6,15 +6,13 @@ use super::{
 };
 use crate::{
     ast::*,
-    shared::{panic_with_diagnostics, Error},
+    shared::{CounterExample},
     smt_solver::SolverEnv,
 };
 use core::fmt;
 use infinitable::Infinitable;
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::{
-    cmp::Ordering,
-    collections::hash_map::Iter,
     ops::{Add, Mul, Sub},
 };
 
@@ -54,7 +52,7 @@ impl Reference {
         i: &IntervalMap,
         eval_refs: &EvaluatedRefs,
         sym_memory: &SymMemory,
-    ) -> Result<bool, Error> {
+    ) -> Result<bool, CounterExample> {
         let simplify = solver.config.expression_evaluation;
 
         // check if path is feasible
@@ -86,7 +84,7 @@ impl Reference {
 
         match solver.verify_expr(&pc_null_check, sym_memory, i) {
             None => Ok(true),
-            Some(model) => Err(Error::Verification(format!(
+            Some(model) => Err(CounterExample(format!(
                 "Reference {:?} could possibly be null:\n{:?}",
                 self.get_unsafe(),
                 model
@@ -98,7 +96,7 @@ impl Reference {
     pub fn get_unsafe(&self) -> i32 {
         match self {
             Reference::Evaluated(r) => *r,
-            Reference::Lazy { r, class } => *r,
+            Reference::Lazy { r, class: _ } => *r,
         }
     }
 
@@ -110,12 +108,12 @@ impl Reference {
         pc: &PathConstraints,
         i: &IntervalMap,
         eval_refs: &mut EvaluatedRefs,
-    ) -> Result<Option<i32>, Error> {
+    ) -> Result<Option<i32>, CounterExample> {
 
         match self {
             // if null reference make sure path is infeasible
             Reference::Evaluated(0) => match solver.verify_expr(&pc.conjunct(), sym_memory, i) {
-                Some(model) => Err(Error::Verification(format!("Reference is null:\n{:?}", model))),
+                Some(model) => Err(CounterExample(format!("Reference is null:\n{:?}", model))),
                 None => Ok(None),
             },
             // if evaluated save and return
@@ -181,7 +179,6 @@ impl Default for Interval {
 }
 
 impl Add for Interval {
-    // The multiplication of rational numbers is a closed operation.
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self {
@@ -200,7 +197,6 @@ impl Add for Interval {
     }
 }
 impl Sub for Interval {
-    // The multiplication of rational numbers is a closed operation.
     type Output = Self;
 
     fn sub(self, rhs: Self) -> Self {
@@ -221,16 +217,24 @@ impl Sub for Interval {
 }
 
 impl Mul for Interval {
-    // The multiplication of rational numbers is a closed operation.
     type Output = Self;
 
     fn mul(self, rhs: Self) -> Self {
         let ((a, b), (c, d)) = (self.get(), rhs.get());
-        let products = [a * c, a * d, b * c, b * d];
-        Interval::new(
-            *products.iter().min().unwrap(),
-            *products.iter().max().unwrap(),
-        )
+
+        // if one of the 2 sides is infinite, just return
+        match (a.is_finite() && b.is_finite(), c.is_finite() && d.is_finite()) {
+            (false, _) => self,
+            (_, false) => rhs,
+            _ => {
+                let products = [a * c, a * d, b * c, b * d];
+                Interval::new(
+                    *products.iter().min().unwrap_or(&a.min(c)),
+                    *products.iter().max().unwrap_or(&b.max(d)),
+                )
+            },
+        }
+
     }
 }
 
@@ -353,7 +357,7 @@ impl IntervalMap {
                     let i = self.get(x1).narrow(Interval::infer(r_expr, &self));
                     self.0.insert(x1.clone(), i);
                 }
-                (l_expr, (SymExpression::FreeVariable(SymType::Int, x2))) => {
+                (l_expr, SymExpression::FreeVariable(SymType::Int, x2)) => {
                     let i = self.get(x2).narrow(Interval::infer(l_expr, &self));
                     self.0.insert(x2.clone(), i);
                 }
@@ -388,7 +392,7 @@ impl IntervalMap {
                     ));
                     self.0.insert(x.clone(), i);
                 }
-                (l_expr, (SymExpression::FreeVariable(SymType::Int, x))) => {
+                (l_expr, SymExpression::FreeVariable(SymType::Int, x)) => {
                     let (_, b) = Interval::infer(l_expr, self).get();
                     if !b.is_finite() {
                         return;
@@ -414,7 +418,7 @@ impl IntervalMap {
                         .narrow(Interval::new(Infinitable::NegativeInfinity, a));
                     self.0.insert(x.clone(), i);
                 }
-                (l_expr, (SymExpression::FreeVariable(SymType::Int, x))) => {
+                (l_expr, SymExpression::FreeVariable(SymType::Int, x)) => {
                     let (_, b) = Interval::infer(l_expr, self).get();
                     if !b.is_finite() {
                         return;
@@ -425,7 +429,7 @@ impl IntervalMap {
                 _ => (),
             },
             SymExpression::GT(l_expr, r_expr) => match (&**l_expr, &**r_expr) {
-                ((SymExpression::FreeVariable(SymType::Int, x)), r_expr) => {
+                (SymExpression::FreeVariable(SymType::Int, x), r_expr) => {
                     let (_, b) = Interval::infer(r_expr, self).get();
                     if !b.is_finite() {
                         return;
@@ -451,7 +455,7 @@ impl IntervalMap {
                 _ => (),
             },
             SymExpression::GEQ(l_expr, r_expr) => match (&**l_expr, &**r_expr) {
-                ((SymExpression::FreeVariable(SymType::Int, x)), r_expr) => {
+                (SymExpression::FreeVariable(SymType::Int, x), r_expr) => {
                     let (_, b) = Interval::infer(r_expr, self).get();
                     if !b.is_finite() {
                         return;
@@ -499,7 +503,7 @@ impl fmt::Debug for Reference {
                     write!(f, "r({})", self.get_unsafe())
                 }
             }
-            Reference::Lazy { r, class } => write!(f, "r({} || null)", self.get_unsafe()),
+            Reference::Lazy { r: _, class: _ } => write!(f, "r({} || null)", self.get_unsafe()),
         }
     }
 }

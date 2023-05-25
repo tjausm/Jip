@@ -1,7 +1,7 @@
 use rand::Rng;
 
 use crate::ast::*;
-use crate::shared::{panic_with_diagnostics, Error, Feasible};
+use crate::shared::{panic_with_diagnostics, CounterExample, Feasible, PruneProbability};
 use crate::smt_solver::SolverEnv;
 use crate::symbolic::expression::{PathConstraints, SymExpression, SymType};
 use crate::symbolic::memory::SymMemory;
@@ -15,7 +15,7 @@ pub fn parse_rhs<'a, 'b>(
     eval_refs: &mut EvaluatedRefs,
     solver: &mut SolverEnv,
     rhs: &'a Rhs,
-) -> Result<Option<SymExpression>, Error> {
+) -> Result<Option<SymExpression>, CounterExample> {
     match rhs {
         Rhs::AccessField(obj_name, field_name) => sym_memory
             .heap_access_object(
@@ -73,7 +73,7 @@ pub fn lhs_from_rhs<'a>(
     solver: &mut SolverEnv,
     lhs: &'a Lhs,
     rhs: &'a Rhs,
-) -> Result<Feasible, Error> {
+) -> Result<Feasible, CounterExample> {
     let mut var = match parse_rhs(sym_memory, pc, i, eval_refs, solver, rhs)? {
         Some(var) => var,
         _ => return Ok(false),
@@ -115,7 +115,7 @@ pub fn assert(
     eval_refs: &EvaluatedRefs,
     solver: &mut SolverEnv,
     assertion: &Expression,
-) -> Result<(), Error> {
+) -> Result<(), CounterExample> {
     let mut sym_assertion = SymExpression::new(&sym_memory, assertion.clone());
     let config = &solver.config;
 
@@ -151,7 +151,7 @@ pub fn assert(
 
     match solver.verify_expr(&SymExpression::Not(Box::new(constraints)), sym_memory, i) {
         Some(model) => {
-            return Err(Error::Verification(format!(
+            return Err(CounterExample(format!(
                 "Following input violates one of the assertion:\n{:?}",
                 model
             )))
@@ -168,15 +168,15 @@ pub fn assume(
     pc: &mut PathConstraints,
     i: &mut IntervalMap,
     eval_refs: &EvaluatedRefs,
-    prune_p: u8,
+    prune_p: PruneProbability,
     solver: &mut SolverEnv,
     assumption: &Expression,
-) -> (u8, bool) {
+) -> (PruneProbability, bool) {
     let mut sym_assumption = SymExpression::new(&sym_memory, assumption.clone());
     let config = &solver.config;
 
     // push assumption and infer updated intervalmap from pathconstraints
-    if (config.infer_size > 0) {
+    if config.infer_size > 0 {
         sym_assumption = sym_assumption.eval(i, Some(eval_refs));
         pc.push_assumption(sym_assumption.clone());
         i.iterative_inference(&pc.conjunct(), config.infer_size);
@@ -200,20 +200,21 @@ pub fn assume(
         constraints = constraints.eval(i, Some(eval_refs))
     };
 
+    let (p, a) = (prune_p.0, prune_p.1);
+
     // return false if expression always evaluates to false
-    match (prune_p, &constraints) {
+    match &constraints {
         // if is unsatisfiable return false, if always satisfiable return true
-        (_, SymExpression::Literal(Literal::Boolean(false))) => (prune_p, false),
-        (_, SymExpression::Literal(Literal::Boolean(true))) => (prune_p, true),
+        SymExpression::Literal(Literal::Boolean(false))=> (prune_p, false),
+        SymExpression::Literal(Literal::Boolean(true)) => (prune_p, true),
         // if p > random number between 0..100 then attempt to prune path and update p
-        (p, _) if p > rand::thread_rng().gen_range(0..=100) => {
+        _ if p > rand::thread_rng().gen_range(0..=100) => {
             match solver.verify_expr(&constraints, sym_memory, i){
                 // assumption is feasible
-                Some(res) =>  (u8::max(5, p - 5),
-                    true)
+                Some(_res) =>  (PruneProbability(u8::max(5, p - a), a), true)
                 ,
                 // assumption is infeasible
-                None => (u8::min(100, p + 10), false),
+                None => (PruneProbability(u8::min(100, p + a), a), false),
             }
         }
         // if either not proved or z3 is turned off we just return true and go on

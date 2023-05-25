@@ -1,5 +1,5 @@
 use crate::shared::panic_with_diagnostics;
-use core::panic;
+
 use std::fmt;
 use std::hash::Hash;
 /*

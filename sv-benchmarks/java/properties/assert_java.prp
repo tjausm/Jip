@@ -1,0 +1,1 @@
+Because Jip does not support property files we pass an empty one to satisfy Benchexec
