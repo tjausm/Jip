@@ -12,16 +12,17 @@ use crate::cfg::{generate_cfg, generate_dot_cfg};
 use crate::see::utils::*;
 use crate::shared::{Config, Timeout};
 use crate::shared::ExitCode;
-use crate::shared::{panic_with_diagnostics, Depth, Diagnostics, Error};
+use crate::shared::{panic_with_diagnostics, Depth, Diagnostics, CounterExample};
 use crate::smt_solver::SolverEnv;
 use crate::symbolic::expression::{PathConstraints, SymExpression, SymType};
 use crate::symbolic::memory::SymMemory;
 use crate::symbolic::ref_values::{EvaluatedRefs, IntervalMap, Reference, SymRefType};
 
 use colored::Colorize;
+
 use petgraph::stable_graph::NodeIndex;
 use petgraph::visit::EdgeRef;
-use predicates::path;
+
 use rustc_hash::FxHashSet;
 
 use core::fmt;
@@ -34,7 +35,7 @@ type Trace<'a> = Vec<&'a Node>;
 #[derive(Clone)]
 enum Verdict {
     True,
-    False(String),
+    False(CounterExample),
     Unknown,
 }
 
@@ -106,7 +107,7 @@ pub fn print_cfg(program: &str) -> (ExitCode, String) {
 }
 
 pub fn print_verification(program: &str, max_d: Option<Depth>, max_t :Option<Timeout>, config: &Config) -> (ExitCode, String) {
-    /// bench and verify program
+    // bench and verify program
     let now = Instant::now();
     let result = verify_program(program, max_d, max_t, config);
     let dur = now.elapsed();
@@ -142,11 +143,11 @@ pub fn print_verification(program: &str, max_d: Option<Depth>, max_t :Option<Tim
     match verdict {
         Verdict::True => (ExitCode::VerdictTrue, msg),
         Verdict::Unknown => (ExitCode::VerdictUnknown, msg),
-        Verdict::False(c) if c.is_empty() => {
+        Verdict::False(CounterExample(c)) if c.is_empty() => {
             msg.push_str(&format!("{}: no counter-example was generated, this can be caused by turning on heuristics or when a program is trivially invalid", "Warning".bold().on_yellow()));
             (ExitCode::VerdictFalse, msg)
         },  
-        Verdict::False(ce)  => {
+        Verdict::False(CounterExample(ce))  => {
             msg.push_str(&format!("{} {}", "\nCounter-example:".red().bold(), ce));
             (ExitCode::VerdictFalse, msg)
         },  
@@ -261,7 +262,7 @@ fn verify_program(
         solver_env.diagnostics.cfg_coverage.seen(curr_node);
 
         // check if we've reached time-out
-        if(max_t <= timeout.elapsed().as_secs() as i32){
+        if max_t <= timeout.elapsed().as_secs() as i32 {
             paths_unexplored = true;
             break;
         }
@@ -366,8 +367,8 @@ fn verify_program(
                         assertion,
                     ) {
                         Ok(_) => (),
-                        Err(Error::Other(err)) => return Err(err),
-                        Err(Error::Verification(ce)) => {
+                        
+                        Err(ce) => {
                             return Ok((solver_env.diagnostics, Verdict::False(ce)))
                         }
                     },
@@ -387,8 +388,8 @@ fn verify_program(
                             Ok(false) => {
                                 continue;
                             }
-                            Err(Error::Other(err)) => return Err(err),
-                            Err(Error::Verification(ce)) => {
+                            
+                            Err(ce) => {
                                 return Ok((solver_env.diagnostics, Verdict::False(ce)))
                             }
                         }
@@ -485,8 +486,8 @@ fn verify_program(
                                 Ok(Some(SymExpression::Reference(r))) => sym_memory
                                     .stack_insert(this_id.to_string(), SymExpression::Reference(r)),
                                 Ok(None) => continue 'q_edges,
-                                Err(Error::Other(err)) => return Err(err),
-                                Err(Error::Verification(ce)) => {
+                                
+                                Err(ce) => {
                                     return Ok((solver_env.diagnostics, Verdict::False(ce)))
                                 }
                                 _ => panic_with_diagnostics(
@@ -507,8 +508,8 @@ fn verify_program(
                             ) {
                                     Ok(Some(SymExpression::Reference(r))) => sym_memory.stack_insert(this_id.to_string(), SymExpression::Reference(r)),
                                     Ok(None) => continue 'q_edges,
-                                    Err(Error::Other(err)) => return Err(err),
-                                    Err(Error::Verification(ce)) => return Ok((solver_env.diagnostics, Verdict::False(ce))),
+                                    
+                                    Err(ce) => return Ok((solver_env.diagnostics, Verdict::False(ce))),
                                     _ => panic_with_diagnostics(&format!("Can't assign '{} this' because there is no reference at {}[{:?}]", class, arr_name, index), &sym_memory),
                                 };
                         }
@@ -536,8 +537,8 @@ fn verify_program(
                                         Some(r),
                                     )
                                     {
-                                        Err(Error::Verification(ce)) => return Ok((solver_env.diagnostics, Verdict::False(ce))),
-                                        Err(Error::Other(err)) => return Err(err),
+                                        Err(ce) => return Ok((solver_env.diagnostics, Verdict::False(ce))),
+                                        
                                         _ => (),
                                     };
                             }
@@ -553,8 +554,8 @@ fn verify_program(
                                         Some(r),
                                     )
                                     {
-                                        Err(Error::Verification(ce)) => return Ok((solver_env.diagnostics, Verdict::False(ce))),
-                                        Err(Error::Other(err)) => return Err(err),
+                                        Err(ce) => return Ok((solver_env.diagnostics, Verdict::False(ce))),
+                                        
                                         _ => (),
                                     };
                             }
@@ -601,8 +602,8 @@ fn verify_program(
                                     assertion,
                                 )
                                 {
-                                    Err(Error::Verification(ce)) => return Ok((solver_env.diagnostics, Verdict::False(ce))),
-                                    Err(Error::Other(err)) => return Err(err),
+                                    Err(ce) => return Ok((solver_env.diagnostics, Verdict::False(ce))),
+                                    
                                     _ => ()
                                 },
                                 // otherwise process we assume

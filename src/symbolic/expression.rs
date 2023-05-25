@@ -146,7 +146,7 @@ impl SymExpression {
                     sym_memory.clone(),
                 ))
             }
-            Expression::Exists(arr_name, index, value, expr) => todo!(),
+            Expression::Exists(_arr_name, _index, _value, _expr) => todo!(),
             Expression::Identifier(id) => match sym_memory.stack_get(&id) {
                 Some(sym_expr) => sym_expr,
                 _ => panic_with_diagnostics(&format!("{} was not declared", id), &sym_memory),
@@ -333,10 +333,10 @@ impl SymExpression {
                     (l_simple, r_simple) => {
                         match (Interval::infer(&l_simple, i), Interval::infer(&r_simple, i)) {
                             //check if intervals have no intersection
-                            (Interval(a, b), Interval(c, d)) if b < c => {
+                            (Interval(_a, b), Interval(c, _d)) if b < c => {
                                 SymExpression::Literal(Literal::Boolean(true))
                             }
-                            (Interval(a, b), Interval(c, d)) if d < a => {
+                            (Interval(a, _b), Interval(_c, d)) if d < a => {
                                 SymExpression::Literal(Literal::Boolean(false))
                             }
                             _ => SymExpression::LT(Box::new(l_simple), Box::new(r_simple)),
@@ -415,7 +415,7 @@ impl SymExpression {
             },
             SymExpression::Literal(_) => self,
             //evaluate point interval
-            SymExpression::FreeVariable(_, x) => match Interval::infer(&self, i) {
+            SymExpression::FreeVariable(_, _x) => match Interval::infer(&self, i) {
                 Interval(a, b) if a == b && a.is_finite() => {
                     SymExpression::Literal(Literal::Integer(a.finite().unwrap()))
                 }
@@ -423,7 +423,7 @@ impl SymExpression {
             },
             SymExpression::Reference(r) => match (r, eval_refs) {
                 (Reference::Evaluated(_), _) => self,
-                (Reference::Lazy { r, class }, Some(er)) if er.contains(r) => {
+                (Reference::Lazy { r, class: _ }, Some(er)) if er.contains(r) => {
                     SymExpression::Reference(Reference::Evaluated(*r))
                 }
                 _ => self,
@@ -487,7 +487,7 @@ impl Forall {
         );
         let index_id = SymExpression::FreeVariable(SymType::Int, index.clone());
 
-        let (sym_ty, arr, size_expr, _) = match current_memory.heap_get_unsafe(r) {
+        let (sym_ty, arr, _size_expr, _) = match current_memory.heap_get_unsafe(r) {
             ReferenceValue::Array(a) => a,
             _ => todo!(),
         };

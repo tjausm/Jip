@@ -8,7 +8,7 @@ use std::process::exit;
 use petgraph::stable_graph::NodeIndex;
 use rustc_hash::FxHashSet;
 
-use crate::cfg;
+
 /// Indicates if program is valid, counterexample was found or other error occured
 pub enum ExitCode {
     VerdictTrue = 0,
@@ -23,10 +23,7 @@ pub type Timeout = i32;
 pub type Feasible = bool;
 
 #[derive(Debug, Clone)]
-pub enum Error {
-    Verification(String),
-    Other(String),
-}
+pub struct CounterExample(pub String);
 
 /// Either has a scope id or None if we are at the entry scope of the program
 #[derive(Debug, Clone, PartialEq)]

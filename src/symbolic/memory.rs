@@ -4,9 +4,9 @@ use rustc_hash::FxHashMap;
 use std::fmt;
 
 use super::expression::{PathConstraints, SymExpression, SymType};
-use super::ref_values::{Array, EvaluatedRefs, IntervalMap, Reference, ReferenceValue, SymRefType};
+use super::ref_values::{EvaluatedRefs, IntervalMap, Reference, ReferenceValue, SymRefType};
 use crate::ast::*;
-use crate::shared::{panic_with_diagnostics, Error, Scope};
+use crate::shared::{panic_with_diagnostics, CounterExample, Scope};
 use crate::smt_solver::SolverEnv;
 
 #[derive(Debug, Clone)]
@@ -110,7 +110,7 @@ impl<'a> SymMemory {
         pc: &PathConstraints,
         i: &IntervalMap,
         eval_refs: &mut EvaluatedRefs,
-    ) -> Result<Option<ReferenceValue>, Error> {
+    ) -> Result<Option<ReferenceValue>, CounterExample> {
         let i = match r.get(solver, self, pc, i, eval_refs)? {
             Some(i) => i,
             None => return Ok(None),
@@ -133,7 +133,7 @@ impl<'a> SymMemory {
         pc: &PathConstraints,
         i: &IntervalMap,
         eval_refs: &mut EvaluatedRefs,
-    ) -> Result<Option<&mut ReferenceValue>, Error> {
+    ) -> Result<Option<&mut ReferenceValue>, CounterExample> {
         let i = match r.get(solver, self, pc, i, eval_refs)? {
             Some(i) => i,
             None => return Ok(None),
@@ -158,7 +158,7 @@ impl<'a> SymMemory {
         obj_name: &String,
         field_name: &'a String,
         var: Option<SymExpression>,
-    ) -> Result<Option<SymExpression>, Error> {
+    ) -> Result<Option<SymExpression>, CounterExample> {
         let r = match self.stack_get(obj_name) {
             Some(SymExpression::Reference(r)) => r,
             Some(otherwise) => panic_with_diagnostics(
@@ -220,9 +220,9 @@ impl<'a> SymMemory {
         arr_name: &Identifier,
         index: Expression,
         var: Option<SymExpression>,
-    ) -> Result<Option<SymExpression>, Error> {
+    ) -> Result<Option<SymExpression>, CounterExample> {
         //get information about array
-        let (r, size, is_lazy) = match self.stack_get(&arr_name){
+        let (_r, size, is_lazy) = match self.stack_get(&arr_name){
             Some(SymExpression::Reference(r)) => match self.heap_get(&r, solver, pc, i, eval_refs)?{
                 Some(ReferenceValue::Array((_, _, size_expr, is_lazy))) => (r, size_expr,  is_lazy),
                 None => return Ok(None),
@@ -234,7 +234,7 @@ impl<'a> SymMemory {
         // substitute index and try to simplify it to a literal using simplifier and / or z3
         // to prevent from values being indexed twice in the array
         let mut index = SymExpression::new(self, index);
-        if (solver.config.expression_evaluation) {
+        if solver.config.expression_evaluation {
             index = index.clone().eval(i, None);
         }
 
@@ -284,7 +284,7 @@ impl<'a> SymMemory {
             index_lt_size = index_lt_size.eval(i, None);
         };
 
-        match (index_lt_size) {
+        match index_lt_size {
             SymExpression::Literal(Literal::Boolean(true)) => (),
             _ => {
                 // add 'index < size' as inner most constraint of pc  '!(pc1 => (pc2 && index < size))'
@@ -299,7 +299,7 @@ impl<'a> SymMemory {
                 match solver.verify_expr(not_pc_implies_index_lt_size, &self, i) {
                     None => (),
                     Some(model) => {
-                        return Err(Error::Verification(format!(
+                        return Err(CounterExample(format!(
                             "Following input could access an array out of bounds:\n{:?}",
                             model
                         )));
@@ -400,7 +400,7 @@ impl<'a> SymMemory {
         for member in members {
             match member {
                 Member::Field((ty, field)) => match ty {
-                    (Type::Int) => {
+                    Type::Int => {
                         let field_name = format!("{:?}.{}", r, field);
 
                         fields.insert(

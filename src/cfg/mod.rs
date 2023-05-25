@@ -250,7 +250,7 @@ fn stmts_to_cfg<'a>(
                 let class = get_classname(&class_or_obj, &ty_stack);
                 let is_static = class.clone() == class_or_obj;
 
-                let (ty, _, _, _, _) = prog.get_methodcontent(&class, &method_name);
+                let (_ty, _, _, _, _) = prog.get_methodcontent(&class, &method_name);
 
                 // declare retval and if non-static declarethis
                 let append_actions = if is_static {
@@ -420,7 +420,7 @@ fn routine_to_cfg<'a>(
 
     // map this to class in the typestack
     let class_name = match &routine {
-        Routine::Method { class, method } => class,
+        Routine::Method { class, method: _ } => class,
         Routine::Constructor { class } => class,
     };
     ty_stack.insert("this".to_string(), prog.get_class(class_name).clone());
