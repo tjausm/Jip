@@ -37,7 +37,6 @@ pub enum SolverType {
     Yices2(String),
     CVC4(String),
     Z3Api,
-    Default,
 }
 
 /// tupple representing the prune probability and the adjustment rate

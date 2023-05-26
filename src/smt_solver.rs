@@ -101,41 +101,32 @@ impl SolverEnv<'_> {
     pub fn new<'ctx>(cfg_size: usize, config: &'ctx Config, ctx: &'ctx z3::Context) -> SolverEnv<'ctx> {
         let mut solver = match &config.solver_type {
             SolverType::Z3(arg) => {
-                let conf = rsmt2::SmtConf::z3(arg);
-                let solver = rsmt2::Solver::new(conf, Parser).unwrap();
+                let mut conf = rsmt2::SmtConf::z3(arg);
+                conf.models();
+                let mut solver = rsmt2::Solver::new(conf, Parser).unwrap();
+                solver.set_logic(rsmt2::Logic::QF_NIA).unwrap(); //set logic to quantifier free non-linear arithmetics
                 Solver::Rsmt2(solver)
             }
             SolverType::Yices2(arg) => {
                 let mut conf = rsmt2::SmtConf::yices_2(arg);
-                conf.option("--incremental"); //add support for scope popping and pushing from solver
-                conf.option("--interactive"); //add support for scope popping and pushing from solvercargo
-                let solver = rsmt2::Solver::new(conf, Parser).unwrap();
+                conf.models();
+                conf.option("--incremental"); // turn on scope popping and pushing
+                let mut solver = rsmt2::Solver::new(conf, Parser).unwrap();
+                solver.set_option(":print-success", "false").unwrap(); //turn off automatic succes printing in yices2
+                solver.produce_models().unwrap();
+                solver.set_logic(rsmt2::Logic::QF_NIA).unwrap(); //set logic to quantifier free non-linear arithmetics
                 Solver::Rsmt2(solver)
             }
             SolverType::CVC4(arg) => {
                 let mut conf = rsmt2::SmtConf::cvc4(arg);
-                conf.option("--incremental"); //add support for scope popping and pushing from solver
+                conf.models();
+                conf.option("--lang smt"); //turn on smt-lib2 lang support
                 conf.option("--rewrite-divk"); //add support for `div` and `mod` operators (not working)
-                let solver = rsmt2::Solver::new(conf, Parser).unwrap();
-                Solver::Rsmt2(solver)
-            }
-            SolverType::Default => {
-                let conf = rsmt2::SmtConf::default_z3();
-                let solver = rsmt2::Solver::new(conf, Parser).unwrap();
+                let mut solver = rsmt2::Solver::new(conf, Parser).unwrap();
+                solver.set_logic(rsmt2::Logic::QF_NIA).unwrap(); //set logic to quantifier free non-linear arithmetics
                 Solver::Rsmt2(solver)
             }
             SolverType::Z3Api => Solver::Z3Api(z3::Solver::new(&ctx)),
-        };
-
-        // configure rsmt2 solvers
-        match solver {
-            Solver::Rsmt2(mut s) => {
-                s.set_option(":print-success", "false").unwrap(); //turn off automatic succes printing in yices2
-                s.produce_models().unwrap();
-                s.set_logic(rsmt2::Logic::QF_NIA).unwrap(); //set logic to quantifier free non-linear arithmetics
-                solver = Solver::Rsmt2(s);
-            }
-            _ => (),
         };
 
         SolverEnv {

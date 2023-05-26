@@ -113,7 +113,7 @@ fn main() {
         (_, Some(arg), _, _) => SolverType::CVC4(arg),
         (_, _, Some(arg), _) => SolverType::Yices2(arg),
         (_, _, _, true) => SolverType::Z3Api,
-        (_, _, _, _) => SolverType::Default,
+        (_, _, _, _) => SolverType::Z3("z3".to_string()),
     };
 
     // attempt to load program, and exit with exitcode and error if fails
