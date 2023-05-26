@@ -119,9 +119,9 @@ impl SolverEnv<'_> {
             }
             SolverType::CVC4(arg) => {
                 let mut conf = rsmt2::SmtConf::cvc4(arg);
-                conf.option("-m"); //turn on smt-lib2 lang support
-                conf.option("--lang smt"); //turn on smt-lib2 lang support
+                conf.models(); 
                 conf.option("--rewrite-divk"); //add support for `div` and `mod` operators (not working)
+                conf.option("--incremental"); //add support for `div` and `mod` operators (not working)
                 let mut solver = rsmt2::Solver::new(conf, Parser).unwrap();
                 solver.set_logic(rsmt2::Logic::QF_NIA).unwrap(); //set logic to quantifier free non-linear arithmetics
                 Solver::Rsmt2(solver)
