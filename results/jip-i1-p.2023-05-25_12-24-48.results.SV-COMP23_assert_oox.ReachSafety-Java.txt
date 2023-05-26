@@ -87,3 +87,40 @@ MinePump/spec1-5_product8.yml                   false                           
 MinePump/spec1-5_product9.yml                   false                            0.19        0.54        None
 algorithms/BellmanFord-FunSat01.yml             TIMEOUT (true)                  20.30       42.54        None
 algorithms/BellmanFord-FunUnsat01.yml           false                            0.05        0.10        None
+algorithms/BellmanFord-MemSat01.yml             TIMEOUT (true)                  20.36       40.39        None
+algorithms/BellmanFord-MemUnsat01.yml           false                            0.03        0.06        None
+algorithms/BinaryTreeSearch-FunSat01.yml        TIMEOUT (true)                  20.36       40.55        None
+algorithms/BinaryTreeSearch-FunUnsat01.yml      false                            0.02        0.05        None
+algorithms/BinaryTreeSearch-MemSat01.yml        TIMEOUT (true)                  20.38       40.64        None
+algorithms/BinaryTreeSearch-MemUnsat01.yml      false                            0.03        0.06        None
+algorithms/BinaryTreeSearch-MemUnsat02.yml      false                            0.02        0.04        None
+algorithms/InsertionSort-FunSat01.yml           TIMEOUT (true)                  20.36       40.55        None
+algorithms/InsertionSort-FunSat02.yml           TIMEOUT (true)                  20.36       40.59        None
+algorithms/InsertionSort-FunUnsat01.yml         false                            0.03        0.07        None
+algorithms/InsertionSort-MemSat01.yml           TIMEOUT (true)                  20.36       40.56        None
+algorithms/InsertionSort-MemUnsat01.yml         false                            0.02        0.04        None
+algorithms/MergeSortIterative-FunSat01.yml      TIMEOUT (true)                  20.37       40.38        None
+algorithms/MergeSortIterative-FunSat02.yml      TIMEOUT (true)                  20.37       40.56        None
+algorithms/MergeSortIterative-FunUnsat01.yml    false                            0.42        0.83        None
+algorithms/MergeSortIterative-MemSat01.yml      TIMEOUT (true)                  20.37       40.58        None
+algorithms/MergeSortIterative-MemUnsat01.yml    false                            0.03        0.06        None
+algorithms/RedBlackTree-FunSat01.yml            TIMEOUT (true)                  20.37       40.50        None
+algorithms/RedBlackTree-FunUnsat01.yml          false                            0.07        0.12        None
+algorithms/RedBlackTree-MemSat01.yml            TIMEOUT (true)                  20.37       40.54        None
+algorithms/RedBlackTree-MemUnsat01.yml          false                            0.06        0.11        None
+algorithms/SortedListInsert-FunSat01.yml        TIMEOUT (true)                  20.45       39.91        None
+algorithms/SortedListInsert-FunSat02.yml        TIMEOUT (true)                  20.59       40.13        None
+algorithms/SortedListInsert-FunUnsat01.yml      false                            0.02        0.04        None
+algorithms/SortedListInsert-MemSat01.yml        TIMEOUT (true)                  20.48       39.36        None
+algorithms/SortedListInsert-MemUnsat01.yml      TIMEOUT (true)                  20.41       40.09        None
+-------------------------------------------------------------------------------------------------------------
+Run set 1                                       done                           701.55     1076.85           -
+
+Statistics:             81 Files
+  correct:              48
+    correct true:        3
+    correct false:      45
+  incorrect:             0
+    incorrect true:      0
+    incorrect false:     0
+  unknown:              33

@@ -1,0 +1,126 @@
+   BENCHMARK INFORMATION
+benchmark definition:    sv-benchmarks/jip-p.xml
+name:                    jip-p
+run sets:                SV-COMP23_assert_oox.ReachSafety-Java
+date:                    Thu, 2023-05-25 16:02:39 CEST
+tool:                    Jip jip 0.1.0
+tool executable:         ./jip
+options:
+resource limits:
+- memory:                5000.0 MB
+- time:                  20 s
+- cpu cores:             1
+hardware requirements:
+- cpu cores:             1
+- memory:                5000.0 MB
+------------------------------------------------------------
+
+   SYSTEM INFORMATION
+host:                    tjeerd
+os:                      Linux-5.19.0-42-generic-x86_64-with-glibc2.35
+cpu:                     Intel Core i7-4770K CPU @ 3.50GHz
+- cores:                 8
+- max frequency:         3900.0 MHz
+- turbo boost enabled:   True
+ram:                     16710.565888 MB
+------------------------------------------------------------
+
+
+
+SV-COMP23_assert_oox.ReachSafety-Java
+Run set 1 of 1 with options '-p' and propertyfile 'None'
+
+inputfile                                       status                       cpu time   wall time        host
+-------------------------------------------------------------------------------------------------------------
+jayhorn-recursive/Ackermann01.yml               false                            0.02        0.03        None
+jayhorn-recursive/Addition.yml                  TIMEOUT (true)                  21.08       21.08        None
+jayhorn-recursive/InfiniteLoop.yml              false                            0.02        0.03        None
+jayhorn-recursive/SatAckermann01.yml            TIMEOUT (true)                  21.10       21.11        None
+jayhorn-recursive/SatAckermann02.yml            TIMEOUT (true)                  21.11       21.11        None
+jayhorn-recursive/SatAckermann03.yml            TIMEOUT (true)                  21.10       21.11        None
+jayhorn-recursive/SatAddition01.yml             TIMEOUT (true)                  21.08       21.09        None
+jayhorn-recursive/SatEvenOdd01.yml              TIMEOUT (true)                  21.02       21.03        None
+jayhorn-recursive/SatFibonacci01.yml            TIMEOUT (true)                  21.11       21.11        None
+jayhorn-recursive/SatFibonacci02.yml            TIMEOUT (true)                  21.13       21.13        None
+jayhorn-recursive/SatFibonacci03.yml            TIMEOUT (true)                  21.11       21.12        None
+jayhorn-recursive/SatGcd.yml                    TIMEOUT (true)                  21.15       21.15        None
+jayhorn-recursive/SatHanoi01.yml                TIMEOUT (true)                  21.10       21.10        None
+jayhorn-recursive/SatMccarthy91.yml             TIMEOUT (true)                  21.16       21.17        None
+jayhorn-recursive/SatPrimes01.yml               TIMEOUT (true)                  21.12       21.13        None
+jayhorn-recursive/UnsatAckermann01.yml          false                            0.06        0.06        None
+jayhorn-recursive/UnsatAddition01.yml           false                            0.02        0.03        None
+jayhorn-recursive/UnsatAddition02.yml           false                            0.02        0.03        None
+jayhorn-recursive/UnsatEvenOdd01.yml            false                            0.02        0.03        None
+jayhorn-recursive/UnsatFibonacci01.yml          false                           15.89       15.89        None
+jayhorn-recursive/UnsatFibonacci02.yml          TIMEOUT (true)                  21.14       21.14        None
+jayhorn-recursive/UnsatMccarthy91.yml           false                            0.02        0.03        None
+MinePump/spec1-5_product1.yml                   TIMEOUT (true)                  21.05       21.05        None
+MinePump/spec1-5_product10.yml                  TIMEOUT (true)                  21.05       21.05        None
+MinePump/spec1-5_product11.yml                  TIMEOUT (true)                  21.05       21.06        None
+MinePump/spec1-5_product12.yml                  TIMEOUT (true)                  21.05       21.05        None
+MinePump/spec1-5_product13.yml                  TIMEOUT (true)                  21.05       21.05        None
+MinePump/spec1-5_product14.yml                  TIMEOUT (true)                  21.05       21.05        None
+MinePump/spec1-5_product15.yml                  TIMEOUT (true)                  21.05       21.05        None
+MinePump/spec1-5_product16.yml                  TIMEOUT (true)                  21.05       21.05        None
+MinePump/spec1-5_product2.yml                   TIMEOUT (true)                  21.05       21.05        None
+MinePump/spec1-5_product3.yml                   TIMEOUT (true)                  21.05       21.05        None
+MinePump/spec1-5_product4.yml                   TIMEOUT (true)                  21.05       21.05        None
+MinePump/spec1-5_product48.yml                  TIMEOUT (true)                  21.05       21.05        None
+MinePump/spec1-5_product49.yml                  TIMEOUT (true)                  21.05       21.05        None
+MinePump/spec1-5_product5.yml                   TIMEOUT (true)                  21.05       21.05        None
+MinePump/spec1-5_product50.yml                  TIMEOUT (true)                  21.05       21.05        None
+MinePump/spec1-5_product51.yml                  TIMEOUT (true)                  21.05       21.05        None
+MinePump/spec1-5_product52.yml                  TIMEOUT (true)                  21.05       21.05        None
+MinePump/spec1-5_product53.yml                  TIMEOUT (true)                  21.05       21.05        None
+MinePump/spec1-5_product54.yml                  TIMEOUT (true)                  21.05       21.05        None
+MinePump/spec1-5_product55.yml                  TIMEOUT (true)                  21.05       21.05        None
+MinePump/spec1-5_product56.yml                  TIMEOUT (true)                  21.05       21.05        None
+MinePump/spec1-5_product59.yml                  TIMEOUT (true)                  21.05       21.05        None
+MinePump/spec1-5_product6.yml                   TIMEOUT (true)                  21.05       21.05        None
+MinePump/spec1-5_product60.yml                  TIMEOUT (true)                  21.05       21.05        None
+MinePump/spec1-5_product61.yml                  TIMEOUT (true)                  21.05       21.05        None
+MinePump/spec1-5_product62.yml                  TIMEOUT (true)                  21.05       21.05        None
+MinePump/spec1-5_product63.yml                  TIMEOUT (true)                  21.05       21.05        None
+MinePump/spec1-5_product64.yml                  TIMEOUT (true)                  21.05       21.05        None
+MinePump/spec1-5_product7.yml                   TIMEOUT (true)                  21.05       21.05        None
+MinePump/spec1-5_product8.yml                   TIMEOUT (true)                  21.05       21.05        None
+MinePump/spec1-5_product9.yml                   TIMEOUT (true)                  21.05       21.05        None
+algorithms/BellmanFord-FunSat01.yml             TIMEOUT (true)                  21.10       21.10        None
+algorithms/BellmanFord-FunUnsat01.yml           false                            3.02        3.02        None
+algorithms/BellmanFord-MemSat01.yml             TIMEOUT (true)                  21.10       21.10        None
+algorithms/BellmanFord-MemUnsat01.yml           false                            0.06        0.07        None
+algorithms/BinaryTreeSearch-FunSat01.yml        TIMEOUT (true)                  21.07       21.08        None
+algorithms/BinaryTreeSearch-FunUnsat01.yml      false                            0.03        0.03        None
+algorithms/BinaryTreeSearch-MemSat01.yml        TIMEOUT (true)                  21.06       21.06        None
+algorithms/BinaryTreeSearch-MemUnsat01.yml      false                            0.03        0.04        None
+algorithms/BinaryTreeSearch-MemUnsat02.yml      false                            0.03        0.03        None
+algorithms/InsertionSort-FunSat01.yml           TIMEOUT (true)                  21.04       21.04        None
+algorithms/InsertionSort-FunSat02.yml           TIMEOUT (true)                  21.02       21.02        None
+algorithms/InsertionSort-FunUnsat01.yml         false                            0.18        0.19        None
+algorithms/InsertionSort-MemSat01.yml           TIMEOUT (true)                  21.04       21.04        None
+algorithms/InsertionSort-MemUnsat01.yml         false                            0.03        0.04        None
+algorithms/MergeSortIterative-FunSat01.yml      TIMEOUT (true)                  21.10       21.10        None
+algorithms/MergeSortIterative-FunSat02.yml      TIMEOUT (true)                  21.08       21.09        None
+algorithms/MergeSortIterative-FunUnsat01.yml    TIMEOUT (true)                  21.09       21.10        None
+algorithms/MergeSortIterative-MemSat01.yml      TIMEOUT (true)                  21.09       21.09        None
+algorithms/MergeSortIterative-MemUnsat01.yml    unknown                          0.03        0.03        None
+algorithms/RedBlackTree-FunSat01.yml            TIMEOUT (true)                  21.02       21.02        None
+algorithms/RedBlackTree-FunUnsat01.yml          false                            0.06        0.06        None
+algorithms/RedBlackTree-MemSat01.yml            TIMEOUT (true)                  21.02       21.02        None
+algorithms/RedBlackTree-MemUnsat01.yml          false                            0.06        0.06        None
+algorithms/SortedListInsert-FunSat01.yml        TIMEOUT (true)                  21.06       21.06        None
+algorithms/SortedListInsert-FunSat02.yml        TIMEOUT (true)                  21.05       21.05        None
+algorithms/SortedListInsert-FunUnsat01.yml      false                            0.03        0.04        None
+algorithms/SortedListInsert-MemSat01.yml        TIMEOUT (true)                  21.05       21.06        None
+algorithms/SortedListInsert-MemUnsat01.yml      TIMEOUT (true)                  21.05       21.06        None
+-------------------------------------------------------------------------------------------------------------
+Run set 1                                       done                          1326.64     1340.45           -
+
+Statistics:             81 Files
+  correct:              18
+    correct true:        0
+    correct false:      18
+  incorrect:             0
+    incorrect true:      0
+    incorrect false:     0
+  unknown:              63

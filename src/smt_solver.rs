@@ -119,7 +119,7 @@ impl SolverEnv<'_> {
             }
             SolverType::CVC4(arg) => {
                 let mut conf = rsmt2::SmtConf::cvc4(arg);
-                conf.models();
+                conf.option("-m"); //turn on smt-lib2 lang support
                 conf.option("--lang smt"); //turn on smt-lib2 lang support
                 conf.option("--rewrite-divk"); //add support for `div` and `mod` operators (not working)
                 let mut solver = rsmt2::Solver::new(conf, Parser).unwrap();
@@ -538,6 +538,11 @@ fn expr_to_dynamic<'ctx, 'a>(
     i: &IntervalMap,
 ) -> (FreeVariables, z3::ast::Dynamic<'ctx>) {
     match expr {
+        SymExpression::Forall(forall) => {
+            let forall_expr = forall.construct(sym_memory);
+            let (fv, ast) = expr_to_bool(ctx,&forall_expr, sym_memory, i);
+            return (fv, z3::ast::Dynamic::from(ast))
+        }
         SymExpression::And(l_expr, r_expr) => {
             let (mut fv_l, l) = expr_to_bool(ctx, l_expr, sym_memory, i);
             let (fv_r, r) = expr_to_bool(ctx, r_expr, sym_memory, i);

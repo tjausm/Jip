@@ -13,7 +13,7 @@ class Main {
   }
 
   static void main(int x) {
-    if (x > 46 || x == -2147483648) {
+    if (x > 46 || x == -364) {
       return;
     };
     int result := Main.fibonacci(x);
