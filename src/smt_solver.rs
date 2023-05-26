@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use std::str::FromStr;
 use z3;
 type Formula = String;
-type Declarations = FxHashSet<(SymType, String)>;
+type FreeVariables = FxHashSet<(SymType, String)>;
 type Assertions = FxHashSet<String>;
 
 #[derive(Clone)]
@@ -157,7 +157,6 @@ impl SolverEnv<'_> {
             Solver::Rsmt2(solver) => SolverEnv::verify_with_rsmt2(
                 &self.config,
                 solver,
-                &mut self.formula_cache,
                 expr,
                 sym_memory,
                 i,
@@ -165,7 +164,6 @@ impl SolverEnv<'_> {
             Solver::Z3Api(solver) => SolverEnv::verify_with_z3api(
                 &self.config,
                 solver,
-                &mut self.formula_cache,
                 expr,
                 sym_memory,
                 i,
@@ -176,7 +174,6 @@ impl SolverEnv<'_> {
     fn verify_with_rsmt2(
         config: &Config,
         solver: &mut rsmt2::Solver<Parser>,
-        formula_cache: &mut FormulaCache,
         expr: &SymExpression,
         sym_memory: &SymMemory,
         i: &IntervalMap,
@@ -239,18 +236,8 @@ impl SolverEnv<'_> {
                     panic_with_diagnostics(&format!("Error during model parsing: {:?}", err), &())
                 }
             };
-
-            // update formula cache and return
-            let res = Some(Model(model));
-            if config.formula_caching {
-                formula_cache.insert(expr.clone(), res.clone());
-            };
-            res
+            Some(Model(model))
         } else {
-            // update formula cache and return
-            if config.formula_caching {
-                formula_cache.insert(expr.clone(), None);
-            };
             None
         }
     }
@@ -258,19 +245,32 @@ impl SolverEnv<'_> {
     fn verify_with_z3api(
         config: &Config,
         solver: &mut z3::Solver,
-        formula_cache: &mut FormulaCache,
         expr: &SymExpression,
         sym_memory: &SymMemory,
         i: &IntervalMap,
     ) -> Option<Model> {
         solver.push();
-        let ast = expr_to_bool(solver.get_context(), expr, sym_memory, i);
+        let (vars, ast) = expr_to_bool(solver.get_context(), expr, sym_memory, i);
 
         if config.verbose {
             println!("\nInvoking z3");
             println!("SymExpression: {:?}", &expr);
 
             println!("    Formula: {:?}\n", ast);
+        }
+
+        // encode intervals in z3
+        for (id,Interval(a,b)) in &i.0 {
+            if let Infinitable::Finite(a) = a {
+                let a_leq_id = SymExpression::LEQ(Box::new((SymExpression::Literal(Literal::Integer(*a)))), Box::new(SymExpression::FreeVariable(SymType::Int, id.clone())));
+                let (_, a_leq_id_ast) = expr_to_bool(solver.get_context(), &a_leq_id, sym_memory, i);
+                solver.assert(&a_leq_id_ast);
+            }
+            if let Infinitable::Finite(b) = b {
+                let id_leq_b = SymExpression::LEQ(Box::new(SymExpression::FreeVariable(SymType::Int, id.clone())), Box::new((SymExpression::Literal(Literal::Integer(*b)))));
+                let (_, id_leq_b_ast) = expr_to_bool(solver.get_context(), &id_leq_b, sym_memory, i);
+                solver.assert(&id_leq_b_ast);
+            }
         }
 
         solver.assert(&ast);
@@ -284,12 +284,35 @@ impl SolverEnv<'_> {
                 ),
                 &(),
             ),
-            z3::SatResult::Sat => Some(Model(vec![])),
+    
+            
+            // If satisfiable, retreive values from z3 model
+            z3::SatResult::Sat => { 
+                let z3_model = solver.get_model().unwrap();
+                let mut model = vec![];
+                for (ty, id) in vars {
+                    match ty {
+                        SymType::Int => {
+                            let ast = z3::ast::Int::new_const(&solver.get_context(), id.clone());
+                            let value = z3_model.eval(&ast, true).unwrap().as_i64().unwrap();
+                            model.push((id.clone(), Literal::Integer(value)));
+                        }
+                        SymType::Bool => {
+                            let ast = z3::ast::Bool::new_const(&solver.get_context(), id.clone());
+                            let value = z3_model.eval(&ast, true).unwrap().as_bool().unwrap();
+                            model.push((id.clone(), Literal::Boolean(value)));
+                        },
+                        SymType::Ref(_) => {
+                            let ast = z3::ast::Int::new_const(&solver.get_context(), id.clone());
+                            let value = z3_model.eval(&ast, true).unwrap().as_i64().unwrap();
+                            model.push((id.clone(), Literal::Integer(value)));
+                        }
+                    };
+                }
+                Some(Model(model))
+            }
         };
         solver.pop(1);
-        if config.formula_caching {
-            formula_cache.insert(expr.clone(), res.clone());
-        };
         res
     }
 }
@@ -312,7 +335,7 @@ fn expr_to_smtlib<'a>(
     expr: &SymExpression,
     sym_memory: &SymMemory,
     i: &IntervalMap,
-) -> (Formula, Declarations, Assertions) {
+) -> (Formula, FreeVariables, Assertions) {
     match expr {
         SymExpression::Forall(forall) => {
             let forall_expr = forall.construct(sym_memory);
@@ -492,8 +515,9 @@ fn expr_to_int<'ctx, 'a>(
     expr: &'a SymExpression,
     sym_memory: &SymMemory,
     i: &IntervalMap,
-) -> z3::ast::Int<'ctx> {
-    return unwrap_as_int(expr_to_dynamic(&ctx, expr, sym_memory, i));
+) -> (FreeVariables, z3::ast::Int<'ctx>) {
+    let (fv, ast) = expr_to_dynamic(&ctx, expr, sym_memory, i);
+    return (fv, unwrap_as_int(ast));
 }
 
 /// returns an expression as a Bool ast in z3's c++ api
@@ -502,8 +526,9 @@ fn expr_to_bool<'ctx, 'a>(
     expr: &'a SymExpression,
     sym_memory: &SymMemory,
     i: &IntervalMap,
-) -> z3::ast::Bool<'ctx> {
-    return unwrap_as_bool(expr_to_dynamic(&ctx, expr, sym_memory, i));
+) -> (FreeVariables, z3::ast::Bool<'ctx>) {
+    let (fv, ast) = expr_to_dynamic(&ctx, expr, sym_memory, i);
+    return (fv, unwrap_as_bool(ast));
 }
 
 fn expr_to_dynamic<'ctx, 'a>(
@@ -511,116 +536,162 @@ fn expr_to_dynamic<'ctx, 'a>(
     expr: &'a SymExpression,
     sym_memory: &SymMemory,
     i: &IntervalMap,
-) -> z3::ast::Dynamic<'ctx> {
+) -> (FreeVariables, z3::ast::Dynamic<'ctx>) {
     match expr {
         SymExpression::And(l_expr, r_expr) => {
-            let l = expr_to_bool(ctx, l_expr, sym_memory, i);
-            let r = expr_to_bool(ctx, r_expr, sym_memory, i);
-
-            return z3::ast::Dynamic::from(z3::ast::Bool::and(ctx, &[&l, &r]));
+            let (mut fv_l, l) = expr_to_bool(ctx, l_expr, sym_memory, i);
+            let (fv_r, r) = expr_to_bool(ctx, r_expr, sym_memory, i);
+            fv_l.extend(fv_r);
+            return (
+                fv_l,
+                z3::ast::Dynamic::from(z3::ast::Bool::and(ctx, &[&l, &r])),
+            );
         }
         SymExpression::Or(l_expr, r_expr) => {
-            let l = expr_to_bool(ctx, l_expr, sym_memory, i);
-            let r = expr_to_bool(ctx, r_expr, sym_memory, i);
+            let (mut fv_l, l) = expr_to_bool(ctx, l_expr, sym_memory, i);
+            let (fv_r, r) = expr_to_bool(ctx, r_expr, sym_memory, i);
 
-            return z3::ast::Dynamic::from(z3::ast::Bool::or(ctx, &[&l, &r]));
+            fv_l.extend(fv_r);
+            return (
+                fv_l,
+                z3::ast::Dynamic::from(z3::ast::Bool::or(ctx, &[&l, &r])),
+            );
         }
         SymExpression::Implies(l_expr, r_expr) => {
-            let l = expr_to_bool(ctx, l_expr, sym_memory, i);
-            let r = expr_to_bool(ctx, r_expr, sym_memory, i);
+            let (mut fv_l, l) = expr_to_bool(ctx, l_expr, sym_memory, i);
+            let (fv_r, r) = expr_to_bool(ctx, r_expr, sym_memory, i);
 
-            return z3::ast::Dynamic::from(l.implies(&r));
+            fv_l.extend(fv_r);
+            return (fv_l, z3::ast::Dynamic::from(l.implies(&r)));
         }
         SymExpression::EQ(l_expr, r_expr) => {
-            let l = expr_to_dynamic(ctx, l_expr, sym_memory, i);
-            let r = expr_to_dynamic(ctx, r_expr, sym_memory, i);
+            let (mut fv_l, l) = expr_to_dynamic(ctx, l_expr, sym_memory, i);
+            let (fv_r, r) = expr_to_dynamic(ctx, r_expr, sym_memory, i);
 
-            return z3::ast::Dynamic::from(z3::ast::Ast::_eq(&l, &r));
+            fv_l.extend(fv_r);
+            return (fv_l, z3::ast::Dynamic::from(z3::ast::Ast::_eq(&l, &r)));
         }
         SymExpression::NE(l_expr, r_expr) => {
-            let l = expr_to_dynamic(ctx, l_expr, sym_memory, i);
-            let r = expr_to_dynamic(ctx, r_expr, sym_memory, i);
+            let (mut fv_l, l) = expr_to_dynamic(ctx, l_expr, sym_memory, i);
+            let (fv_r, r) = expr_to_dynamic(ctx, r_expr, sym_memory, i);
 
-            return z3::ast::Dynamic::from(z3::ast::Ast::_eq(&l, &r).not());
+            fv_l.extend(fv_r);
+            return (
+                fv_l,
+                z3::ast::Dynamic::from(z3::ast::Ast::_eq(&l, &r).not()),
+            );
         }
         SymExpression::LT(l_expr, r_expr) => {
-            let l = expr_to_int(ctx, l_expr, sym_memory, i);
-            let r = expr_to_int(ctx, r_expr, sym_memory, i);
+            let (mut fv_l, l) = expr_to_int(ctx, l_expr, sym_memory, i);
+            let (fv_r, r) = expr_to_int(ctx, r_expr, sym_memory, i);
 
-            return z3::ast::Dynamic::from(l.lt(&r));
+            fv_l.extend(fv_r);
+            return (fv_l, z3::ast::Dynamic::from(l.lt(&r)));
         }
         SymExpression::GT(l_expr, r_expr) => {
-            let l = expr_to_int(ctx, l_expr, sym_memory, i);
-            let r = expr_to_int(ctx, r_expr, sym_memory, i);
+            let (mut fv_l, l) = expr_to_int(ctx, l_expr, sym_memory, i);
+            let (fv_r, r) = expr_to_int(ctx, r_expr, sym_memory, i);
 
-            return z3::ast::Dynamic::from(l.gt(&r));
+            fv_l.extend(fv_r);
+            return (fv_l, z3::ast::Dynamic::from(l.gt(&r)));
         }
         SymExpression::GEQ(l_expr, r_expr) => {
-            let l = expr_to_int(ctx, l_expr, sym_memory, i);
-            let r = expr_to_int(ctx, r_expr, sym_memory, i);
+            let (mut fv_l, l) = expr_to_int(ctx, l_expr, sym_memory, i);
+            let (fv_r, r) = expr_to_int(ctx, r_expr, sym_memory, i);
 
-            return z3::ast::Dynamic::from(l.ge(&r));
+            fv_l.extend(fv_r);
+            return (fv_l, z3::ast::Dynamic::from(l.ge(&r)));
         }
         SymExpression::LEQ(l_expr, r_expr) => {
-            let l = expr_to_int(ctx, l_expr, sym_memory, i);
-            let r = expr_to_int(ctx, r_expr, sym_memory, i);
+            let (mut fv_l, l) = expr_to_int(ctx, l_expr, sym_memory, i);
+            let (fv_r, r) = expr_to_int(ctx, r_expr, sym_memory, i);
 
-            return z3::ast::Dynamic::from(l.le(&r));
+            fv_l.extend(fv_r);
+            return (fv_l, z3::ast::Dynamic::from(l.le(&r)));
         }
         SymExpression::Plus(l_expr, r_expr) => {
-            let l = expr_to_int(ctx, l_expr, sym_memory, i);
-            let r = expr_to_int(ctx, r_expr, sym_memory, i);
+            let (mut fv_l, l) = expr_to_int(ctx, l_expr, sym_memory, i);
+            let (fv_r, r) = expr_to_int(ctx, r_expr, sym_memory, i);
 
-            return z3::ast::Dynamic::from(z3::ast::Int::add(&ctx, &[&l, &r]));
+            fv_l.extend(fv_r);
+            return (
+                fv_l,
+                z3::ast::Dynamic::from(z3::ast::Int::add(&ctx, &[&l, &r])),
+            );
         }
         SymExpression::Minus(l_expr, r_expr) => {
-            let l = expr_to_int(ctx, l_expr, sym_memory, i);
-            let r = expr_to_int(ctx, r_expr, sym_memory, i);
+            let (mut fv_l, l) = expr_to_int(ctx, l_expr, sym_memory, i);
+            let (fv_r, r) = expr_to_int(ctx, r_expr, sym_memory, i);
 
-            return z3::ast::Dynamic::from(z3::ast::Int::sub(&ctx, &[&l, &r]));
+            fv_l.extend(fv_r);
+            return (
+                fv_l,
+                z3::ast::Dynamic::from(z3::ast::Int::sub(&ctx, &[&l, &r])),
+            );
         }
         SymExpression::Multiply(l_expr, r_expr) => {
-            let l = expr_to_int(ctx, l_expr, sym_memory, i);
-            let r = expr_to_int(ctx, r_expr, sym_memory, i);
+            let (mut fv_l, l) = expr_to_int(ctx, l_expr, sym_memory, i);
+            let (fv_r, r) = expr_to_int(ctx, r_expr, sym_memory, i);
 
-            return z3::ast::Dynamic::from(z3::ast::Int::mul(&ctx, &[&l, &r]));
+            fv_l.extend(fv_r);
+            return (
+                fv_l,
+                z3::ast::Dynamic::from(z3::ast::Int::mul(&ctx, &[&l, &r])),
+            );
         }
         SymExpression::Divide(l_expr, r_expr) => {
-            let l = expr_to_int(ctx, l_expr, sym_memory, i);
-            let r = expr_to_int(ctx, r_expr, sym_memory, i);
+            let (mut fv_l, l) = expr_to_int(ctx, l_expr, sym_memory, i);
+            let (fv_r, r) = expr_to_int(ctx, r_expr, sym_memory, i);
 
-            return z3::ast::Dynamic::from(l.div(&r));
+            fv_l.extend(fv_r);
+            return (fv_l, z3::ast::Dynamic::from(l.div(&r)));
         }
         SymExpression::Mod(l_expr, r_expr) => {
-            let l = expr_to_int(ctx, l_expr, sym_memory, i);
-            let r = expr_to_int(ctx, r_expr, sym_memory, i);
+            let (mut fv_l, l) = expr_to_int(ctx, l_expr, sym_memory, i);
+            let (fv_r, r) = expr_to_int(ctx, r_expr, sym_memory, i);
 
-            return z3::ast::Dynamic::from(l.modulo(&r));
+            fv_l.extend(fv_r);
+            return (fv_l, z3::ast::Dynamic::from(l.modulo(&r)));
         }
         SymExpression::Negative(expr) => {
-            let e = expr_to_int(ctx, expr, sym_memory, i);
+            let (fv, expr) = expr_to_int(ctx, expr, sym_memory, i);
 
-            return z3::ast::Dynamic::from(e.unary_minus());
+            return (fv, z3::ast::Dynamic::from(expr.unary_minus()));
         }
         SymExpression::Not(expr) => {
-            let expr = expr_to_bool(ctx, expr, sym_memory, i);
-
-            return z3::ast::Dynamic::from(expr.not());
+            let (fv, expr) = expr_to_bool(ctx, expr, sym_memory, i);
+            return (fv, z3::ast::Dynamic::from(expr.not()));
         }
-        SymExpression::FreeVariable(ty, id) => match ty {
-            SymType::Bool => z3::ast::Dynamic::from(z3::ast::Bool::new_const(ctx, id.clone())),
-            SymType::Int => z3::ast::Dynamic::from(z3::ast::Int::new_const(ctx, id.clone())),
-            SymType::Ref(_) => z3::ast::Dynamic::from(z3::ast::Int::new_const(ctx, id.clone())),
-        },
-        SymExpression::Literal(Literal::Integer(n)) => {
-            z3::ast::Dynamic::from(z3::ast::Int::from_i64(ctx, *n))
+        SymExpression::FreeVariable(ty, id) => {
+            let mut fv = FxHashSet::default();
+            fv.insert((ty.clone(), id.clone()));
+            match ty {
+                SymType::Bool => (
+                    fv,
+                    z3::ast::Dynamic::from(z3::ast::Bool::new_const(ctx, id.clone())),
+                ),
+                SymType::Int => (
+                    fv,
+                    z3::ast::Dynamic::from(z3::ast::Int::new_const(ctx, id.clone())),
+                ),
+                SymType::Ref(_) => (
+                    fv,
+                    z3::ast::Dynamic::from(z3::ast::Int::new_const(ctx, id.clone())),
+                ),
+            }
         }
-        SymExpression::Literal(Literal::Boolean(b)) => {
-            z3::ast::Dynamic::from(z3::ast::Bool::from_bool(ctx, *b))
-        }
-        SymExpression::Reference(r) => {
-            z3::ast::Dynamic::from(z3::ast::Int::from_i64(ctx, r.get_unsafe().into()))
-        }
+        SymExpression::Literal(Literal::Integer(n)) => (
+            FxHashSet::default(),
+            z3::ast::Dynamic::from(z3::ast::Int::from_i64(ctx, *n)),
+        ),
+        SymExpression::Literal(Literal::Boolean(b)) => (
+            FxHashSet::default(),
+            z3::ast::Dynamic::from(z3::ast::Bool::from_bool(ctx, *b)),
+        ),
+        SymExpression::Reference(r) => (
+            FxHashSet::default(),
+            z3::ast::Dynamic::from(z3::ast::Int::from_i64(ctx, r.get_unsafe().into())),
+        ),
         otherwise => {
             panic_with_diagnostics(
                 &format!(
