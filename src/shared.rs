@@ -48,6 +48,7 @@ pub struct Config {
     pub expression_evaluation: bool,
     pub infer_size: i8,
     pub symbolic_array_size: Option<i64>,
+    pub equivalent_formula_caching: bool,
     pub formula_caching: bool,
     pub prune_probability: PruneProbability,
     pub solver_type: SolverType,
@@ -62,6 +63,7 @@ pub struct Diagnostics {
     pub paths_explored: i32,
     pub smt_calls: i32,
     pub cfg_coverage: CFGCoverage ,
+    pub eq_cache_hits: i32,
     pub cache_hits: i32
 }
 
@@ -100,7 +102,8 @@ impl Diagnostics {
             paths_explored: 0,
             smt_calls: 0,
             cfg_coverage: CFGCoverage::new(cfg_total_nodes),
-            cache_hits: 0
+            eq_cache_hits: 0,
+            cache_hits: 0,
         };
     }
 

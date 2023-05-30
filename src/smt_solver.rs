@@ -9,7 +9,7 @@ use core::fmt;
 use infinitable::Infinitable;
 use rsmt2;
 use rsmt2::print::ModelParser;
-use rustc_hash::FxHashSet;
+use rustc_hash::{FxHashMap, FxHashSet};
 use std::collections::HashMap;
 use std::str::FromStr;
 use z3;
@@ -75,7 +75,8 @@ impl<'a> ModelParser<String, SymType, (Identifier, Literal), &'a str> for Parser
     }
 }
 
-type FormulaCache = HashMap<SymExpression, Option<Model>>;
+type EquivalentFormulaCache = HashMap<SymExpression, Option<Model>>;
+type FormulaCache = FxHashMap<SymExpression, Option<Model>>;
 
 enum Solver<'a> {
     Rsmt2(rsmt2::Solver<Parser>),
@@ -85,6 +86,7 @@ enum Solver<'a> {
 pub struct SolverEnv<'a> {
     solver: Solver<'a>,
     formula_cache: FormulaCache,
+    equivalent_formula_cache: EquivalentFormulaCache,
     pub config: Config,
     pub diagnostics: Diagnostics,
 }
@@ -98,7 +100,11 @@ impl SolverEnv<'_> {
 
     /// Creates a new solver using the configured backend.
     /// For both Yices and Cvc we pas a set of flags to make them work with the rust interface
-    pub fn new<'ctx>(cfg_size: usize, config: &'ctx Config, ctx: &'ctx z3::Context) -> SolverEnv<'ctx> {
+    pub fn new<'ctx>(
+        cfg_size: usize,
+        config: &'ctx Config,
+        ctx: &'ctx z3::Context,
+    ) -> SolverEnv<'ctx> {
         let mut solver = match &config.solver_type {
             SolverType::Z3(arg) => {
                 let mut conf = rsmt2::SmtConf::z3(arg);
@@ -119,7 +125,7 @@ impl SolverEnv<'_> {
             }
             SolverType::CVC4(arg) => {
                 let mut conf = rsmt2::SmtConf::cvc4(arg);
-                conf.models(); 
+                conf.models();
                 conf.option("--rewrite-divk"); //add support for `div` and `mod` operators (not working)
                 conf.option("--incremental"); //add support for `div` and `mod` operators (not working)
                 let mut solver = rsmt2::Solver::new(conf, Parser).unwrap();
@@ -131,7 +137,8 @@ impl SolverEnv<'_> {
 
         SolverEnv {
             solver,
-            formula_cache: HashMap::default(),
+            equivalent_formula_cache: HashMap::default(),
+            formula_cache: FxHashMap::default(),
             config: config.clone(),
             diagnostics: Diagnostics::new(cfg_size),
         }
@@ -144,31 +151,43 @@ impl SolverEnv<'_> {
         sym_memory: &SymMemory,
         i: &IntervalMap,
     ) -> Option<Model> {
+
         // check formula cache
         if self.config.formula_caching {
             match self.formula_cache.get(expr) {
-                Some(res) => return res.clone(),
+                Some(res) => {
+                    self.diagnostics.cache_hits += 1;
+                    return res.clone()},
+                None => (),
+            };
+        } else if self.config.equivalent_formula_caching {
+            match self.equivalent_formula_cache.get(expr) {
+                Some(res) => {
+                    self.diagnostics.eq_cache_hits += 1;
+                    return res.clone()},
                 None => (),
             };
         };
 
+        // solve using chosen backend
         self.diagnostics.smt_calls += 1;
-        match &mut self.solver {
-            Solver::Rsmt2(solver) => SolverEnv::verify_with_rsmt2(
-                &self.config,
-                solver,
-                expr,
-                sym_memory,
-                i,
-            ),
-            Solver::Z3Api(solver) => SolverEnv::verify_with_z3api(
-                &self.config,
-                solver,
-                expr,
-                sym_memory,
-                i,
-            ),
-        }
+        let res = match &mut self.solver {
+            Solver::Rsmt2(solver) => {
+                SolverEnv::verify_with_rsmt2(&self.config, solver, expr, sym_memory, i)
+            }
+            Solver::Z3Api(solver) => {
+                SolverEnv::verify_with_z3api(&self.config, solver, expr, sym_memory, i)
+            }
+        };
+
+        // update formula cache
+        if self.config.formula_caching {
+            self.formula_cache.insert(expr.clone(), res.clone());
+        } else if self.config.equivalent_formula_caching {
+            self.equivalent_formula_cache
+                .insert(expr.clone(), res.clone());
+        };
+        res
     }
 
     fn verify_with_rsmt2(
@@ -260,15 +279,23 @@ impl SolverEnv<'_> {
         }
 
         // encode intervals in z3
-        for (id,Interval(a,b)) in &i.0 {
+        for (id, Interval(a, b)) in &i.0 {
             if let Infinitable::Finite(a) = a {
-                let a_leq_id = SymExpression::LEQ(Box::new((SymExpression::Literal(Literal::Integer(*a)))), Box::new(SymExpression::FreeVariable(SymType::Int, id.clone())));
-                let (_, a_leq_id_ast) = expr_to_bool(solver.get_context(), &a_leq_id, sym_memory, i);
+                let a_leq_id = SymExpression::LEQ(
+                    Box::new((SymExpression::Literal(Literal::Integer(*a)))),
+                    Box::new(SymExpression::FreeVariable(SymType::Int, id.clone())),
+                );
+                let (_, a_leq_id_ast) =
+                    expr_to_bool(solver.get_context(), &a_leq_id, sym_memory, i);
                 solver.assert(&a_leq_id_ast);
             }
             if let Infinitable::Finite(b) = b {
-                let id_leq_b = SymExpression::LEQ(Box::new(SymExpression::FreeVariable(SymType::Int, id.clone())), Box::new((SymExpression::Literal(Literal::Integer(*b)))));
-                let (_, id_leq_b_ast) = expr_to_bool(solver.get_context(), &id_leq_b, sym_memory, i);
+                let id_leq_b = SymExpression::LEQ(
+                    Box::new(SymExpression::FreeVariable(SymType::Int, id.clone())),
+                    Box::new((SymExpression::Literal(Literal::Integer(*b)))),
+                );
+                let (_, id_leq_b_ast) =
+                    expr_to_bool(solver.get_context(), &id_leq_b, sym_memory, i);
                 solver.assert(&id_leq_b_ast);
             }
         }
@@ -284,10 +311,9 @@ impl SolverEnv<'_> {
                 ),
                 &(),
             ),
-    
-            
+
             // If satisfiable, retreive values from z3 model
-            z3::SatResult::Sat => { 
+            z3::SatResult::Sat => {
                 let z3_model = solver.get_model().unwrap();
                 let mut model = vec![];
                 for (ty, id) in vars {
@@ -301,7 +327,7 @@ impl SolverEnv<'_> {
                             let ast = z3::ast::Bool::new_const(&solver.get_context(), id.clone());
                             let value = z3_model.eval(&ast, true).unwrap().as_bool().unwrap();
                             model.push((id.clone(), Literal::Boolean(value)));
-                        },
+                        }
                         SymType::Ref(_) => {
                             let ast = z3::ast::Int::new_const(&solver.get_context(), id.clone());
                             let value = z3_model.eval(&ast, true).unwrap().as_i64().unwrap();
@@ -540,8 +566,8 @@ fn expr_to_dynamic<'ctx, 'a>(
     match expr {
         SymExpression::Forall(forall) => {
             let forall_expr = forall.construct(sym_memory);
-            let (fv, ast) = expr_to_bool(ctx,&forall_expr, sym_memory, i);
-            return (fv, z3::ast::Dynamic::from(ast))
+            let (fv, ast) = expr_to_bool(ctx, &forall_expr, sym_memory, i);
+            return (fv, z3::ast::Dynamic::from(ast));
         }
         SymExpression::And(l_expr, r_expr) => {
             let (mut fv_l, l) = expr_to_bool(ctx, l_expr, sym_memory, i);
