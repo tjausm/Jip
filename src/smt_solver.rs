@@ -89,6 +89,7 @@ pub struct SolverEnv<'a> {
     equivalent_formula_cache: EquivalentFormulaCache,
     pub config: Config,
     pub diagnostics: Diagnostics,
+    cache_collision: i32
 }
 
 impl SolverEnv<'_> {
@@ -141,6 +142,7 @@ impl SolverEnv<'_> {
             formula_cache: FxHashMap::default(),
             config: config.clone(),
             diagnostics: Diagnostics::new(cfg_size),
+            cache_collision: 0
         }
     }
 
@@ -154,9 +156,14 @@ impl SolverEnv<'_> {
 
         // check formula cache
         if self.config.formula_caching {
-            match self.formula_cache.get(expr) {
-                Some(res) => {
+            match self.formula_cache.get_key_value(expr) {
+                Some((cache_expr, res)) => {
+
+                    // check if it was a collision
+                    c
+
                     self.diagnostics.cache_hits += 1;
+
                     return res.clone()},
                 None => (),
             };
