@@ -42,6 +42,10 @@ struct Cli {
     symbolic_array_size: Option<i64>,
 
     /// Turns on formula caching
+    #[clap(long)]
+    equivalent_formula_caching: bool,
+    
+    /// Turns on formula caching
     #[clap(short, long)]
     formula_caching: bool,
 
@@ -113,7 +117,7 @@ fn main() {
         (_, Some(arg), _, _) => SolverType::CVC4(arg),
         (_, _, Some(arg), _) => SolverType::Yices2(arg),
         (_, _, _, true) => SolverType::Z3Api,
-        (_, _, _, _) => SolverType::Default,
+        (_, _, _, _) => SolverType::Z3("z3".to_string()),
     };
 
     // attempt to load program, and exit with exitcode and error if fails
@@ -141,6 +145,7 @@ fn main() {
                 expression_evaluation: cli.expression_evaluator || cli.infer_size > 0,
                 infer_size: cli.infer_size,
                 symbolic_array_size: cli.symbolic_array_size,
+                equivalent_formula_caching: cli.equivalent_formula_caching,
                 formula_caching: cli.formula_caching,
                 prune_probability,
                 solver_type: solver_type,
@@ -157,6 +162,7 @@ fn main() {
                 expression_evaluation: cli.expression_evaluator || cli.infer_size > 0,
                 infer_size: cli.infer_size,
                 symbolic_array_size: cli.symbolic_array_size,
+                equivalent_formula_caching: cli.equivalent_formula_caching,
                 formula_caching: cli.formula_caching,
                 prune_probability,
                 solver_type: solver_type,

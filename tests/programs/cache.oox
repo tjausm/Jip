@@ -1,0 +1,14 @@
+class Main{
+static void main(int x, bool b){
+    assume x == 3;
+    if b {
+
+    assert 1 + 2 + x == 6;
+    } else {
+
+    assert 1 + 2 + x == 6;
+    }
+    assert 1 + x + 2 == 6;
+}
+}
+

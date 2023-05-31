@@ -48,7 +48,7 @@ pub fn bench(
 ) -> (ExitCode, String) {
     let end = end.unwrap_or(start) + 1;
     let depths = (start..end).step_by(step.try_into().unwrap());
-    println!("max. d      CFG cov.    time (s)    paths expl. paths pr.   avg. prune p. cache hits  smt-calls   verdict");
+    println!("max. d      CFG cov.    time (s)    paths expl. paths pr.   avg. prune p. cache hits  eq. cache hits smt-calls   verdict");
     for depth in depths {
         let now = Instant::now();
         let dia;
@@ -72,7 +72,7 @@ pub fn bench(
         let dur = now.elapsed();
         let time = format!("{:?},{:0>3}", dur.as_secs(), dur.as_millis());
         println!(
-            "{:<12}{:<12}{:<12}{:<12}{:<12}{:<14}{:<12}{:<12}{:<12}",
+            "{:<12}{:<12}{:<12}{:<12}{:<12}{:<14}{:<12}{:<12}{:<12}{:<12}",
             dia.reached_depth,
             format!("{:.1} %", dia.cfg_coverage.calculate()),
             &time[0..5],
@@ -80,6 +80,7 @@ pub fn bench(
             dia.paths_pruned,
             format!("{:.1} %", dia.average_prune_p()),
             dia.cache_hits,
+            dia.eq_cache_hits,
             dia.smt_calls,
             verdict
         );
@@ -125,21 +126,22 @@ pub fn print_verification(program: &str, max_d: Option<Depth>, max_t :Option<Tim
     }
 
     msg.push_str(&format!("{}", "Results\n".bold()));
-    msg.push_str(&format!("Depth reached       {}\n", dia.reached_depth));
+    msg.push_str(&format!("Depth reached         {}\n", dia.reached_depth));
     msg.push_str(&format!(
         "CFG coverage        {:.1}%\n",
         dia.cfg_coverage.calculate()
     ));
-    msg.push_str(&format!("Time (s)            {}\n", &run_time[0..5]));
-    msg.push_str(&format!("paths explored      {}\n", dia.paths_explored));
-    msg.push_str(&format!("Paths pruned        {}\n", dia.paths_pruned));
+    msg.push_str(&format!("Time (s)              {}\n", &run_time[0..5]));
+    msg.push_str(&format!("paths explored        {}\n", dia.paths_explored));
+    msg.push_str(&format!("Paths pruned          {}\n", dia.paths_pruned));
     msg.push_str(&format!(
-        "Avg. prune prob.    {:.1}%\n",
+        "Avg. prune prob.      {:.1}%\n",
         dia.average_prune_p()
     ));
-    msg.push_str(&format!("Form. cache hits    {}\n", dia.cache_hits));
-    msg.push_str(&format!("Smt calls           {}\n", dia.smt_calls));
-    msg.push_str(&format!("Verdict             {}\n", verdict));
+    msg.push_str(&format!("Form. cache hits      {}\n", dia.cache_hits));
+    msg.push_str(&format!("Eq. form. cache hits  {}\n", dia.eq_cache_hits));
+    msg.push_str(&format!("Smt calls             {}\n", dia.smt_calls));
+    msg.push_str(&format!("Verdict               {}\n", verdict));
     match verdict {
         Verdict::True => (ExitCode::VerdictTrue, msg),
         Verdict::Unknown => (ExitCode::VerdictUnknown, msg),

@@ -284,7 +284,7 @@ impl Interval {
 }
 
 #[derive(Clone)]
-pub struct IntervalMap(FxHashMap<Identifier, Interval>);
+pub struct IntervalMap(pub FxHashMap<Identifier, Interval>);
 
 impl Default for IntervalMap {
     fn default() -> Self {
