@@ -300,7 +300,7 @@ impl SymExpression {
                         match (Interval::infer(&l_simple, i), Interval::infer(&r_simple, i)) {
                             //check if intervals have no intersection
                             (Interval(a, b), Interval(d, c)) if b < d || c < a => {
-                                SymExpression::Literal(Literal::Boolean(true))
+                                SymExpression::Literal(Literal::Boolean(false))
                             }
                             _ => SymExpression::EQ(Box::new(l_simple), Box::new(r_simple)),
                         }

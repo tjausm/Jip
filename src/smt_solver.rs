@@ -160,7 +160,7 @@ impl SolverEnv<'_> {
                 Some((cache_expr, res)) => {
 
                     // check if it was a collision
-                    c
+                    
 
                     self.diagnostics.cache_hits += 1;
 

@@ -512,7 +512,7 @@ dependencies = [
 
 [[package]]
 name = "jip"
-version = "1.0.4"
+version = "1.0.5"
 dependencies = [
  "assert_cmd",
  "clap 3.2.25",
