@@ -48,7 +48,7 @@ pub fn bench(
 ) -> (ExitCode, String) {
     let end = end.unwrap_or(start) + 1;
     let depths = (start..end).step_by(step.try_into().unwrap());
-    println!("max. d      CFG cov.    time (s)    paths expl. paths pr.   avg. prune p. cache hits  eq. cache hits smt-calls   verdict");
+    println!("max. d      CFG cov.    time (s)    paths expl. paths pr.   avg. prune p. cache hits  eq. cache hits cache coll. smt-calls   verdict");
     for depth in depths {
         let now = Instant::now();
         let dia;
@@ -72,7 +72,7 @@ pub fn bench(
         let dur = now.elapsed();
         let time = format!("{:?},{:0>3}", dur.as_secs(), dur.as_millis());
         println!(
-            "{:<12}{:<12}{:<12}{:<12}{:<12}{:<14}{:<12}{:<12}{:<12}{:<12}",
+            "{:<12}{:<12}{:<12}{:<12}{:<12}{:<14}{:<12}{:<12}{:<12}{:<12}{:<12}",
             dia.reached_depth,
             format!("{:.1} %", dia.cfg_coverage.calculate()),
             &time[0..5],
@@ -81,6 +81,7 @@ pub fn bench(
             format!("{:.1} %", dia.average_prune_p()),
             dia.cache_hits,
             dia.eq_cache_hits,
+            dia.cache_collision,
             dia.smt_calls,
             verdict
         );
@@ -138,8 +139,14 @@ pub fn print_verification(program: &str, max_d: Option<Depth>, max_t :Option<Tim
         "Avg. prune prob.      {:.1}%\n",
         dia.average_prune_p()
     ));
-    msg.push_str(&format!("Form. cache hits      {}\n", dia.cache_hits));
-    msg.push_str(&format!("Eq. form. cache hits  {}\n", dia.eq_cache_hits));
+    if (config.formula_caching) {
+        msg.push_str(&format!("Form. cache hits      {}\n", dia.cache_hits));
+    } else if (config.equivalent_formula_caching)  {
+        msg.push_str(&format!("Eq. form. cache hits  {}\n", dia.eq_cache_hits));
+    }
+    if (config.formula_caching || config.equivalent_formula_caching){    
+        msg.push_str(&format!("Cache collision       {}\n", dia.cache_collision));
+    }
     msg.push_str(&format!("Smt calls             {}\n", dia.smt_calls));
     msg.push_str(&format!("Verdict               {}\n", verdict));
     match verdict {

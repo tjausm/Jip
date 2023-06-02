@@ -168,7 +168,7 @@ pub struct Skip;
 
 pub type Ite = (Expression, Box<Statement>, Box<Statement>);
 
-#[derive(Clone)]
+#[derive(Clone, Hash)]
 pub enum Expression {
     //expression1
     ///(forall arr, index, value : expression) -> for all index value pairs in given array the expression holds
@@ -212,7 +212,7 @@ pub enum Expression {
     SizeOf(Identifier),
 }
 
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Literal {
     Boolean(bool),
     Integer(i64),

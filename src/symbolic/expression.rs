@@ -7,6 +7,8 @@ use std::{
     hash::{Hash, Hasher},
 };
 
+use rustc_hash::FxHashMap;
+
 use super::ref_values::{
     EvaluatedRefs, Interval, IntervalMap, Reference, ReferenceValue, SymRefType,
 };
@@ -89,11 +91,10 @@ pub enum SymType {
     Ref(SymRefType),
 }
 
-#[derive(Clone)]
+#[derive(Clone, Hash, Eq, PartialEq)]
 pub enum SymExpression {
     Implies(Box<SymExpression>, Box<SymExpression>),
     Forall(Forall),
-    Exists(Identifier, Identifier, Identifier, Box<Expression>),
     And(Box<SymExpression>, Box<SymExpression>),
     Or(Box<SymExpression>, Box<SymExpression>),
     EQ(Box<SymExpression>, Box<SymExpression>),
@@ -429,7 +430,6 @@ impl SymExpression {
                 _ => self,
             },
             SymExpression::Forall(_) => self,
-            SymExpression::Exists(_, _, _, _) => self,
             SymExpression::Uninitialized => panic_with_diagnostics(
                 "There is an uninitialized value in an expression. Did you declare all variables?",
                 &self,
@@ -446,6 +446,19 @@ pub struct Forall {
     inner_expr: Expression,
     captured_memory: SymMemory,
 }
+
+// randomize hashing if Forall is involved in Expression
+impl Hash for Forall {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        rand::random::<u64>().hash(state)
+    }
+}
+impl PartialEq for Forall {
+    fn eq(&self, other: &Self) -> bool {
+        false
+    }
+}
+impl Eq for Forall {}
 
 impl Forall {
     fn new(
@@ -562,8 +575,6 @@ enum HashExpression {
     Negative(u64),
     FreeVariable(SymType, Identifier),
     Reference(Reference),
-    Forall(Reference, Identifier, Identifier, SymExpression),
-    Exists(Reference, Identifier, Identifier, SymExpression),
     Implies(u64, u64),
     And(Vec<u64>),
     Or(Vec<u64>),
@@ -574,23 +585,40 @@ enum HashExpression {
     GEQ(u64, u64),
     LEQ(u64, u64),
     Not(u64),
-    LazyReference(u64),
     Uninitialized,
 }
 
-fn calculate_hash<T: Hash>(t: &T) -> u64 {
-    let mut s = DefaultHasher::new();
-    t.hash(&mut s);
-    s.finish()
-}
-fn map_hash<T: Hash>(v: &Vec<T>) -> Vec<u64> {
-    v.into_iter()
-        .map(|t| calculate_hash(&t))
-        .collect::<Vec<u64>>()
+/// Intermediate type use to implement custom `Hash` for Expression
+/// while also using the default hasher for the 'base values'
+#[derive(Hash, Debug, Eq, PartialEq)]
+pub enum NormalizedExpression {
+    Plus(Vec<NormalizedExpression>),
+    Multiply(Vec<NormalizedExpression>),
+    Divide(Box<NormalizedExpression>, Box<NormalizedExpression>),
+    Mod(Box<NormalizedExpression>, Box<NormalizedExpression>),
+    Negative(Box<NormalizedExpression>),
+    FreeVariable(SymType, Identifier),
+    Reference(Reference),
+    Literal(Literal),
+    Implies(Box<NormalizedExpression>, Box<NormalizedExpression>),
+    And(Vec<NormalizedExpression>),
+    Or(Vec<NormalizedExpression>),
+    EQ(Box<NormalizedExpression>, Box<NormalizedExpression>),
+    NE(Box<NormalizedExpression>, Box<NormalizedExpression>),
+    LT(Box<NormalizedExpression>, Box<NormalizedExpression>),
+    GT(Box<NormalizedExpression>, Box<NormalizedExpression>),
+    GEQ(Box<NormalizedExpression>, Box<NormalizedExpression>),
+    LEQ(Box<NormalizedExpression>, Box<NormalizedExpression>),
+    Not(Box<NormalizedExpression>),
+    Weird(u64), // when something is not normalizable make it weird with a random number e.g. forall expressions
 }
 
-impl Hash for SymExpression {
-    fn hash<H: Hasher>(&self, state: &mut H) {
+impl SymExpression {
+    pub fn normalize(self) -> NormalizedExpression {
+        self.eval(&IntervalMap::default(), None).rec_normalize()
+    }
+
+    fn rec_normalize(&self) -> NormalizedExpression {
         fn collect_sum(expr: SymExpression) -> Vec<SymExpression> {
             match expr {
                 SymExpression::Plus(l_expr, r_expr) => {
@@ -639,85 +667,111 @@ impl Hash for SymExpression {
 
         match self {
             SymExpression::Plus(_, _) => {
-                let sum = collect_sum(self.clone());
-                let mut hashed_sum = map_hash(&sum);
-                hashed_sum.sort();
-                HashExpression::Plus(hashed_sum).hash(state)
+                let c = 
+                    collect_sum(self.clone())
+                    .into_iter()
+                    .map(|e| e.rec_normalize())
+                    .collect();
+
+                NormalizedExpression::Plus(sort_by_hash(c))
             }
             SymExpression::Multiply(_, _) => {
-                let mult = collect_mult(self.clone());
-                let mut hashed_mult = map_hash(&mult);
-                hashed_mult.sort();
-                HashExpression::Multiply(hashed_mult).hash(state)
+                let c = 
+                    collect_mult(self.clone())
+                    .into_iter()
+                    .map(|e| e.rec_normalize())
+                    .collect();
+                NormalizedExpression::Multiply(sort_by_hash(c))
             }
             SymExpression::And(_, _) => {
-                let and = collect_and(self.clone());
-                let mut hashed_and = map_hash(&and);
-                hashed_and.sort();
-                HashExpression::And(hashed_and).hash(state)
+                let c = 
+                    collect_and(self.clone())
+                    .into_iter()
+                    .map(|e| e.rec_normalize())
+                    .collect();
+                NormalizedExpression::And(sort_by_hash(c))
             }
             SymExpression::Or(_, _) => {
-                let or = collect_or(self.clone());
-                let mut hashed_or = map_hash(&or);
-                hashed_or.sort();
-                HashExpression::Or(hashed_or).hash(state)
+                let c = 
+                    collect_or(self.clone())
+                    .into_iter()
+                    .map(|e| e.rec_normalize())
+                    .collect();
+                NormalizedExpression::Or(sort_by_hash(c))
             }
-            SymExpression::Minus(l_expr, r_expr) => SymExpression::Plus(
-                l_expr.clone(),
-                Box::new(SymExpression::Negative(r_expr.clone())),
-            )
-            .hash(state),
-            SymExpression::Divide(l_expr, r_expr) => {
-                HashExpression::Divide(calculate_hash(&*l_expr), calculate_hash(&*r_expr))
-                    .hash(state)
+            SymExpression::Minus(l_expr, r_expr) => {
+                let (n_l_expr, n_r_expr) = (l_expr.rec_normalize(), r_expr.rec_normalize());
+                let sorted = sort_by_hash(vec![
+                    n_l_expr,
+                    NormalizedExpression::Negative(Box::new(n_r_expr)),
+                ]);
+                NormalizedExpression::Plus(sorted)
             }
-            SymExpression::Mod(l_expr, r_expr) => {
-                HashExpression::Mod(calculate_hash(&*l_expr), calculate_hash(&*r_expr)).hash(state)
-            }
+            SymExpression::Divide(l_expr, r_expr) => NormalizedExpression::Divide(
+                Box::new(l_expr.rec_normalize()),
+                Box::new(r_expr.rec_normalize()),
+            ),
+
+            SymExpression::Mod(l_expr, r_expr) => NormalizedExpression::Mod(
+                Box::new(l_expr.rec_normalize()),
+                Box::new(r_expr.rec_normalize()),
+            ),
             SymExpression::Negative(expr) => {
-                HashExpression::Negative(calculate_hash(&*expr)).hash(state)
+                NormalizedExpression::Negative(Box::new(expr.rec_normalize()))
             }
             SymExpression::FreeVariable(ty, id) => {
-                HashExpression::FreeVariable(ty.clone(), id.clone()).hash(state)
+                NormalizedExpression::FreeVariable(ty.clone(), id.clone())
             }
-            SymExpression::Reference(r) => HashExpression::Reference(r.clone()).hash(state),
-            SymExpression::Literal(lit) => lit.hash(state),
-            SymExpression::Implies(l_expr, r_expr) => {
-                HashExpression::Implies(calculate_hash(&*l_expr), calculate_hash(&*r_expr))
-                    .hash(state)
-            }
-            SymExpression::EQ(l_expr, r_expr) => {
-                HashExpression::EQ(calculate_hash(&*l_expr), calculate_hash(&*r_expr)).hash(state)
-            }
-            SymExpression::NE(l_expr, r_expr) => {
-                HashExpression::NE(calculate_hash(&*l_expr), calculate_hash(&*r_expr)).hash(state)
-            }
-            SymExpression::LT(l_expr, r_expr) => {
-                HashExpression::LT(calculate_hash(&*l_expr), calculate_hash(&*r_expr)).hash(state)
-            }
-            SymExpression::GT(l_expr, r_expr) => {
-                HashExpression::GT(calculate_hash(&*l_expr), calculate_hash(&*r_expr)).hash(state)
-            }
-            SymExpression::GEQ(l_expr, r_expr) => {
-                HashExpression::GEQ(calculate_hash(&*l_expr), calculate_hash(&*r_expr)).hash(state)
-            }
-            SymExpression::LEQ(l_expr, r_expr) => {
-                HashExpression::LEQ(calculate_hash(&*l_expr), calculate_hash(&*r_expr)).hash(state)
-            }
-            SymExpression::Not(expr) => HashExpression::Not(calculate_hash(&*expr)).hash(state),
-            SymExpression::Uninitialized => HashExpression::Uninitialized.hash(state),
-            SymExpression::Forall(_) => rand::random::<u64>().hash(state),
-            SymExpression::Exists(_, _, _, _) => rand::random::<u64>().hash(state),
+            SymExpression::Reference(r) => NormalizedExpression::Reference(r.clone()),
+            SymExpression::Literal(lit) => NormalizedExpression::Literal(*lit),
+            SymExpression::Implies(l_expr, r_expr) => NormalizedExpression::Implies(
+                Box::new(l_expr.rec_normalize()),
+                Box::new(r_expr.rec_normalize()),
+            ),
+            SymExpression::EQ(l_expr, r_expr) => NormalizedExpression::EQ(
+                Box::new(l_expr.rec_normalize()),
+                Box::new(r_expr.rec_normalize()),
+            ),
+            SymExpression::NE(l_expr, r_expr) => NormalizedExpression::NE(
+                Box::new(l_expr.rec_normalize()),
+                Box::new(r_expr.rec_normalize()),
+            ),
+            SymExpression::LT(l_expr, r_expr) => NormalizedExpression::LT(
+                Box::new(l_expr.rec_normalize()),
+                Box::new(r_expr.rec_normalize()),
+            ),
+            SymExpression::GT(l_expr, r_expr) => NormalizedExpression::GT(
+                Box::new(l_expr.rec_normalize()),
+                Box::new(r_expr.rec_normalize()),
+            ),
+            SymExpression::GEQ(l_expr, r_expr) => NormalizedExpression::GEQ(
+                Box::new(l_expr.rec_normalize()),
+                Box::new(r_expr.rec_normalize()),
+            ),
+            SymExpression::LEQ(l_expr, r_expr) => NormalizedExpression::LEQ(
+                Box::new(l_expr.rec_normalize()),
+                Box::new(r_expr.rec_normalize()),
+            ),
+            SymExpression::Not(expr) => NormalizedExpression::Not(Box::new(expr.rec_normalize())),
+            _ => NormalizedExpression::Weird(rand::random()),
         }
     }
 }
-
-impl PartialEq for SymExpression {
-    fn eq(&self, other: &Self) -> bool {
-        calculate_hash(&self) == calculate_hash(other)
-    }
+fn calculate_hash<T: Hash>(t: &T) -> u64 {
+    let mut s = DefaultHasher::new();
+    t.hash(&mut s);
+    s.finish()
 }
-impl Eq for SymExpression {}
+
+// sorts any vector of value based on their hash value
+fn sort_by_hash<T: Hash>(v: Vec<T>) -> Vec<T> {
+    let mut annotated_v = v
+        .into_iter()
+        .map(|t| (calculate_hash(&t), t))
+        .collect::<Vec<(u64, T)>>();
+    annotated_v.sort_by_key(|tuple| tuple.0);
+    annotated_v.into_iter().map(|(_, t)| t).collect::<Vec<T>>()
+}
 
 impl fmt::Debug for PathConstraints {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -740,9 +794,6 @@ impl fmt::Debug for SymExpression {
             SymExpression::Implies(l_expr, r_expr) => write!(f, "({:?} ==> {:?})", l_expr, r_expr),
             SymExpression::Forall(forall) => {
                 write!(f, "{:?}", forall)
-            }
-            SymExpression::Exists(arr, i, v, body) => {
-                write!(f, "exists {}, {}, {} : {:?}", arr, i, v, body)
             }
             SymExpression::And(l_expr, r_expr) => write!(f, "({:?} && {:?})", l_expr, r_expr),
             SymExpression::Or(l_expr, r_expr) => write!(f, "({:?} || {:?})", l_expr, r_expr),
@@ -783,33 +834,40 @@ mod tests {
 
     #[test]
     fn sum_expr_equivalence() {
-        let e1 = parse("1+2+3");
-        let e2 = parse("3+2+1");
-        let e3 = parse("2+3+1");
+        let e1 = parse("1+2+3").normalize();
+        let e2 = parse("3+2+1").normalize();
+        let e3 = parse("2+3+1").normalize();
         assert!(calculate_hash(&e1) == calculate_hash(&e2));
         assert!(calculate_hash(&e1) == calculate_hash(&e3));
+        assert!(format!("{:?}", e1) == format!("{:?}", e2) );
+        assert!(format!("{:?}", e1)  == format!("{:?}", e3) );
     }
     #[test]
     fn mult_expr_equivalence() {
-        let e1 = parse("2*3*4+5-1");
-        let e2 = parse("3*2*4+5-1");
-        let e3 = parse("2*3*4+(-1)+5");
+        let e1 = parse("2*3*4+5-1").normalize();
+        let e2 = parse("3*2*4+5-1").normalize();
+        let e3 = parse("2*3*4+(-1)+5").normalize();
 
         assert!(calculate_hash(&e1) == calculate_hash(&e2));
         assert!(calculate_hash(&e1) == calculate_hash(&e3));
+        assert!(format!("{:?}", e1) == format!("{:?}", e2) );
+        assert!(format!("{:?}", e1)  == format!("{:?}", e3) );
     }
     #[test]
     fn more_expr_equivalence() {
-        let e1 = parse("(7*4+5/8%5)+3");
-        let e2 = parse("3+(4*7+5/8%5)");
+        let e1 = parse("(7*4+5/8%5)+3").normalize();
+        let e2 = parse("3+(4*7+5/8%5)").normalize();
         assert!(calculate_hash(&e1) == calculate_hash(&e2));
+        assert!(format!("{:?}", e1) == format!("{:?}", e2) );
     }
     #[test]
     fn int_comparison() {
-        let e1 = parse("1");
-        let e2 = parse("1");
-        let e3 = parse("123");
+        let e1 = parse("1").normalize();
+        let e2 = parse("1").normalize();
+        let e3 = parse("123").normalize();
         assert!(calculate_hash(&e1) == calculate_hash(&e2));
         assert!(calculate_hash(&e2) != calculate_hash(&e3));
+        assert!(format!("{:?}", e1) == format!("{:?}", e2) );
+        assert!(format!("{:?}", e1)  != format!("{:?}", e3) );
     }
 }

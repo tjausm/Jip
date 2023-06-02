@@ -2,7 +2,7 @@
 
 use crate::ast::{Identifier, Literal};
 use crate::shared::{panic_with_diagnostics, Config, Diagnostics, SolverType};
-use crate::symbolic::expression::{SymExpression, SymType};
+use crate::symbolic::expression::{SymExpression, SymType, NormalizedExpression};
 use crate::symbolic::memory::SymMemory;
 use crate::symbolic::ref_values::{Interval, IntervalMap, Reference, SymRefType};
 use core::fmt;
@@ -75,8 +75,8 @@ impl<'a> ModelParser<String, SymType, (Identifier, Literal), &'a str> for Parser
     }
 }
 
-type EquivalentFormulaCache = HashMap<SymExpression, Option<Model>>;
-type FormulaCache = FxHashMap<SymExpression, Option<Model>>;
+type EquivalentFormulaCache = HashMap<NormalizedExpression, Option<Model>>;
+type FormulaCache = HashMap<SymExpression, Option<Model>>;
 
 enum Solver<'a> {
     Rsmt2(rsmt2::Solver<Parser>),
@@ -88,8 +88,7 @@ pub struct SolverEnv<'a> {
     formula_cache: FormulaCache,
     equivalent_formula_cache: EquivalentFormulaCache,
     pub config: Config,
-    pub diagnostics: Diagnostics,
-    cache_collision: i32
+    pub diagnostics: Diagnostics
 }
 
 impl SolverEnv<'_> {
@@ -139,10 +138,9 @@ impl SolverEnv<'_> {
         SolverEnv {
             solver,
             equivalent_formula_cache: HashMap::default(),
-            formula_cache: FxHashMap::default(),
+            formula_cache: HashMap::default(),
             config: config.clone(),
             diagnostics: Diagnostics::new(cfg_size),
-            cache_collision: 0
         }
     }
 
@@ -154,26 +152,28 @@ impl SolverEnv<'_> {
         i: &IntervalMap,
     ) -> Option<Model> {
 
+        // memoize normalization 
+        let mut norm_expr = None;
+
         // check formula cache
         if self.config.formula_caching {
-            match self.formula_cache.get_key_value(expr) {
-                Some((cache_expr, res)) => {
-
-                    // check if it was a collision
-                    
-
+            match self.formula_cache.get(expr) {
+                Some(res)  => {
                     self.diagnostics.cache_hits += 1;
-
-                    return res.clone()},
+                    return res.clone()
+                },
                 None => (),
             };
         } else if self.config.equivalent_formula_caching {
-            match self.equivalent_formula_cache.get(expr) {
-                Some(res) => {
+            let norm_expr2 = expr.clone().normalize();
+            match self.equivalent_formula_cache.get(&norm_expr2) {
+                Some(res)  => {
                     self.diagnostics.eq_cache_hits += 1;
-                    return res.clone()},
+                    return res.clone()
+                },
                 None => (),
             };
+            norm_expr = Some(norm_expr2)
         };
 
         // solve using chosen backend
@@ -191,8 +191,9 @@ impl SolverEnv<'_> {
         if self.config.formula_caching {
             self.formula_cache.insert(expr.clone(), res.clone());
         } else if self.config.equivalent_formula_caching {
+            let norm_expr = norm_expr.unwrap_or(expr.clone().normalize());
             self.equivalent_formula_cache
-                .insert(expr.clone(), res.clone());
+                .insert(norm_expr, res.clone());
         };
         res
     }

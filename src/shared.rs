@@ -64,7 +64,8 @@ pub struct Diagnostics {
     pub smt_calls: i32,
     pub cfg_coverage: CFGCoverage ,
     pub eq_cache_hits: i32,
-    pub cache_hits: i32
+    pub cache_hits: i32,
+    pub cache_collision: i32
 }
 
 #[derive(Clone)]
@@ -104,6 +105,7 @@ impl Diagnostics {
             cfg_coverage: CFGCoverage::new(cfg_total_nodes),
             eq_cache_hits: 0,
             cache_hits: 0,
+            cache_collision: 0
         };
     }
 
