@@ -614,11 +614,8 @@ pub enum NormalizedExpression {
 }
 
 impl SymExpression {
-    pub fn normalize(self) -> NormalizedExpression {
-        self.eval(&IntervalMap::default(), None).rec_normalize()
-    }
 
-    fn rec_normalize(&self) -> NormalizedExpression {
+    pub fn normalize(&self) -> NormalizedExpression {
         fn collect_sum(expr: SymExpression) -> Vec<SymExpression> {
             match expr {
                 SymExpression::Plus(l_expr, r_expr) => {
@@ -670,7 +667,7 @@ impl SymExpression {
                 let c = 
                     collect_sum(self.clone())
                     .into_iter()
-                    .map(|e| e.rec_normalize())
+                    .map(|e| e.normalize())
                     .collect();
 
                 NormalizedExpression::Plus(sort_by_hash(c))
@@ -679,7 +676,7 @@ impl SymExpression {
                 let c = 
                     collect_mult(self.clone())
                     .into_iter()
-                    .map(|e| e.rec_normalize())
+                    .map(|e| e.normalize())
                     .collect();
                 NormalizedExpression::Multiply(sort_by_hash(c))
             }
@@ -687,7 +684,7 @@ impl SymExpression {
                 let c = 
                     collect_and(self.clone())
                     .into_iter()
-                    .map(|e| e.rec_normalize())
+                    .map(|e| e.normalize())
                     .collect();
                 NormalizedExpression::And(sort_by_hash(c))
             }
@@ -695,12 +692,12 @@ impl SymExpression {
                 let c = 
                     collect_or(self.clone())
                     .into_iter()
-                    .map(|e| e.rec_normalize())
+                    .map(|e| e.normalize())
                     .collect();
                 NormalizedExpression::Or(sort_by_hash(c))
             }
             SymExpression::Minus(l_expr, r_expr) => {
-                let (n_l_expr, n_r_expr) = (l_expr.rec_normalize(), r_expr.rec_normalize());
+                let (n_l_expr, n_r_expr) = (l_expr.normalize(), r_expr.normalize());
                 let sorted = sort_by_hash(vec![
                     n_l_expr,
                     NormalizedExpression::Negative(Box::new(n_r_expr)),
@@ -708,16 +705,16 @@ impl SymExpression {
                 NormalizedExpression::Plus(sorted)
             }
             SymExpression::Divide(l_expr, r_expr) => NormalizedExpression::Divide(
-                Box::new(l_expr.rec_normalize()),
-                Box::new(r_expr.rec_normalize()),
+                Box::new(l_expr.normalize()),
+                Box::new(r_expr.normalize()),
             ),
 
             SymExpression::Mod(l_expr, r_expr) => NormalizedExpression::Mod(
-                Box::new(l_expr.rec_normalize()),
-                Box::new(r_expr.rec_normalize()),
+                Box::new(l_expr.normalize()),
+                Box::new(r_expr.normalize()),
             ),
             SymExpression::Negative(expr) => {
-                NormalizedExpression::Negative(Box::new(expr.rec_normalize()))
+                NormalizedExpression::Negative(Box::new(expr.normalize()))
             }
             SymExpression::FreeVariable(ty, id) => {
                 NormalizedExpression::FreeVariable(ty.clone(), id.clone())
@@ -725,34 +722,34 @@ impl SymExpression {
             SymExpression::Reference(r) => NormalizedExpression::Reference(r.clone()),
             SymExpression::Literal(lit) => NormalizedExpression::Literal(*lit),
             SymExpression::Implies(l_expr, r_expr) => NormalizedExpression::Implies(
-                Box::new(l_expr.rec_normalize()),
-                Box::new(r_expr.rec_normalize()),
+                Box::new(l_expr.normalize()),
+                Box::new(r_expr.normalize()),
             ),
             SymExpression::EQ(l_expr, r_expr) => NormalizedExpression::EQ(
-                Box::new(l_expr.rec_normalize()),
-                Box::new(r_expr.rec_normalize()),
+                Box::new(l_expr.normalize()),
+                Box::new(r_expr.normalize()),
             ),
             SymExpression::NE(l_expr, r_expr) => NormalizedExpression::NE(
-                Box::new(l_expr.rec_normalize()),
-                Box::new(r_expr.rec_normalize()),
+                Box::new(l_expr.normalize()),
+                Box::new(r_expr.normalize()),
             ),
             SymExpression::LT(l_expr, r_expr) => NormalizedExpression::LT(
-                Box::new(l_expr.rec_normalize()),
-                Box::new(r_expr.rec_normalize()),
+                Box::new(l_expr.normalize()),
+                Box::new(r_expr.normalize()),
             ),
             SymExpression::GT(l_expr, r_expr) => NormalizedExpression::GT(
-                Box::new(l_expr.rec_normalize()),
-                Box::new(r_expr.rec_normalize()),
+                Box::new(l_expr.normalize()),
+                Box::new(r_expr.normalize()),
             ),
             SymExpression::GEQ(l_expr, r_expr) => NormalizedExpression::GEQ(
-                Box::new(l_expr.rec_normalize()),
-                Box::new(r_expr.rec_normalize()),
+                Box::new(l_expr.normalize()),
+                Box::new(r_expr.normalize()),
             ),
             SymExpression::LEQ(l_expr, r_expr) => NormalizedExpression::LEQ(
-                Box::new(l_expr.rec_normalize()),
-                Box::new(r_expr.rec_normalize()),
+                Box::new(l_expr.normalize()),
+                Box::new(r_expr.normalize()),
             ),
-            SymExpression::Not(expr) => NormalizedExpression::Not(Box::new(expr.rec_normalize())),
+            SymExpression::Not(expr) => NormalizedExpression::Not(Box::new(expr.normalize())),
             _ => NormalizedExpression::Weird(rand::random()),
         }
     }
