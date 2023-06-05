@@ -1,0 +1,21 @@
+./jip -i 1 sv-benchmarks/java/algorithms/MergeSortIterative-FunUnSat01.oox verify -t 10000
+
+
+--------------------------------------------------------------------------------
+
+
+Results
+Depth reached         138
+CFG coverage        100.0%
+Time (s)              0,270
+paths explored        5
+Paths pruned          1606
+Avg. prune prob.      0.0%
+Smt calls             46
+Verdict               False
+
+Counter-example: Following input violates one of the assertion:
+nondet[2]   -> 0
+nondet[1]   -> 0
+nondet[0]   -> 0
+

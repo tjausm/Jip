@@ -208,7 +208,7 @@ pub fn assume(
         SymExpression::Literal(Literal::Boolean(false))=> (prune_p, false),
         SymExpression::Literal(Literal::Boolean(true)) => (prune_p, true),
         // if p > random number between 0..100 then attempt to prune path and update p
-        _ if p >= rand::thread_rng().gen_range(0..=100) => {
+        _ if p >= rand::thread_rng().gen_range(1..=100) => {
             match solver.verify_expr(&constraints, sym_memory, i){
                 // assumption is feasible
                 Some(_res) =>  (PruneProbability(u8::max(5, p - a), a), true)
