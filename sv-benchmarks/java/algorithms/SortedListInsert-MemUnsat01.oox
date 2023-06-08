@@ -23,7 +23,7 @@
 
       // added null check because original
       // would cause null ref err in OOX
-      if (data < thisx || next == null) { // error, must be "<="
+      if (data < thisx) { // error, must be "<="
         this.next := new List(thisx, next);
         this.x := data;
       } else {
