@@ -14,9 +14,9 @@ class Main {
   static void main(int m, int n) {
     int result := Main.addition(m, n);
     if (m < 100 || n < 100 || result >= 200){
-      assert false;
-    } else {
       return;
+    } else {
+      assert false;
     };
   }
 }
