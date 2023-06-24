@@ -31,9 +31,8 @@ class Main {
     }
 
     Main.sort(a);
-    if(#a > 1){
-      assert forall a, i1, v1 :
-        forall a, i2, v2 : i1 < i2 ==> v1 < v2;
-      };
+    assume 0 <= i1 && i1 < i2 && i2 < N;
+    ai1 := a[i1]; ai2 := a[i2];
+    assert ai1 <= ai2;
   }
 }
