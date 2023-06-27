@@ -1,6 +1,6 @@
 class Main {
 
-  static void main(int N) {
+  static void main(int N, int i1, int i2) {
     assume(N > 0);
 
     int[] data := new int[N];
@@ -12,10 +12,9 @@ class Main {
 
     Main.iterativeMergesort(data);
 
-    if(#data > 1) {
-      assert forall data, i1, v1 :
-        forall data, i2, v2 : i1 < i2 ==> v1 < v2;
-    };
+    assume 0 <= i1 && i1 < i2 && i2 < N;
+    di1 := data[i1]; di2 := data[i2];
+    assert di1 <= di2;
   }
 
   /////////////////////////////////////////
