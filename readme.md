@@ -14,7 +14,8 @@
 # Usage:
 
 ```
-    jip [OPTIONS] <PATH> <SUBCOMMAND>
+USAGE:
+    jip.exe [OPTIONS] <PATH> <SUBCOMMAND>
 
 ARGS:
     <PATH>    path to oox program
@@ -32,6 +33,9 @@ OPTIONS:
 
     -e, --expression-evaluator
             Turns on the expression evaluator
+
+        --equivalent-formula-caching
+            Turns on formula caching
 
     -f, --formula-caching
             Turns on formula caching
@@ -69,6 +73,8 @@ SUBCOMMANDS:
 
 ```
 
+Thus verifying a program up to a depth of 100 is done with `target/release/jip path/to/program.oox verify -d 100`, or verifying a program with a timeout of 100 seconds is done with `target/release/jip path/to/program.oox verify -t 100`
+
 # OOX
 Due to the shortcomings of Jip's parser you must prepended fields with a hyphen: 
 ```
@@ -83,6 +89,21 @@ class Node {
     - int value;
     - Node next;
 }
+```
+
+And if you want to write an `if then else` statement without else branch you must append a semicolon:
+```
+if (true){
+    x := y;
+} else {
+;
+}
+```
+becomes
+```
+if (true){
+    x := y;
+};
 ```
 # Testing
 All tests are executed with `cargo test -r`, we have 2 types of tests:
