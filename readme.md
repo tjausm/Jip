@@ -6,7 +6,7 @@
 3.
     1. **Ubuntu**: ```sudo apt install cmake llvm clang libclang-dev```
     2. **Windows**: download [cmake](https://cmake.org/download/) and [llvm](https://llvm.org/builds/)
-4. run `cargo build  --release` in the root folder (it can take 20 - 30 min to build due to z3 rust bindings the package)
+4. run `cargo build  --release` in the root folder (it can take 20 - 30 min to build due to the z3 rust bindings)
 5. Run with cmd `target/release/jip`
 6. _optionally:_ to use cvc4 or yices2, install verifiers and pass the argument with which they are available on path to Jip e.g. `target/release/jip path/to/program.oox --cvc4-arg cvc4 verify -d 100`
 
@@ -110,7 +110,7 @@ if (true){
 All tests are executed with `cargo test -r`, we have 2 types of tests:
 
 1. **Unit tests**: constructed using the [default method](https://doc.rust-lang.org/rust-by-example/testing/unit_testing.html).
-1. **Program tests**: one test is constructed for each OOX program in the `src/tests/programs` folder. We assume a test program contains no violation of it's assertions unless it has a file name ending in `_faulty`.
+1. **Program tests**: with `build.rs` we construct one test per OOX program in the `src/tests/programs` folder. We assume a test program contains no violation of it's assertions unless it has a file name ending in `_invalid`.
 
 # Cheatsheet
 - **Testing** 
