@@ -6,15 +6,17 @@
 3.
     1. **Ubuntu**: ```sudo apt install cmake llvm clang libclang-dev```
     2. **Windows**: download [cmake](https://cmake.org/download/) and [llvm](https://llvm.org/builds/)
-5. run `cargo build  --release` in the root folder (it can take 20 - 30 min to build due to z3 rust bindings the package)
-6. Run with cmd `target/release/jip`
+4. run `cargo build  --release` in the root folder (it can take 20 - 30 min to build due to z3 rust bindings the package)
+5. Run with cmd `target/release/jip`
+6. _optionally:_ to use cvc4 or yices2, install verifiers and pass the argument with which they are available on path to Jip e.g. `target/release/jip path/to/program.oox --cvc4-arg cvc4 verify -d 100`
 
 
 
 # Usage:
 
 ```
-    jip [OPTIONS] <PATH> <SUBCOMMAND>
+USAGE:
+    jip.exe [OPTIONS] <PATH> <SUBCOMMAND>
 
 ARGS:
     <PATH>    path to oox program
@@ -32,6 +34,9 @@ OPTIONS:
 
     -e, --expression-evaluator
             Turns on the expression evaluator
+
+        --equivalent-formula-caching
+            Turns on formula caching
 
     -f, --formula-caching
             Turns on formula caching
@@ -69,6 +74,8 @@ SUBCOMMANDS:
 
 ```
 
+Thus verifying a program up to a depth of 100 is done with `target/release/jip path/to/program.oox verify -d 100`, or verifying a program with a timeout of 100 seconds is done with `target/release/jip path/to/program.oox verify -t 100`
+
 # OOX
 Due to the shortcomings of Jip's parser you must prepended fields with a hyphen: 
 ```
@@ -83,6 +90,21 @@ class Node {
     - int value;
     - Node next;
 }
+```
+
+And if you want to write an `if then else` statement without else branch you must append a semicolon:
+```
+if (true){
+    x := y;
+} else {
+;
+}
+```
+becomes
+```
+if (true){
+    x := y;
+};
 ```
 # Testing
 All tests are executed with `cargo test -r`, we have 2 types of tests:

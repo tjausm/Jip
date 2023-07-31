@@ -22,7 +22,7 @@ pub enum Action {
     },
     AssignArgs {
         params: Parameters,
-        args: Vec<Expression>,
+        args: Vec<OOXExpression>,
     },
     /// copy ref of object method is called on to 'this'
     DeclareThis {

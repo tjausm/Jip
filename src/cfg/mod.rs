@@ -113,7 +113,7 @@ fn stmts_to_cfg<'a>(
                 // add condition as assume and assume_not to the cfg
                 let assume = Node::Statement(Statement::Assume(cond.clone()));
                 let assume_not =
-                    Node::Statement(Statement::Assume(Expression::Not(Box::new(cond))));
+                    Node::Statement(Statement::Assume(OOXExpression::Not(Box::new(cond))));
                 let assume_start = to_start(cfg.add_node(assume));
                 let assume_not_start = to_start(cfg.add_node(assume_not));
                 //iterate over all starting nodes to lay edges
@@ -163,7 +163,7 @@ fn stmts_to_cfg<'a>(
                 // add condition as assume and assume_not to the cfg
                 let assume_node = cfg.add_node(Node::Statement(Statement::Assume(cond.clone())));
                 let assume_not_node = cfg.add_node(Node::Statement(Statement::Assume(
-                    Expression::Not(Box::new(cond)),
+                    OOXExpression::Not(Box::new(cond)),
                 )));
 
                 // add edges from start node to assume and assume_not
@@ -280,7 +280,7 @@ fn stmts_to_cfg<'a>(
 
                 let assign_retval = cfg.add_node(Node::Statement(Statement::Assignment((
                     lhs,
-                    Rhs::Expression(Expression::Identifier("retval".to_string())),
+                    Rhs::OOXExpression(OOXExpression::Identifier("retval".to_string())),
                 ))));
 
                 cfg.add_edge(
@@ -405,7 +405,7 @@ fn stmts_to_cfg<'a>(
 fn routine_to_cfg<'a>(
     routine: Routine,
     append_incoming: Actions,
-    args: Vec<Expression>,
+    args: Vec<OOXExpression>,
     ty_stack: &mut TypeStack,
     f_env: &mut FunEnv,
     prog: &Program,

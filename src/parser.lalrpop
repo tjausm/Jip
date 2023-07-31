@@ -81,7 +81,7 @@ pub Statement : Statement = {
         <Invocation> ";" => Statement::Call(<>),
         Skip => Statement::Skip(<>),
         Ite => Statement::Ite(<>),
-        "return" <Expression> ";" => Statement::Return(<>),
+        "return" <OOXExpression> ";" => Statement::Return(<>),
         "return" ";" => Statement::ReturnVoid,
         Block => Statement::Block(<>),
         Assert => Statement::Assert(<>),
@@ -104,105 +104,105 @@ Assignment : Assignment = {
 Lhs : Lhs = {
     Identifier => Lhs::Identifier(<>),
     <Identifier> "." <Identifier> => Lhs::AccessField(<>),
-    <Identifier> "[" <Expression> "]" => Lhs::AccessArray(<>)
+    <Identifier> "[" <OOXExpression> "]" => Lhs::AccessArray(<>)
 }
 
 Rhs : Rhs= {
-    Expression => Rhs::Expression(<>),
+    OOXExpression => Rhs::OOXExpression(<>),
     <Identifier> "." <Identifier> => Rhs::AccessField(<>),
-    <Identifier> "[" <Expression> "]" => Rhs::AccessArray(<>),
+    <Identifier> "[" <OOXExpression> "]" => Rhs::AccessArray(<>),
     Invocation => Rhs::Invocation(<>),
     "new" <Identifier> "(" <Arguments> ")" => Rhs::Newobject(<>),
-    "new" <ClassType> "[" <Expression> "]" => Rhs::NewArray(<>),
-    "new" <Primitivetype> "[" <Expression> "]" => Rhs::NewArray(<>)
+    "new" <ClassType> "[" <OOXExpression> "]" => Rhs::NewArray(<>),
+    "new" <Primitivetype> "[" <OOXExpression> "]" => Rhs::NewArray(<>)
 }
 
 Invocation : Invocation = {
     <Identifier> "." <Identifier> "(" <Arguments> ")" => (<>)
 }
 
-Arguments : Arguments = <Comma<Expression>>;
+Arguments : Arguments = <Comma<OOXExpression>>;
 
 Skip : Skip = ";" => Skip;
 
 Ite : Ite = {
-    "if" "(" <e:Expression> ")" <s1:Statement> "else" <s2:Statement> => (e, Box::new(s1), Box::new(s2)),
-    "if" "(" <e:Expression> ")" <s1:Statement> ";" => (e, Box::new(s1), Box::new(Statement::Skip(Skip)))
+    "if" "(" <e:OOXExpression> ")" <s1:Statement> "else" <s2:Statement> => (e, Box::new(s1), Box::new(s2)),
+    "if" "(" <e:OOXExpression> ")" <s1:Statement> ";" => (e, Box::new(s1), Box::new(Statement::Skip(Skip)))
 }
 
 Block : Box<Statements> = {
     "{" <s:Statements> "}" => Box::new(<>)
 }
 
-Assert : Expression = {
+Assert : OOXExpression = {
     "assert" <s:VerificationExpression> ";" => <>
 }
 
-Assume : Expression = "assume" <VerificationExpression> ";";
+Assume : OOXExpression = "assume" <VerificationExpression> ";";
 
-While : While = "while" "(" <v:Expression> ")" <s : Statement>  => (v, Box::new(s));
+While : While = "while" "(" <v:OOXExpression> ")" <s : Statement>  => (v, Box::new(s));
 
-Expression : Expression = {
-    Expression2
+OOXExpression : OOXExpression = {
+    OOXExpression2
 }
 
-pub VerificationExpression : Expression = Expression1;
+pub VerificationExpression : OOXExpression = OOXExpression1;
 
-Expression1 : Expression = {
-    "forall" <arr:Identifier> "," <i:Identifier> "," <v:Identifier> ":" <expr:Expression1> => Expression::Forall(arr, i, v, Box::new(expr)),
-    "exists" <arr:Identifier> "," <i:Identifier> "," <v:Identifier> ":" <expr:Expression1> => Expression::Exists(arr, i, v, Box::new(expr)),
-    Expression2
+OOXExpression1 : OOXExpression = {
+    "forall" <arr:Identifier> "," <i:Identifier> "," <v:Identifier> ":" <expr:OOXExpression1> => OOXExpression::Forall(arr, i, v, Box::new(expr)),
+    "exists" <arr:Identifier> "," <i:Identifier> "," <v:Identifier> ":" <expr:OOXExpression1> => OOXExpression::Exists(arr, i, v, Box::new(expr)),
+    OOXExpression2
 }
 
-Expression2 : Expression = {
-    <l:Expression3> "==>" <r:Expression2> => Expression::Implies(Box::new(l), Box::new(r)),
-    Expression3
+OOXExpression2 : OOXExpression = {
+    <l:OOXExpression3> "==>" <r:OOXExpression2> => OOXExpression::Implies(Box::new(l), Box::new(r)),
+    OOXExpression3
 }
 
-Expression3 : Expression = {
-    <l:Expression4> "&&" <r:Expression3> => Expression::And(Box::new(l), Box::new(r)),
-    <l:Expression4> "||" <r:Expression3> => Expression::Or(Box::new(l), Box::new(r)),
-    Expression4
+OOXExpression3 : OOXExpression = {
+    <l:OOXExpression4> "&&" <r:OOXExpression3> => OOXExpression::And(Box::new(l), Box::new(r)),
+    <l:OOXExpression4> "||" <r:OOXExpression3> => OOXExpression::Or(Box::new(l), Box::new(r)),
+    OOXExpression4
 }
 
-Expression4 : Expression = {
-    <l:Expression5> "==" <r:Expression4> => Expression::EQ(Box::new(l), Box::new(r)),
-    <l:Expression5> "!=" <r:Expression4> => Expression::NE(Box::new(l), Box::new(r)),
-    Expression5
+OOXExpression4 : OOXExpression = {
+    <l:OOXExpression5> "==" <r:OOXExpression4> => OOXExpression::EQ(Box::new(l), Box::new(r)),
+    <l:OOXExpression5> "!=" <r:OOXExpression4> => OOXExpression::NE(Box::new(l), Box::new(r)),
+    OOXExpression5
 }
 
-Expression5 : Expression = {
-    <l:Expression6> "<" <r:Expression5> => Expression::LT(Box::new(l), Box::new(r)),
-    <l:Expression6> ">" <r:Expression5> => Expression::GT(Box::new(l), Box::new(r)),
-    <l:Expression6> "<=" <r:Expression5> => Expression::LEQ(Box::new(l), Box::new(r)),
-    <l:Expression6> ">=" <r:Expression5> => Expression::GEQ(Box::new(l), Box::new(r)),
-    Expression6
+OOXExpression5 : OOXExpression = {
+    <l:OOXExpression6> "<" <r:OOXExpression5> => OOXExpression::LT(Box::new(l), Box::new(r)),
+    <l:OOXExpression6> ">" <r:OOXExpression5> => OOXExpression::GT(Box::new(l), Box::new(r)),
+    <l:OOXExpression6> "<=" <r:OOXExpression5> => OOXExpression::LEQ(Box::new(l), Box::new(r)),
+    <l:OOXExpression6> ">=" <r:OOXExpression5> => OOXExpression::GEQ(Box::new(l), Box::new(r)),
+    OOXExpression6
 }
 
-Expression6 : Expression = {
-    <l:Expression7> "+" <r:Expression6> => Expression::Plus(Box::new(l), Box::new(r)),
-    <l:Expression7> "-" <r:Expression6> => Expression::Minus(Box::new(l), Box::new(r)),
-    Expression7
+OOXExpression6 : OOXExpression = {
+    <l:OOXExpression7> "+" <r:OOXExpression6> => OOXExpression::Plus(Box::new(l), Box::new(r)),
+    <l:OOXExpression7> "-" <r:OOXExpression6> => OOXExpression::Minus(Box::new(l), Box::new(r)),
+    OOXExpression7
 }
 
-Expression7 : Expression = {
-    <l:Expression8> "*" <r:Expression7> => Expression::Multiply(Box::new(l), Box::new(r)),
-    <l:Expression8> "/" <r:Expression7> => Expression::Divide(Box::new(l), Box::new(r)),
-    <l:Expression8> "%" <r:Expression7> => Expression::Mod(Box::new(l), Box::new(r)),
-    Expression8
+OOXExpression7 : OOXExpression = {
+    <l:OOXExpression8> "*" <r:OOXExpression7> => OOXExpression::Multiply(Box::new(l), Box::new(r)),
+    <l:OOXExpression8> "/" <r:OOXExpression7> => OOXExpression::Divide(Box::new(l), Box::new(r)),
+    <l:OOXExpression8> "%" <r:OOXExpression7> => OOXExpression::Mod(Box::new(l), Box::new(r)),
+    OOXExpression8
 }
 
-Expression8 : Expression = {
-    "-" <e:Expression8> => Expression::Negative(Box::new(<>)),
-    "!" <e:Expression8> => Expression::Not(Box::new(<>)),
-    Expression9
+OOXExpression8 : OOXExpression = {
+    "-" <e:OOXExpression8> => OOXExpression::Negative(Box::new(<>)),
+    "!" <e:OOXExpression8> => OOXExpression::Not(Box::new(<>)),
+    OOXExpression9
 }
 
-Expression9 : Expression = {
-    Identifier => Expression::Identifier(<>),
-    "#" <Identifier>     => Expression::SizeOf(<>),
-    Literal => Expression::Literal(<>),
-    "(" <e:Expression> ")" => e
+OOXExpression9 : OOXExpression = {
+    Identifier => OOXExpression::Identifier(<>),
+    "#" <Identifier>     => OOXExpression::SizeOf(<>),
+    Literal => OOXExpression::Literal(<>),
+    "(" <e:OOXExpression> ")" => e
 }
 
 

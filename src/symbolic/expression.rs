@@ -7,6 +7,8 @@ use std::{
     hash::{Hash, Hasher},
 };
 
+use rustc_hash::FxHashMap;
+
 use super::ref_values::{
     EvaluatedRefs, Interval, IntervalMap, Reference, ReferenceValue, SymRefType,
 };
@@ -19,8 +21,8 @@ pub struct PathConstraints {
 
 #[derive(Clone)]
 pub enum PathConstraint {
-    Assert(SymExpression),
-    Assume(SymExpression),
+    Assert(Expression),
+    Assume(Expression),
 }
 
 impl Default for PathConstraints {
@@ -33,17 +35,17 @@ impl Default for PathConstraints {
 
 impl PathConstraints {
     /// combine constraints over true as follows: `assume(a), assert(b) -> a ==> b && true`
-    pub fn combine_over_true(&self) -> SymExpression {
-        let mut constraints = SymExpression::Literal(Literal::Boolean(true));
+    pub fn combine_over_true(&self) -> Expression {
+        let mut constraints = Expression::Literal(Literal::Boolean(true));
 
         for constraint in self.constraints.iter().rev() {
             match constraint {
                 PathConstraint::Assert(expr) => {
-                    constraints = SymExpression::And(Box::new(expr.clone()), Box::new(constraints));
+                    constraints = Expression::And(Box::new(expr.clone()), Box::new(constraints));
                 }
                 PathConstraint::Assume(expr) => {
                     constraints =
-                        SymExpression::Implies(Box::new(expr.clone()), Box::new(constraints));
+                        Expression::Implies(Box::new(expr.clone()), Box::new(constraints));
                 }
             }
         }
@@ -51,16 +53,16 @@ impl PathConstraints {
         return constraints;
     }
     /// combine constraints as a conjunction as follows: `assume(a), assert(b) -> a && b`
-    pub fn conjunct(&self) -> SymExpression {
-        let mut constraints = SymExpression::Literal(Literal::Boolean(true));
+    pub fn conjunct(&self) -> Expression {
+        let mut constraints = Expression::Literal(Literal::Boolean(true));
 
         for constraint in self.constraints.iter().rev() {
             match constraint {
                 PathConstraint::Assert(expr) => {
-                    constraints = SymExpression::And(Box::new(expr.clone()), Box::new(constraints));
+                    constraints = Expression::And(Box::new(expr.clone()), Box::new(constraints));
                 }
                 PathConstraint::Assume(expr) => {
-                    constraints = SymExpression::And(Box::new(expr.clone()), Box::new(constraints));
+                    constraints = Expression::And(Box::new(expr.clone()), Box::new(constraints));
                 }
             }
         }
@@ -69,11 +71,11 @@ impl PathConstraints {
     }
 
     /// adds a new constraint
-    pub fn push_assertion(&mut self, assertion: SymExpression) {
+    pub fn push_assertion(&mut self, assertion: Expression) {
         self.constraints.push(PathConstraint::Assert(assertion));
     }
     /// adds a new constraint
-    pub fn push_assumption(&mut self, assumption: SymExpression) {
+    pub fn push_assumption(&mut self, assumption: Expression) {
         self.constraints.push(PathConstraint::Assume(assumption));
     }
     /// pops top most constraint
@@ -89,40 +91,39 @@ pub enum SymType {
     Ref(SymRefType),
 }
 
-#[derive(Clone)]
-pub enum SymExpression {
-    Implies(Box<SymExpression>, Box<SymExpression>),
+#[derive(Clone, Hash, Eq, PartialEq)]
+pub enum Expression {
+    Implies(Box<Expression>, Box<Expression>),
     Forall(Forall),
-    Exists(Identifier, Identifier, Identifier, Box<Expression>),
-    And(Box<SymExpression>, Box<SymExpression>),
-    Or(Box<SymExpression>, Box<SymExpression>),
-    EQ(Box<SymExpression>, Box<SymExpression>),
-    NE(Box<SymExpression>, Box<SymExpression>),
-    LT(Box<SymExpression>, Box<SymExpression>),
-    GT(Box<SymExpression>, Box<SymExpression>),
-    GEQ(Box<SymExpression>, Box<SymExpression>),
-    LEQ(Box<SymExpression>, Box<SymExpression>),
-    Plus(Box<SymExpression>, Box<SymExpression>),
-    Minus(Box<SymExpression>, Box<SymExpression>),
-    Multiply(Box<SymExpression>, Box<SymExpression>),
-    Divide(Box<SymExpression>, Box<SymExpression>),
-    Mod(Box<SymExpression>, Box<SymExpression>),
-    Negative(Box<SymExpression>),
-    Not(Box<SymExpression>),
+    And(Box<Expression>, Box<Expression>),
+    Or(Box<Expression>, Box<Expression>),
+    EQ(Box<Expression>, Box<Expression>),
+    NE(Box<Expression>, Box<Expression>),
+    LT(Box<Expression>, Box<Expression>),
+    GT(Box<Expression>, Box<Expression>),
+    GEQ(Box<Expression>, Box<Expression>),
+    LEQ(Box<Expression>, Box<Expression>),
+    Plus(Box<Expression>, Box<Expression>),
+    Minus(Box<Expression>, Box<Expression>),
+    Multiply(Box<Expression>, Box<Expression>),
+    Divide(Box<Expression>, Box<Expression>),
+    Mod(Box<Expression>, Box<Expression>),
+    Negative(Box<Expression>),
+    Not(Box<Expression>),
     Literal(Literal),
     FreeVariable(SymType, Identifier),
     Reference(Reference),
     Uninitialized,
 }
 
-impl SymExpression {
+impl Expression {
     /// destructs forall and exists quantifiers and then
     /// generates a substituted expression from it
-    pub fn new(sym_memory: &SymMemory, expr: Expression) -> Self {
+    pub fn substitute(sym_memory: &SymMemory, expr: OOXExpression) -> Self {
         match expr {
-            Expression::Forall(arr_name, index, value, inner_expr) => {
+            OOXExpression::Forall(arr_name, index, value, inner_expr) => {
                 let r = match sym_memory.stack_get(&arr_name) {
-                    Some(SymExpression::Reference(r)) => r,
+                    Some(Expression::Reference(r)) => r,
                     Some(_) => panic_with_diagnostics(
                         &format!(
                             "In '{:?}' identifier {} is not a reference",
@@ -138,7 +139,7 @@ impl SymExpression {
                         &sym_memory,
                     ),
                 };
-                SymExpression::Forall(Forall::new(
+                Expression::Forall(Forall::new(
                     r,
                     index,
                     value,
@@ -146,13 +147,13 @@ impl SymExpression {
                     sym_memory.clone(),
                 ))
             }
-            Expression::Exists(_arr_name, _index, _value, _expr) => todo!(),
-            Expression::Identifier(id) => match sym_memory.stack_get(&id) {
+            OOXExpression::Exists(_arr_name, _index, _value, _expr) => todo!(),
+            OOXExpression::Identifier(id) => match sym_memory.stack_get(&id) {
                 Some(sym_expr) => sym_expr,
                 _ => panic_with_diagnostics(&format!("{} was not declared", id), &sym_memory),
             },
-            Expression::SizeOf(arr_name) => match sym_memory.stack_get(&arr_name) {
-                Some(SymExpression::Reference(r)) => match sym_memory.heap_get_unsafe(&r) {
+            OOXExpression::SizeOf(arr_name) => match sym_memory.stack_get(&arr_name) {
+                Some(Expression::Reference(r)) => match sym_memory.heap_get_unsafe(&r) {
                     ReferenceValue::Array((_, _, size, _)) => size.clone(),
                     _ => panic_with_diagnostics(
                         &format!("{} is not an array", arr_name),
@@ -163,274 +164,273 @@ impl SymExpression {
                     panic_with_diagnostics(&format!("{} is not a reference", arr_name), &sym_memory)
                 }
             },
-            Expression::Implies(l, r) => SymExpression::Implies(
-                Box::new(SymExpression::new(sym_memory, *l)),
-                Box::new(SymExpression::new(sym_memory, *r)),
+            OOXExpression::Implies(l, r) => Expression::Implies(
+                Box::new(Expression::substitute(sym_memory, *l)),
+                Box::new(Expression::substitute(sym_memory, *r)),
             ),
-            Expression::And(l, r) => SymExpression::And(
-                Box::new(SymExpression::new(sym_memory, *l)),
-                Box::new(SymExpression::new(sym_memory, *r)),
+            OOXExpression::And(l, r) => Expression::And(
+                Box::new(Expression::substitute(sym_memory, *l)),
+                Box::new(Expression::substitute(sym_memory, *r)),
             ),
-            Expression::Or(l, r) => SymExpression::Or(
-                Box::new(SymExpression::new(sym_memory, *l)),
-                Box::new(SymExpression::new(sym_memory, *r)),
+            OOXExpression::Or(l, r) => Expression::Or(
+                Box::new(Expression::substitute(sym_memory, *l)),
+                Box::new(Expression::substitute(sym_memory, *r)),
             ),
-            Expression::EQ(l, r) => SymExpression::EQ(
-                Box::new(SymExpression::new(sym_memory, *l)),
-                Box::new(SymExpression::new(sym_memory, *r)),
+            OOXExpression::EQ(l, r) => Expression::EQ(
+                Box::new(Expression::substitute(sym_memory, *l)),
+                Box::new(Expression::substitute(sym_memory, *r)),
             ),
-            Expression::NE(l, r) => SymExpression::NE(
-                Box::new(SymExpression::new(sym_memory, *l)),
-                Box::new(SymExpression::new(sym_memory, *r)),
+            OOXExpression::NE(l, r) => Expression::NE(
+                Box::new(Expression::substitute(sym_memory, *l)),
+                Box::new(Expression::substitute(sym_memory, *r)),
             ),
-            Expression::LT(l, r) => SymExpression::LT(
-                Box::new(SymExpression::new(sym_memory, *l)),
-                Box::new(SymExpression::new(sym_memory, *r)),
+            OOXExpression::LT(l, r) => Expression::LT(
+                Box::new(Expression::substitute(sym_memory, *l)),
+                Box::new(Expression::substitute(sym_memory, *r)),
             ),
-            Expression::GT(l, r) => SymExpression::GT(
-                Box::new(SymExpression::new(sym_memory, *l)),
-                Box::new(SymExpression::new(sym_memory, *r)),
+            OOXExpression::GT(l, r) => Expression::GT(
+                Box::new(Expression::substitute(sym_memory, *l)),
+                Box::new(Expression::substitute(sym_memory, *r)),
             ),
-            Expression::GEQ(l, r) => SymExpression::GEQ(
-                Box::new(SymExpression::new(sym_memory, *l)),
-                Box::new(SymExpression::new(sym_memory, *r)),
+            OOXExpression::GEQ(l, r) => Expression::GEQ(
+                Box::new(Expression::substitute(sym_memory, *l)),
+                Box::new(Expression::substitute(sym_memory, *r)),
             ),
-            Expression::LEQ(l, r) => SymExpression::LEQ(
-                Box::new(SymExpression::new(sym_memory, *l)),
-                Box::new(SymExpression::new(sym_memory, *r)),
+            OOXExpression::LEQ(l, r) => Expression::LEQ(
+                Box::new(Expression::substitute(sym_memory, *l)),
+                Box::new(Expression::substitute(sym_memory, *r)),
             ),
-            Expression::Plus(l, r) => SymExpression::Plus(
-                Box::new(SymExpression::new(sym_memory, *l)),
-                Box::new(SymExpression::new(sym_memory, *r)),
+            OOXExpression::Plus(l, r) => Expression::Plus(
+                Box::new(Expression::substitute(sym_memory, *l)),
+                Box::new(Expression::substitute(sym_memory, *r)),
             ),
-            Expression::Minus(l, r) => SymExpression::Minus(
-                Box::new(SymExpression::new(sym_memory, *l)),
-                Box::new(SymExpression::new(sym_memory, *r)),
+            OOXExpression::Minus(l, r) => Expression::Minus(
+                Box::new(Expression::substitute(sym_memory, *l)),
+                Box::new(Expression::substitute(sym_memory, *r)),
             ),
-            Expression::Multiply(l, r) => SymExpression::Multiply(
-                Box::new(SymExpression::new(sym_memory, *l)),
-                Box::new(SymExpression::new(sym_memory, *r)),
+            OOXExpression::Multiply(l, r) => Expression::Multiply(
+                Box::new(Expression::substitute(sym_memory, *l)),
+                Box::new(Expression::substitute(sym_memory, *r)),
             ),
-            Expression::Divide(l, r) => SymExpression::Divide(
-                Box::new(SymExpression::new(sym_memory, *l)),
-                Box::new(SymExpression::new(sym_memory, *r)),
+            OOXExpression::Divide(l, r) => Expression::Divide(
+                Box::new(Expression::substitute(sym_memory, *l)),
+                Box::new(Expression::substitute(sym_memory, *r)),
             ),
-            Expression::Mod(l, r) => SymExpression::Mod(
-                Box::new(SymExpression::new(sym_memory, *l)),
-                Box::new(SymExpression::new(sym_memory, *r)),
+            OOXExpression::Mod(l, r) => Expression::Mod(
+                Box::new(Expression::substitute(sym_memory, *l)),
+                Box::new(Expression::substitute(sym_memory, *r)),
             ),
-            Expression::Negative(expr) => {
-                SymExpression::Negative(Box::new(SymExpression::new(sym_memory, *expr)))
+            OOXExpression::Negative(expr) => {
+                Expression::Negative(Box::new(Expression::substitute(sym_memory, *expr)))
             }
-            Expression::Not(expr) => {
-                SymExpression::Not(Box::new(SymExpression::new(sym_memory, *expr)))
+            OOXExpression::Not(expr) => {
+                Expression::Not(Box::new(Expression::substitute(sym_memory, *expr)))
             }
-            Expression::Literal(lit) => SymExpression::Literal(lit),
+            OOXExpression::Literal(lit) => Expression::Literal(lit),
         }
     }
 
     /// front end simplifier, only pass eval_refs if it makes sense to evaluate the lazy refs
     pub fn eval(self, i: &IntervalMap, eval_refs: Option<&EvaluatedRefs>) -> Self {
         match &self {
-            SymExpression::And(l, r) => {
+            Expression::And(l, r) => {
                 match (l.clone().eval(i, eval_refs), r.clone().eval(i, eval_refs)) {
-                    (SymExpression::Literal(Literal::Boolean(false)), _) => {
-                        SymExpression::Literal(Literal::Boolean(false))
+                    (Expression::Literal(Literal::Boolean(false)), _) => {
+                        Expression::Literal(Literal::Boolean(false))
                     }
-                    (_, SymExpression::Literal(Literal::Boolean(false))) => {
-                        SymExpression::Literal(Literal::Boolean(false))
+                    (_, Expression::Literal(Literal::Boolean(false))) => {
+                        Expression::Literal(Literal::Boolean(false))
                     }
                     (
-                        SymExpression::Literal(Literal::Boolean(true)),
-                        SymExpression::Literal(Literal::Boolean(true)),
-                    ) => SymExpression::Literal(Literal::Boolean(true)),
+                        Expression::Literal(Literal::Boolean(true)),
+                        Expression::Literal(Literal::Boolean(true)),
+                    ) => Expression::Literal(Literal::Boolean(true)),
                     (l_simple, r_simple) => {
-                        SymExpression::And(Box::new(l_simple), Box::new(r_simple))
+                        Expression::And(Box::new(l_simple), Box::new(r_simple))
                     }
                 }
             }
-            SymExpression::Or(l, r) => {
+            Expression::Or(l, r) => {
                 match (l.clone().eval(i, eval_refs), r.clone().eval(i, eval_refs)) {
-                    (SymExpression::Literal(Literal::Boolean(true)), _) => {
-                        SymExpression::Literal(Literal::Boolean(true))
+                    (Expression::Literal(Literal::Boolean(true)), _) => {
+                        Expression::Literal(Literal::Boolean(true))
                     }
-                    (_, SymExpression::Literal(Literal::Boolean(true))) => {
-                        SymExpression::Literal(Literal::Boolean(true))
+                    (_, Expression::Literal(Literal::Boolean(true))) => {
+                        Expression::Literal(Literal::Boolean(true))
                     }
                     (l_simple, r_simple) => {
-                        SymExpression::Or(Box::new(l_simple), Box::new(r_simple))
+                        Expression::Or(Box::new(l_simple), Box::new(r_simple))
                     }
                 }
             }
-            SymExpression::Implies(l, r) => {
+            Expression::Implies(l, r) => {
                 match (l.clone().eval(i, eval_refs), r.clone().eval(i, eval_refs)) {
-                    (SymExpression::Literal(Literal::Boolean(false)), _) => {
-                        SymExpression::Literal(Literal::Boolean(true))
+                    (Expression::Literal(Literal::Boolean(false)), _) => {
+                        Expression::Literal(Literal::Boolean(true))
                     }
-                    (_, SymExpression::Literal(Literal::Boolean(true))) => {
-                        SymExpression::Literal(Literal::Boolean(true))
+                    (_, Expression::Literal(Literal::Boolean(true))) => {
+                        Expression::Literal(Literal::Boolean(true))
                     }
                     (
-                        SymExpression::Literal(Literal::Boolean(_)),
-                        SymExpression::Literal(Literal::Boolean(_)),
-                    ) => SymExpression::Literal(Literal::Boolean(false)),
+                        Expression::Literal(Literal::Boolean(_)),
+                        Expression::Literal(Literal::Boolean(_)),
+                    ) => Expression::Literal(Literal::Boolean(false)),
                     (l_simple, r_simple) => {
-                        SymExpression::Implies(Box::new(l_simple), Box::new(r_simple))
+                        Expression::Implies(Box::new(l_simple), Box::new(r_simple))
                     }
                 }
             }
             // simplify not equal to equal
-            SymExpression::NE(l, r) => SymExpression::Not(Box::new(SymExpression::EQ(
+            Expression::NE(l, r) => Expression::Not(Box::new(Expression::EQ(
                 Box::new(*l.clone()),
                 Box::new(*r.clone()),
             )))
             .eval(i, eval_refs),
-            SymExpression::EQ(l, r) => {
+            Expression::EQ(l, r) => {
                 match (l.clone().eval(i, eval_refs), r.clone().eval(i, eval_refs)) {
                     // if lit or fv are equal => true
-                    (SymExpression::Literal(l_lit), SymExpression::Literal(r_lit)) => {
-                        SymExpression::Literal(Literal::Boolean(l_lit == r_lit))
+                    (Expression::Literal(l_lit), Expression::Literal(r_lit)) => {
+                        Expression::Literal(Literal::Boolean(l_lit == r_lit))
                     }
                     (
-                        SymExpression::FreeVariable(_, l_fv),
-                        SymExpression::FreeVariable(__, r_fv),
-                    ) if l_fv == r_fv => SymExpression::Literal(Literal::Boolean(true)),
+                        Expression::FreeVariable(_, l_fv),
+                        Expression::FreeVariable(__, r_fv),
+                    ) if l_fv == r_fv => Expression::Literal(Literal::Boolean(true)),
 
                     (l_simple, r_simple) => {
                         match (Interval::infer(&l_simple, i), Interval::infer(&r_simple, i)) {
                             //check if intervals have no intersection
                             (Interval(a, b), Interval(d, c)) if b < d || c < a => {
-                                SymExpression::Literal(Literal::Boolean(true))
+                                Expression::Literal(Literal::Boolean(false))
                             }
-                            _ => SymExpression::EQ(Box::new(l_simple), Box::new(r_simple)),
+                            _ => Expression::EQ(Box::new(l_simple), Box::new(r_simple)),
                         }
                     }
                 }
             }
 
             // Define LEQ, GT and GEQ in terms of LT
-            SymExpression::LEQ(l, r) => SymExpression::Not(Box::new(SymExpression::LT(
+            Expression::LEQ(l, r) => Expression::Not(Box::new(Expression::LT(
                 Box::new(*r.clone()),
                 Box::new(*l.clone()),
             )))
             .eval(i, eval_refs),
-            SymExpression::GT(l, r) => Box::new(SymExpression::LT(
+            Expression::GT(l, r) => Box::new(Expression::LT(
                 Box::new(*r.clone()),
                 Box::new(*l.clone()),
             ))
             .eval(i, eval_refs),
-            SymExpression::GEQ(l, r) => SymExpression::Not(Box::new(SymExpression::LT(
+            Expression::GEQ(l, r) => Expression::Not(Box::new(Expression::LT(
                 Box::new(*l.clone()),
                 Box::new(*r.clone()),
             )))
             .eval(i, eval_refs),
-            SymExpression::LT(l, r) => {
+            Expression::LT(l, r) => {
                 match (l.clone().eval(i, eval_refs), r.clone().eval(i, eval_refs)) {
                     (
-                        SymExpression::Literal(Literal::Integer(l_lit)),
-                        SymExpression::Literal(Literal::Integer(r_lit)),
-                    ) => SymExpression::Literal(Literal::Boolean(l_lit < r_lit)),
+                        Expression::Literal(Literal::Integer(l_lit)),
+                        Expression::Literal(Literal::Integer(r_lit)),
+                    ) => Expression::Literal(Literal::Boolean(l_lit < r_lit)),
                     (l_simple, r_simple) => {
                         match (Interval::infer(&l_simple, i), Interval::infer(&r_simple, i)) {
                             //check if intervals have no intersection
                             (Interval(_a, b), Interval(c, _d)) if b < c => {
-                                SymExpression::Literal(Literal::Boolean(true))
+                                Expression::Literal(Literal::Boolean(true))
                             }
                             (Interval(a, _b), Interval(_c, d)) if d < a => {
-                                SymExpression::Literal(Literal::Boolean(false))
+                                Expression::Literal(Literal::Boolean(false))
                             }
-                            _ => SymExpression::LT(Box::new(l_simple), Box::new(r_simple)),
+                            _ => Expression::LT(Box::new(l_simple), Box::new(r_simple)),
                         }
                     }
                 }
             }
-            SymExpression::Plus(l, r) => {
+            Expression::Plus(l, r) => {
                 match (l.clone().eval(i, eval_refs), r.clone().eval(i, eval_refs)) {
                     (
-                        SymExpression::Literal(Literal::Integer(l_lit)),
-                        SymExpression::Literal(Literal::Integer(r_lit)),
-                    ) => SymExpression::Literal(Literal::Integer(l_lit + r_lit)),
+                        Expression::Literal(Literal::Integer(l_lit)),
+                        Expression::Literal(Literal::Integer(r_lit)),
+                    ) => Expression::Literal(Literal::Integer(l_lit + r_lit)),
                     (l_simple, r_simple) => {
-                        SymExpression::Plus(Box::new(l_simple), Box::new(r_simple))
+                        Expression::Plus(Box::new(l_simple), Box::new(r_simple))
                     }
                 }
             }
-            SymExpression::Minus(l, r) => {
+            Expression::Minus(l, r) => {
                 match (l.clone().eval(i, eval_refs), r.clone().eval(i, eval_refs)) {
                     (
-                        SymExpression::Literal(Literal::Integer(l_lit)),
-                        SymExpression::Literal(Literal::Integer(r_lit)),
-                    ) => SymExpression::Literal(Literal::Integer(l_lit - r_lit)),
+                        Expression::Literal(Literal::Integer(l_lit)),
+                        Expression::Literal(Literal::Integer(r_lit)),
+                    ) => Expression::Literal(Literal::Integer(l_lit - r_lit)),
                     (l_simple, r_simple) => {
-                        SymExpression::Minus(Box::new(l_simple), Box::new(r_simple))
+                        Expression::Minus(Box::new(l_simple), Box::new(r_simple))
                     }
                 }
             }
-            SymExpression::Multiply(l, r) => {
+            Expression::Multiply(l, r) => {
                 match (l.clone().eval(i, eval_refs), r.clone().eval(i, eval_refs)) {
                     (
-                        SymExpression::Literal(Literal::Integer(l_lit)),
-                        SymExpression::Literal(Literal::Integer(r_lit)),
-                    ) => SymExpression::Literal(Literal::Integer(l_lit * r_lit)),
+                        Expression::Literal(Literal::Integer(l_lit)),
+                        Expression::Literal(Literal::Integer(r_lit)),
+                    ) => Expression::Literal(Literal::Integer(l_lit * r_lit)),
                     (l_simple, r_simple) => {
-                        SymExpression::Multiply(Box::new(l_simple), Box::new(r_simple))
+                        Expression::Multiply(Box::new(l_simple), Box::new(r_simple))
                     }
                 }
             }
-            SymExpression::Divide(l, r) => {
+            Expression::Divide(l, r) => {
                 match (l.clone().eval(i, eval_refs), r.clone().eval(i, eval_refs)) {
                     (
-                        SymExpression::Literal(Literal::Integer(l_lit)),
-                        SymExpression::Literal(Literal::Integer(r_lit)),
-                    ) => SymExpression::Literal(Literal::Integer(l_lit / r_lit)),
+                        Expression::Literal(Literal::Integer(l_lit)),
+                        Expression::Literal(Literal::Integer(r_lit)),
+                    ) => Expression::Literal(Literal::Integer(l_lit / r_lit)),
                     (l_simple, r_simple) => {
-                        SymExpression::Divide(Box::new(l_simple), Box::new(r_simple))
+                        Expression::Divide(Box::new(l_simple), Box::new(r_simple))
                     }
                 }
             }
-            SymExpression::Mod(l, r) => {
+            Expression::Mod(l, r) => {
                 match (l.clone().eval(i, eval_refs), r.clone().eval(i, eval_refs)) {
                     (
-                        SymExpression::Literal(Literal::Integer(l_lit)),
-                        SymExpression::Literal(Literal::Integer(r_lit)),
-                    ) => SymExpression::Literal(Literal::Integer(l_lit % r_lit)),
+                        Expression::Literal(Literal::Integer(l_lit)),
+                        Expression::Literal(Literal::Integer(r_lit)),
+                    ) => Expression::Literal(Literal::Integer(l_lit % r_lit)),
                     (l_simple, r_simple) => {
-                        SymExpression::Mod(Box::new(l_simple), Box::new(r_simple))
+                        Expression::Mod(Box::new(l_simple), Box::new(r_simple))
                     }
                 }
             }
-            SymExpression::Not(expr) => match expr.clone().eval(i, eval_refs) {
-                SymExpression::Not(inner_expr) => inner_expr.clone().eval(i, eval_refs),
-                SymExpression::Literal(Literal::Boolean(b)) => {
-                    SymExpression::Literal(Literal::Boolean(!b))
+            Expression::Not(expr) => match expr.clone().eval(i, eval_refs) {
+                Expression::Not(inner_expr) => inner_expr.clone().eval(i, eval_refs),
+                Expression::Literal(Literal::Boolean(b)) => {
+                    Expression::Literal(Literal::Boolean(!b))
                 }
-                simple_expr => SymExpression::Not(Box::new(simple_expr)),
+                simple_expr => Expression::Not(Box::new(simple_expr)),
             },
-            SymExpression::Negative(expr) => match expr.clone().eval(i, eval_refs) {
-                SymExpression::Negative(inner_expr) => inner_expr.clone().eval(i, eval_refs),
-                SymExpression::Literal(Literal::Integer(n)) => {
-                    SymExpression::Literal(Literal::Integer(-n))
+            Expression::Negative(expr) => match expr.clone().eval(i, eval_refs) {
+                Expression::Negative(inner_expr) => inner_expr.clone().eval(i, eval_refs),
+                Expression::Literal(Literal::Integer(n)) => {
+                    Expression::Literal(Literal::Integer(-n))
                 }
-                expr => SymExpression::Negative(Box::new(expr)),
+                expr => Expression::Negative(Box::new(expr)),
             },
-            SymExpression::Literal(_) => self,
+            Expression::Literal(_) => self,
             //evaluate point interval
-            SymExpression::FreeVariable(_, _x) => match Interval::infer(&self, i) {
+            Expression::FreeVariable(_, _x) => match Interval::infer(&self, i) {
                 Interval(a, b) if a == b && a.is_finite() => {
-                    SymExpression::Literal(Literal::Integer(a.finite().unwrap()))
+                    Expression::Literal(Literal::Integer(a.finite().unwrap()))
                 }
                 _ => self,
             },
-            SymExpression::Reference(r) => match (r, eval_refs) {
+            Expression::Reference(r) => match (r, eval_refs) {
                 (Reference::Evaluated(_), _) => self,
                 (Reference::Lazy { r, class: _ }, Some(er)) if er.contains(r) => {
-                    SymExpression::Reference(Reference::Evaluated(*r))
+                    Expression::Reference(Reference::Evaluated(*r))
                 }
                 _ => self,
             },
-            SymExpression::Forall(_) => self,
-            SymExpression::Exists(_, _, _, _) => self,
-            SymExpression::Uninitialized => panic_with_diagnostics(
+            Expression::Forall(_) => self,
+            Expression::Uninitialized => panic_with_diagnostics(
                 "There is an uninitialized value in an expression. Did you declare all variables?",
                 &self,
             ),
@@ -443,16 +443,29 @@ pub struct Forall {
     r: Reference,
     index: Identifier,
     value: Identifier,
-    inner_expr: Expression,
+    inner_expr: OOXExpression,
     captured_memory: SymMemory,
 }
+
+// randomize hashing if Forall is involved in Expression
+impl Hash for Forall {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        rand::random::<u64>().hash(state)
+    }
+}
+impl PartialEq for Forall {
+    fn eq(&self, other: &Self) -> bool {
+        false
+    }
+}
+impl Eq for Forall {}
 
 impl Forall {
     fn new(
         r: Reference,
         index: Identifier,
         value: Identifier,
-        inner_expr: Expression,
+        inner_expr: OOXExpression,
         captured_memory: SymMemory,
     ) -> Self {
         Self {
@@ -477,7 +490,7 @@ impl Forall {
     ///
     /// return c && e
     /// ```
-    pub fn construct(&self, current_memory: &SymMemory) -> SymExpression {
+    pub fn construct(&self, current_memory: &SymMemory) -> Expression {
         let (r, index, value, inner_expr, captured_memory) = (
             &self.r,
             &self.index,
@@ -485,7 +498,7 @@ impl Forall {
             &self.inner_expr,
             &self.captured_memory,
         );
-        let index_id = SymExpression::FreeVariable(SymType::Int, index.clone());
+        let index_id = Expression::FreeVariable(SymType::Int, index.clone());
 
         let (sym_ty, arr, _size_expr, _) = match current_memory.heap_get_unsafe(r) {
             ReferenceValue::Array(a) => a,
@@ -495,8 +508,8 @@ impl Forall {
         // foreach (i, v) pair in arr:
         // - C = for each[i |-> index, v |-> value]expr && C
         // - O = index != i && O
-        let mut c = SymExpression::Literal(Literal::Boolean(true));
-        let mut o = SymExpression::Literal(Literal::Boolean(true));
+        let mut c = Expression::Literal(Literal::Boolean(true));
+        let mut o = Expression::Literal(Literal::Boolean(true));
         for (i, v) in arr.into_iter() {
             // we insert index and value substitutions into stack
             // and build a new inner_expression with said substitutions
@@ -504,19 +517,19 @@ impl Forall {
             extended_memory.stack_insert(index.clone(), i.clone());
             extended_memory.stack_insert(value.clone(), v.clone());
 
-            c = SymExpression::And(
+            c = Expression::And(
                 Box::new(c),
-                Box::new(SymExpression::new(&extended_memory, inner_expr.clone())),
+                Box::new(Expression::substitute(&extended_memory, inner_expr.clone())),
             );
 
-            let ne = SymExpression::NE(Box::new(index_id.clone()), Box::new(i.clone()));
-            o = SymExpression::And(Box::new(ne), Box::new(o));
+            let ne = Expression::NE(Box::new(index_id.clone()), Box::new(i.clone()));
+            o = Expression::And(Box::new(ne), Box::new(o));
         }
 
         // E = index >= 0 && O && index < #arr ==> expr
-        let i_geq_0 = SymExpression::GEQ(
+        let i_geq_0 = Expression::GEQ(
             Box::new(index_id.clone()),
-            Box::new(SymExpression::Literal(Literal::Integer(0))),
+            Box::new(Expression::Literal(Literal::Integer(0))),
         );
 
         // get size from heap and make i < size expression
@@ -525,90 +538,77 @@ impl Forall {
             _ => todo!(),
         };
 
-        let i_lt_size = SymExpression::LT(Box::new(index_id.clone()), Box::new(size.clone()));
+        let i_lt_size = Expression::LT(Box::new(index_id.clone()), Box::new(size.clone()));
 
         // build inner expression with index and value as freevars
         let mut extended_memory = captured_memory.clone();
         extended_memory.stack_insert(
             index.clone(),
-            SymExpression::FreeVariable(SymType::Int, index.clone()),
+            Expression::FreeVariable(SymType::Int, index.clone()),
         );
         extended_memory.stack_insert(
             value.clone(),
-            SymExpression::FreeVariable(sym_ty.clone(), value.clone()),
+            Expression::FreeVariable(sym_ty.clone(), value.clone()),
         );
-        let inner_expr = SymExpression::new(&extended_memory, inner_expr.clone());
+        let inner_expr = Expression::substitute(&extended_memory, inner_expr.clone());
 
-        let e = SymExpression::Implies(
-            Box::new(SymExpression::And(
+        let e = Expression::Implies(
+            Box::new(Expression::And(
                 Box::new(i_geq_0),
-                Box::new(SymExpression::And(Box::new(o), Box::new(i_lt_size))),
+                Box::new(Expression::And(Box::new(o), Box::new(i_lt_size))),
             )),
             Box::new(inner_expr),
         );
 
-        SymExpression::And(Box::new(c), Box::new(e))
+        Expression::And(Box::new(c), Box::new(e))
     }
 }
-
 /// Intermediate type use to implement custom `Hash` for Expression
 /// while also using the default hasher for the 'base values'
-#[derive(Hash)]
-enum HashExpression {
-    Plus(Vec<u64>),
-    Multiply(Vec<u64>),
-    Divide(u64, u64),
-    Mod(u64, u64),
-    Negative(u64),
+#[derive(Hash, Debug, Eq, PartialEq)]
+pub enum NormalizedExpression {
+    Plus(Vec<NormalizedExpression>),
+    Multiply(Vec<NormalizedExpression>),
+    Divide(Box<NormalizedExpression>, Box<NormalizedExpression>),
+    Mod(Box<NormalizedExpression>, Box<NormalizedExpression>),
+    Negative(Box<NormalizedExpression>),
     FreeVariable(SymType, Identifier),
     Reference(Reference),
-    Forall(Reference, Identifier, Identifier, SymExpression),
-    Exists(Reference, Identifier, Identifier, SymExpression),
-    Implies(u64, u64),
-    And(Vec<u64>),
-    Or(Vec<u64>),
-    EQ(u64, u64),
-    NE(u64, u64),
-    LT(u64, u64),
-    GT(u64, u64),
-    GEQ(u64, u64),
-    LEQ(u64, u64),
-    Not(u64),
-    LazyReference(u64),
-    Uninitialized,
+    Literal(Literal),
+    Implies(Box<NormalizedExpression>, Box<NormalizedExpression>),
+    And(Vec<NormalizedExpression>),
+    Or(Vec<NormalizedExpression>),
+    EQ(Box<NormalizedExpression>, Box<NormalizedExpression>),
+    NE(Box<NormalizedExpression>, Box<NormalizedExpression>),
+    LT(Box<NormalizedExpression>, Box<NormalizedExpression>),
+    GT(Box<NormalizedExpression>, Box<NormalizedExpression>),
+    GEQ(Box<NormalizedExpression>, Box<NormalizedExpression>),
+    LEQ(Box<NormalizedExpression>, Box<NormalizedExpression>),
+    Not(Box<NormalizedExpression>),
+    Weird(u64), // when something is not normalizable make it weird with a random number e.g. forall expressions
 }
 
-fn calculate_hash<T: Hash>(t: &T) -> u64 {
-    let mut s = DefaultHasher::new();
-    t.hash(&mut s);
-    s.finish()
-}
-fn map_hash<T: Hash>(v: &Vec<T>) -> Vec<u64> {
-    v.into_iter()
-        .map(|t| calculate_hash(&t))
-        .collect::<Vec<u64>>()
-}
+impl Expression {
 
-impl Hash for SymExpression {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        fn collect_sum(expr: SymExpression) -> Vec<SymExpression> {
+    pub fn normalize(&self) -> NormalizedExpression {
+        fn collect_sum(expr: Expression) -> Vec<Expression> {
             match expr {
-                SymExpression::Plus(l_expr, r_expr) => {
+                Expression::Plus(l_expr, r_expr) => {
                     let mut sum = collect_sum(*l_expr);
                     sum.append(&mut collect_sum(*r_expr));
                     sum
                 }
-                SymExpression::Minus(l_expr, r_expr) => collect_sum(SymExpression::Plus(
+                Expression::Minus(l_expr, r_expr) => collect_sum(Expression::Plus(
                     l_expr,
-                    Box::new(SymExpression::Negative(r_expr)),
+                    Box::new(Expression::Negative(r_expr)),
                 )),
                 _ => vec![expr],
             }
         }
 
-        fn collect_mult(expr: SymExpression) -> Vec<SymExpression> {
+        fn collect_mult(expr: Expression) -> Vec<Expression> {
             match expr {
-                SymExpression::Multiply(l_expr, r_expr) => {
+                Expression::Multiply(l_expr, r_expr) => {
                     let mut mult = collect_mult(*l_expr);
                     mult.append(&mut collect_mult(*r_expr));
                     mult
@@ -616,9 +616,9 @@ impl Hash for SymExpression {
                 _ => vec![expr],
             }
         }
-        fn collect_and(expr: SymExpression) -> Vec<SymExpression> {
+        fn collect_and(expr: Expression) -> Vec<Expression> {
             match expr {
-                SymExpression::And(l_expr, r_expr) => {
+                Expression::And(l_expr, r_expr) => {
                     let mut conj = collect_mult(*l_expr);
                     conj.append(&mut collect_mult(*r_expr));
                     conj
@@ -626,9 +626,9 @@ impl Hash for SymExpression {
                 _ => vec![expr],
             }
         }
-        fn collect_or(expr: SymExpression) -> Vec<SymExpression> {
+        fn collect_or(expr: Expression) -> Vec<Expression> {
             match expr {
-                SymExpression::Or(l_expr, r_expr) => {
+                Expression::Or(l_expr, r_expr) => {
                     let mut or = collect_mult(*l_expr);
                     or.append(&mut collect_mult(*r_expr));
                     or
@@ -638,86 +638,112 @@ impl Hash for SymExpression {
         }
 
         match self {
-            SymExpression::Plus(_, _) => {
-                let sum = collect_sum(self.clone());
-                let mut hashed_sum = map_hash(&sum);
-                hashed_sum.sort();
-                HashExpression::Plus(hashed_sum).hash(state)
+            Expression::Plus(_, _) => {
+                let c = 
+                    collect_sum(self.clone())
+                    .into_iter()
+                    .map(|e| e.normalize())
+                    .collect();
+
+                NormalizedExpression::Plus(sort_by_hash(c))
             }
-            SymExpression::Multiply(_, _) => {
-                let mult = collect_mult(self.clone());
-                let mut hashed_mult = map_hash(&mult);
-                hashed_mult.sort();
-                HashExpression::Multiply(hashed_mult).hash(state)
+            Expression::Multiply(_, _) => {
+                let c = 
+                    collect_mult(self.clone())
+                    .into_iter()
+                    .map(|e| e.normalize())
+                    .collect();
+                NormalizedExpression::Multiply(sort_by_hash(c))
             }
-            SymExpression::And(_, _) => {
-                let and = collect_and(self.clone());
-                let mut hashed_and = map_hash(&and);
-                hashed_and.sort();
-                HashExpression::And(hashed_and).hash(state)
+            Expression::And(_, _) => {
+                let c = 
+                    collect_and(self.clone())
+                    .into_iter()
+                    .map(|e| e.normalize())
+                    .collect();
+                NormalizedExpression::And(sort_by_hash(c))
             }
-            SymExpression::Or(_, _) => {
-                let or = collect_or(self.clone());
-                let mut hashed_or = map_hash(&or);
-                hashed_or.sort();
-                HashExpression::Or(hashed_or).hash(state)
+            Expression::Or(_, _) => {
+                let c = 
+                    collect_or(self.clone())
+                    .into_iter()
+                    .map(|e| e.normalize())
+                    .collect();
+                NormalizedExpression::Or(sort_by_hash(c))
             }
-            SymExpression::Minus(l_expr, r_expr) => SymExpression::Plus(
-                l_expr.clone(),
-                Box::new(SymExpression::Negative(r_expr.clone())),
-            )
-            .hash(state),
-            SymExpression::Divide(l_expr, r_expr) => {
-                HashExpression::Divide(calculate_hash(&*l_expr), calculate_hash(&*r_expr))
-                    .hash(state)
+            Expression::Minus(l_expr, r_expr) => {
+                let (n_l_expr, n_r_expr) = (l_expr.normalize(), r_expr.normalize());
+                let sorted = sort_by_hash(vec![
+                    n_l_expr,
+                    NormalizedExpression::Negative(Box::new(n_r_expr)),
+                ]);
+                NormalizedExpression::Plus(sorted)
             }
-            SymExpression::Mod(l_expr, r_expr) => {
-                HashExpression::Mod(calculate_hash(&*l_expr), calculate_hash(&*r_expr)).hash(state)
+            Expression::Divide(l_expr, r_expr) => NormalizedExpression::Divide(
+                Box::new(l_expr.normalize()),
+                Box::new(r_expr.normalize()),
+            ),
+
+            Expression::Mod(l_expr, r_expr) => NormalizedExpression::Mod(
+                Box::new(l_expr.normalize()),
+                Box::new(r_expr.normalize()),
+            ),
+            Expression::Negative(expr) => {
+                NormalizedExpression::Negative(Box::new(expr.normalize()))
             }
-            SymExpression::Negative(expr) => {
-                HashExpression::Negative(calculate_hash(&*expr)).hash(state)
+            Expression::FreeVariable(ty, id) => {
+                NormalizedExpression::FreeVariable(ty.clone(), id.clone())
             }
-            SymExpression::FreeVariable(ty, id) => {
-                HashExpression::FreeVariable(ty.clone(), id.clone()).hash(state)
-            }
-            SymExpression::Reference(r) => HashExpression::Reference(r.clone()).hash(state),
-            SymExpression::Literal(lit) => lit.hash(state),
-            SymExpression::Implies(l_expr, r_expr) => {
-                HashExpression::Implies(calculate_hash(&*l_expr), calculate_hash(&*r_expr))
-                    .hash(state)
-            }
-            SymExpression::EQ(l_expr, r_expr) => {
-                HashExpression::EQ(calculate_hash(&*l_expr), calculate_hash(&*r_expr)).hash(state)
-            }
-            SymExpression::NE(l_expr, r_expr) => {
-                HashExpression::NE(calculate_hash(&*l_expr), calculate_hash(&*r_expr)).hash(state)
-            }
-            SymExpression::LT(l_expr, r_expr) => {
-                HashExpression::LT(calculate_hash(&*l_expr), calculate_hash(&*r_expr)).hash(state)
-            }
-            SymExpression::GT(l_expr, r_expr) => {
-                HashExpression::GT(calculate_hash(&*l_expr), calculate_hash(&*r_expr)).hash(state)
-            }
-            SymExpression::GEQ(l_expr, r_expr) => {
-                HashExpression::GEQ(calculate_hash(&*l_expr), calculate_hash(&*r_expr)).hash(state)
-            }
-            SymExpression::LEQ(l_expr, r_expr) => {
-                HashExpression::LEQ(calculate_hash(&*l_expr), calculate_hash(&*r_expr)).hash(state)
-            }
-            SymExpression::Not(expr) => HashExpression::Not(calculate_hash(&*expr)).hash(state),
-            SymExpression::Uninitialized => HashExpression::Uninitialized.hash(state),
-            SymExpression::Forall(_) => rand::random::<u64>().hash(state),
-            SymExpression::Exists(_, _, _, _) => rand::random::<u64>().hash(state),
+            Expression::Reference(r) => NormalizedExpression::Reference(r.clone()),
+            Expression::Literal(lit) => NormalizedExpression::Literal(*lit),
+            Expression::Implies(l_expr, r_expr) => NormalizedExpression::Implies(
+                Box::new(l_expr.normalize()),
+                Box::new(r_expr.normalize()),
+            ),
+            Expression::EQ(l_expr, r_expr) => NormalizedExpression::EQ(
+                Box::new(l_expr.normalize()),
+                Box::new(r_expr.normalize()),
+            ),
+            Expression::NE(l_expr, r_expr) => NormalizedExpression::NE(
+                Box::new(l_expr.normalize()),
+                Box::new(r_expr.normalize()),
+            ),
+            Expression::LT(l_expr, r_expr) => NormalizedExpression::LT(
+                Box::new(l_expr.normalize()),
+                Box::new(r_expr.normalize()),
+            ),
+            Expression::GT(l_expr, r_expr) => NormalizedExpression::GT(
+                Box::new(l_expr.normalize()),
+                Box::new(r_expr.normalize()),
+            ),
+            Expression::GEQ(l_expr, r_expr) => NormalizedExpression::GEQ(
+                Box::new(l_expr.normalize()),
+                Box::new(r_expr.normalize()),
+            ),
+            Expression::LEQ(l_expr, r_expr) => NormalizedExpression::LEQ(
+                Box::new(l_expr.normalize()),
+                Box::new(r_expr.normalize()),
+            ),
+            Expression::Not(expr) => NormalizedExpression::Not(Box::new(expr.normalize())),
+            _ => NormalizedExpression::Weird(rand::random()),
         }
     }
 }
-
-impl PartialEq for SymExpression {
-    fn eq(&self, other: &Self) -> bool {
-        calculate_hash(&self) == calculate_hash(other)
-    }
+fn calculate_hash<T: Hash>(t: &T) -> u64 {
+    let mut s = DefaultHasher::new();
+    t.hash(&mut s);
+    s.finish()
 }
-impl Eq for SymExpression {}
+
+// sorts any vector of value based on their hash value
+fn sort_by_hash<T: Hash>(v: Vec<T>) -> Vec<T> {
+    let mut annotated_v = v
+        .into_iter()
+        .map(|t| (calculate_hash(&t), t))
+        .collect::<Vec<(u64, T)>>();
+    annotated_v.sort_by_key(|tuple| tuple.0);
+    annotated_v.into_iter().map(|(_, t)| t).collect::<Vec<T>>()
+}
 
 impl fmt::Debug for PathConstraints {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -734,36 +760,33 @@ impl fmt::Debug for Forall {
     }
 }
 
-impl fmt::Debug for SymExpression {
+impl fmt::Debug for Expression {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            SymExpression::Implies(l_expr, r_expr) => write!(f, "({:?} ==> {:?})", l_expr, r_expr),
-            SymExpression::Forall(forall) => {
+            Expression::Implies(l_expr, r_expr) => write!(f, "({:?} ==> {:?})", l_expr, r_expr),
+            Expression::Forall(forall) => {
                 write!(f, "{:?}", forall)
             }
-            SymExpression::Exists(arr, i, v, body) => {
-                write!(f, "exists {}, {}, {} : {:?}", arr, i, v, body)
-            }
-            SymExpression::And(l_expr, r_expr) => write!(f, "({:?} && {:?})", l_expr, r_expr),
-            SymExpression::Or(l_expr, r_expr) => write!(f, "({:?} || {:?})", l_expr, r_expr),
-            SymExpression::EQ(l_expr, r_expr) => write!(f, "({:?} == {:?})", l_expr, r_expr),
-            SymExpression::NE(l_expr, r_expr) => write!(f, "({:?} != {:?})", l_expr, r_expr),
-            SymExpression::LT(l_expr, r_expr) => write!(f, "({:?} < {:?})", l_expr, r_expr),
-            SymExpression::GT(l_expr, r_expr) => write!(f, "({:?} > {:?})", l_expr, r_expr),
-            SymExpression::GEQ(l_expr, r_expr) => write!(f, "({:?} >= {:?})", l_expr, r_expr),
-            SymExpression::LEQ(l_expr, r_expr) => write!(f, "({:?} <= {:?})", l_expr, r_expr),
-            SymExpression::Plus(l_expr, r_expr) => write!(f, "({:?} + {:?})", l_expr, r_expr),
-            SymExpression::Minus(l_expr, r_expr) => write!(f, "({:?} - {:?})", l_expr, r_expr),
-            SymExpression::Multiply(l_expr, r_expr) => write!(f, "({:?} * {:?})", l_expr, r_expr),
-            SymExpression::Divide(l_expr, r_expr) => write!(f, "({:?} / {:?})", l_expr, r_expr),
-            SymExpression::Mod(l_expr, r_expr) => write!(f, "({:?} % {:?})", l_expr, r_expr),
-            SymExpression::Negative(expr) => write!(f, "-{:?}", expr),
-            SymExpression::Not(expr) => write!(f, "!{:?}", expr),
-            SymExpression::Literal(Literal::Boolean(val)) => write!(f, "{:?}", val),
-            SymExpression::Literal(Literal::Integer(val)) => write!(f, "{:?}", val),
-            SymExpression::FreeVariable(_, fv) => write!(f, "{}", fv),
-            SymExpression::Reference(r) => write!(f, "{:?}", r),
-            SymExpression::Uninitialized => write!(f, "Uninitialized"),
+            Expression::And(l_expr, r_expr) => write!(f, "({:?} && {:?})", l_expr, r_expr),
+            Expression::Or(l_expr, r_expr) => write!(f, "({:?} || {:?})", l_expr, r_expr),
+            Expression::EQ(l_expr, r_expr) => write!(f, "({:?} == {:?})", l_expr, r_expr),
+            Expression::NE(l_expr, r_expr) => write!(f, "({:?} != {:?})", l_expr, r_expr),
+            Expression::LT(l_expr, r_expr) => write!(f, "({:?} < {:?})", l_expr, r_expr),
+            Expression::GT(l_expr, r_expr) => write!(f, "({:?} > {:?})", l_expr, r_expr),
+            Expression::GEQ(l_expr, r_expr) => write!(f, "({:?} >= {:?})", l_expr, r_expr),
+            Expression::LEQ(l_expr, r_expr) => write!(f, "({:?} <= {:?})", l_expr, r_expr),
+            Expression::Plus(l_expr, r_expr) => write!(f, "({:?} + {:?})", l_expr, r_expr),
+            Expression::Minus(l_expr, r_expr) => write!(f, "({:?} - {:?})", l_expr, r_expr),
+            Expression::Multiply(l_expr, r_expr) => write!(f, "({:?} * {:?})", l_expr, r_expr),
+            Expression::Divide(l_expr, r_expr) => write!(f, "({:?} / {:?})", l_expr, r_expr),
+            Expression::Mod(l_expr, r_expr) => write!(f, "({:?} % {:?})", l_expr, r_expr),
+            Expression::Negative(expr) => write!(f, "-{:?}", expr),
+            Expression::Not(expr) => write!(f, "!{:?}", expr),
+            Expression::Literal(Literal::Boolean(val)) => write!(f, "{:?}", val),
+            Expression::Literal(Literal::Integer(val)) => write!(f, "{:?}", val),
+            Expression::FreeVariable(_, fv) => write!(f, "{}", fv),
+            Expression::Reference(r) => write!(f, "{:?}", r),
+            Expression::Uninitialized => write!(f, "Uninitialized"),
         }
     }
 }
@@ -774,42 +797,49 @@ mod tests {
 
     lalrpop_mod!(pub parser);
 
-    fn parse(i: &str) -> SymExpression {
+    fn parse(i: &str) -> Expression {
         let expr = parser::VerificationExpressionParser::new()
             .parse(i)
             .unwrap();
-        SymExpression::new(&SymMemory::new(Program(vec![])), expr)
+        Expression::substitute(&SymMemory::new(Program(vec![])), expr)
     }
 
     #[test]
     fn sum_expr_equivalence() {
-        let e1 = parse("1+2+3");
-        let e2 = parse("3+2+1");
-        let e3 = parse("2+3+1");
+        let e1 = parse("1+2+3").normalize();
+        let e2 = parse("3+2+1").normalize();
+        let e3 = parse("2+3+1").normalize();
         assert!(calculate_hash(&e1) == calculate_hash(&e2));
         assert!(calculate_hash(&e1) == calculate_hash(&e3));
+        assert!(format!("{:?}", e1) == format!("{:?}", e2) );
+        assert!(format!("{:?}", e1)  == format!("{:?}", e3) );
     }
     #[test]
     fn mult_expr_equivalence() {
-        let e1 = parse("2*3*4+5-1");
-        let e2 = parse("3*2*4+5-1");
-        let e3 = parse("2*3*4+(-1)+5");
+        let e1 = parse("2*3*4+5-1").normalize();
+        let e2 = parse("3*2*4+5-1").normalize();
+        let e3 = parse("2*3*4+(-1)+5").normalize();
 
         assert!(calculate_hash(&e1) == calculate_hash(&e2));
         assert!(calculate_hash(&e1) == calculate_hash(&e3));
+        assert!(format!("{:?}", e1) == format!("{:?}", e2) );
+        assert!(format!("{:?}", e1)  == format!("{:?}", e3) );
     }
     #[test]
     fn more_expr_equivalence() {
-        let e1 = parse("(7*4+5/8%5)+3");
-        let e2 = parse("3+(4*7+5/8%5)");
+        let e1 = parse("(7*4+5/8%5)+3").normalize();
+        let e2 = parse("3+(4*7+5/8%5)").normalize();
         assert!(calculate_hash(&e1) == calculate_hash(&e2));
+        assert!(format!("{:?}", e1) == format!("{:?}", e2) );
     }
     #[test]
     fn int_comparison() {
-        let e1 = parse("1");
-        let e2 = parse("1");
-        let e3 = parse("123");
+        let e1 = parse("1").normalize();
+        let e2 = parse("1").normalize();
+        let e3 = parse("123").normalize();
         assert!(calculate_hash(&e1) == calculate_hash(&e2));
         assert!(calculate_hash(&e2) != calculate_hash(&e3));
+        assert!(format!("{:?}", e1) == format!("{:?}", e2) );
+        assert!(format!("{:?}", e1)  != format!("{:?}", e3) );
     }
 }

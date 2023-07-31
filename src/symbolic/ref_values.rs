@@ -1,7 +1,7 @@
 //! Symbolic model representing the values on the heap while symbolically executing a program
 //!
 use super::{
-    expression::{PathConstraints, SymExpression, SymType},
+    expression::{PathConstraints, Expression, SymType},
     memory::SymMemory,
 };
 use crate::{
@@ -60,29 +60,29 @@ impl Reference {
         if simplify {
             pc = pc.eval(i, Some(eval_refs));
             match pc {
-                SymExpression::Literal(Literal::Boolean(false)) => return Ok(false),
+                Expression::Literal(Literal::Boolean(false)) => return Ok(false),
                 _ => (),
             }
         }
-        if solver.verify_expr(&pc, sym_memory, i).is_none() {
+        if solver.satisfiable(&pc, sym_memory, i).is_none() {
             return Ok(false);
         }
 
         // if it's feasible we check if ref is never null
-        let ref_is_null = SymExpression::EQ(
-            Box::new(SymExpression::Reference(self.clone())),
-            Box::new(SymExpression::Reference(Reference::null())),
+        let ref_is_null = Expression::EQ(
+            Box::new(Expression::Reference(self.clone())),
+            Box::new(Expression::Reference(Reference::null())),
         );
-        let mut pc_null_check = SymExpression::And(Box::new(pc), Box::new(ref_is_null));
+        let mut pc_null_check = Expression::And(Box::new(pc), Box::new(ref_is_null));
         if simplify {
             pc_null_check = pc_null_check.eval(i, Some(eval_refs));
             match pc_null_check {
-                SymExpression::Literal(Literal::Boolean(true)) => return Ok(true),
+                Expression::Literal(Literal::Boolean(true)) => return Ok(true),
                 _ => (),
             }
         }
 
-        match solver.verify_expr(&pc_null_check, sym_memory, i) {
+        match solver.satisfiable(&pc_null_check, sym_memory, i) {
             None => Ok(true),
             Some(model) => Err(CounterExample(format!(
                 "Reference {:?} could possibly be null:\n{:?}",
@@ -112,7 +112,7 @@ impl Reference {
 
         match self {
             // if null reference make sure path is infeasible
-            Reference::Evaluated(0) => match solver.verify_expr(&pc.conjunct(), sym_memory, i) {
+            Reference::Evaluated(0) => match solver.satisfiable(&pc.conjunct(), sym_memory, i) {
                 Some(model) => Err(CounterExample(format!("Reference is null:\n{:?}", model))),
                 None => Ok(None),
             },
@@ -145,7 +145,7 @@ impl Reference {
 }
 
 /// Consists of `identifier` (= classname) and a hashmap describing it's fields
-pub type Object = (Identifier, FxHashMap<Identifier, SymExpression>);
+pub type Object = (Identifier, FxHashMap<Identifier, Expression>);
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum SymRefType {
@@ -164,8 +164,8 @@ pub type IsLazy = bool;
 /// Consists of type, a mapping from expression to symbolic expression, expression representing size and flag to indicate that we should lazily initialize objects from this array
 pub type Array = (
     SymType,
-    FxHashMap<SymExpression, SymExpression>,
-    SymExpression,
+    FxHashMap<Expression, Expression>,
+    Expression,
     IsLazy,
 );
 
@@ -259,22 +259,22 @@ impl Interval {
         Interval(min, max.max(min))
     }
 
-    pub fn infer(e: &SymExpression, i: &IntervalMap) -> Interval {
+    pub fn infer(e: &Expression, i: &IntervalMap) -> Interval {
         match e {
-            SymExpression::Literal(Literal::Integer(z)) => {
+            Expression::Literal(Literal::Integer(z)) => {
                 Interval::new(Infinitable::Finite(*z), Infinitable::Finite(*z))
             }
-            SymExpression::FreeVariable(SymType::Int, x) => i.get(x),
-            SymExpression::Plus(l_expr, r_expr) => {
+            Expression::FreeVariable(SymType::Int, x) => i.get(x),
+            Expression::Plus(l_expr, r_expr) => {
                 Interval::infer(l_expr, i) + Interval::infer(r_expr, i)
             }
-            SymExpression::Minus(l_expr, r_expr) => {
+            Expression::Minus(l_expr, r_expr) => {
                 Interval::infer(l_expr, i) - Interval::infer(r_expr, i)
             }
-            SymExpression::Multiply(l_expr, r_expr) => {
+            Expression::Multiply(l_expr, r_expr) => {
                 Interval::infer(l_expr, i) * Interval::infer(r_expr, i)
             }
-            SymExpression::Negative(expr) => {
+            Expression::Negative(expr) => {
                 Interval::new(Infinitable::Finite(-1), Infinitable::Finite(-1))
                     * Interval::infer(expr, i)
             }
@@ -330,56 +330,56 @@ impl IntervalMap {
     }
 
     // updates IntervalMap with information from passed expression
-    fn infer(&mut self, e: &SymExpression) {
+    fn infer(&mut self, e: &Expression) {
         match e {
-            SymExpression::And(l_expr, r_expr) => {
+            Expression::And(l_expr, r_expr) => {
                 let mut i1 = self.clone();
                 i1.infer(r_expr);
                 self.infer(l_expr);
                 self.narrow(&i1);
             }
-            SymExpression::Or(l_expr, r_expr) => {
+            Expression::Or(l_expr, r_expr) => {
                 let mut i1 = self.clone();
                 i1.infer(r_expr);
                 self.infer(l_expr);
                 self.broaden(&i1);
             }
-            SymExpression::EQ(l_expr, r_expr) => match (&**l_expr, &**r_expr) {
+            Expression::EQ(l_expr, r_expr) => match (&**l_expr, &**r_expr) {
                 (
-                    SymExpression::FreeVariable(SymType::Int, x1),
-                    SymExpression::FreeVariable(SymType::Int, x2),
+                    Expression::FreeVariable(SymType::Int, x1),
+                    Expression::FreeVariable(SymType::Int, x2),
                 ) => {
                     let i = self.get(x1).narrow(self.get(x2));
                     self.0.insert(x1.clone(), i);
                     self.0.insert(x2.clone(), i);
                 }
-                (SymExpression::FreeVariable(SymType::Int, x1), r_expr) => {
+                (Expression::FreeVariable(SymType::Int, x1), r_expr) => {
                     let i = self.get(x1).narrow(Interval::infer(r_expr, &self));
                     self.0.insert(x1.clone(), i);
                 }
-                (l_expr, SymExpression::FreeVariable(SymType::Int, x2)) => {
+                (l_expr, Expression::FreeVariable(SymType::Int, x2)) => {
                     let i = self.get(x2).narrow(Interval::infer(l_expr, &self));
                     self.0.insert(x2.clone(), i);
                 }
                 _ => (),
             },
-            SymExpression::Not(expr) => match *expr.clone() {
-                SymExpression::LT(l_expr, r_expr) => {
-                    self.infer(&SymExpression::GEQ(l_expr, r_expr))
+            Expression::Not(expr) => match *expr.clone() {
+                Expression::LT(l_expr, r_expr) => {
+                    self.infer(&Expression::GEQ(l_expr, r_expr))
                 }
-                SymExpression::GT(l_expr, r_expr) => {
-                    self.infer(&SymExpression::LEQ(l_expr, r_expr))
+                Expression::GT(l_expr, r_expr) => {
+                    self.infer(&Expression::LEQ(l_expr, r_expr))
                 }
-                SymExpression::GEQ(l_expr, r_expr) => {
-                    self.infer(&SymExpression::LT(l_expr, r_expr))
+                Expression::GEQ(l_expr, r_expr) => {
+                    self.infer(&Expression::LT(l_expr, r_expr))
                 }
-                SymExpression::LEQ(l_expr, r_expr) => {
-                    self.infer(&SymExpression::GT(l_expr, r_expr))
+                Expression::LEQ(l_expr, r_expr) => {
+                    self.infer(&Expression::GT(l_expr, r_expr))
                 }
                 _ => (),
             },
-            SymExpression::LT(l_expr, r_expr) => match (&**l_expr, &**r_expr) {
-                (SymExpression::FreeVariable(SymType::Int, x), r_expr) => {
+            Expression::LT(l_expr, r_expr) => match (&**l_expr, &**r_expr) {
+                (Expression::FreeVariable(SymType::Int, x), r_expr) => {
                     let (a, _) = Interval::infer(r_expr, self).get(); // abort inference if compared value is not finite
 
                     if !a.is_finite() {
@@ -392,7 +392,7 @@ impl IntervalMap {
                     ));
                     self.0.insert(x.clone(), i);
                 }
-                (l_expr, SymExpression::FreeVariable(SymType::Int, x)) => {
+                (l_expr, Expression::FreeVariable(SymType::Int, x)) => {
                     let (_, b) = Interval::infer(l_expr, self).get();
                     if !b.is_finite() {
                         return;
@@ -405,8 +405,8 @@ impl IntervalMap {
                 }
                 _ => (),
             },
-            SymExpression::LEQ(l_expr, r_expr) => match (&**l_expr, &**r_expr) {
-                (SymExpression::FreeVariable(SymType::Int, x), r_expr) => {
+            Expression::LEQ(l_expr, r_expr) => match (&**l_expr, &**r_expr) {
+                (Expression::FreeVariable(SymType::Int, x), r_expr) => {
                     let (a, _) = Interval::infer(r_expr, self).get();
 
                     if !a.is_finite() {
@@ -418,7 +418,7 @@ impl IntervalMap {
                         .narrow(Interval::new(Infinitable::NegativeInfinity, a));
                     self.0.insert(x.clone(), i);
                 }
-                (l_expr, SymExpression::FreeVariable(SymType::Int, x)) => {
+                (l_expr, Expression::FreeVariable(SymType::Int, x)) => {
                     let (_, b) = Interval::infer(l_expr, self).get();
                     if !b.is_finite() {
                         return;
@@ -428,8 +428,8 @@ impl IntervalMap {
                 }
                 _ => (),
             },
-            SymExpression::GT(l_expr, r_expr) => match (&**l_expr, &**r_expr) {
-                (SymExpression::FreeVariable(SymType::Int, x), r_expr) => {
+            Expression::GT(l_expr, r_expr) => match (&**l_expr, &**r_expr) {
+                (Expression::FreeVariable(SymType::Int, x), r_expr) => {
                     let (_, b) = Interval::infer(r_expr, self).get();
                     if !b.is_finite() {
                         return;
@@ -440,7 +440,7 @@ impl IntervalMap {
                     ));
                     self.0.insert(x.clone(), i);
                 }
-                (l_expr, SymExpression::FreeVariable(SymType::Int, x)) => {
+                (l_expr, Expression::FreeVariable(SymType::Int, x)) => {
                     let (a, _) = Interval::infer(l_expr, self).get();
                     if !a.is_finite() {
                         return;
@@ -454,8 +454,8 @@ impl IntervalMap {
 
                 _ => (),
             },
-            SymExpression::GEQ(l_expr, r_expr) => match (&**l_expr, &**r_expr) {
-                (SymExpression::FreeVariable(SymType::Int, x), r_expr) => {
+            Expression::GEQ(l_expr, r_expr) => match (&**l_expr, &**r_expr) {
+                (Expression::FreeVariable(SymType::Int, x), r_expr) => {
                     let (_, b) = Interval::infer(r_expr, self).get();
                     if !b.is_finite() {
                         return;
@@ -463,7 +463,7 @@ impl IntervalMap {
                     let i = self.get(x).narrow(Interval::new(b, Infinitable::Infinity));
                     self.0.insert(x.clone(), i);
                 }
-                (l_expr, SymExpression::FreeVariable(SymType::Int, x)) => {
+                (l_expr, Expression::FreeVariable(SymType::Int, x)) => {
                     let (a, _) = Interval::infer(l_expr, self).get();
                     if !a.is_finite() {
                         return;
@@ -481,7 +481,7 @@ impl IntervalMap {
     }
 
     // An iterative inference algorithm to update the IntervalMap with given expression
-    pub fn iterative_inference<'a>(&'a mut self, e: &SymExpression, mut d: i8) {
+    pub fn iterative_inference<'a>(&'a mut self, e: &Expression, mut d: i8) {
         while d > 0 {
             d -= 1;
             let i = self.clone();

@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <!DOCTYPE benchmark PUBLIC "+//IDN sosy-lab.org//DTD BenchExec benchmark 1.9//EN" "https://www.sosy-lab.org/benchexec/benchmark-2.3.dtd">
-<benchmark tool="jip" timelimit="20 s" memlimit="5 GB" cpuCores="1">
+<benchmark tool="jip" timelimit="300 s" memlimit="12 GB" cpuCores="1">
 <option name="-i">1</option>
 <option name="-f"></option>
 <option name="-c"></option>

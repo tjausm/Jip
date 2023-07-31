@@ -1,0 +1,21 @@
+// program showcases how we have unsound behaviour
+// if there are 2 symbolic values mapped to 1 index
+
+class Main {
+    static void main(int b)
+    ensures(1 <= b && b <= 2)
+    {
+        int[] a := new int[3];
+        a[b] := 5;
+
+        bool containsFive := false;
+        int i := 0;
+        while (i < #a){
+            int ai := a[i];
+            containsFive := false || ai == 5;
+            i := i + 1;
+        }
+        assert containsFive;
+
+    }
+}

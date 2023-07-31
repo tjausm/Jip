@@ -3,7 +3,7 @@
 use rustc_hash::FxHashMap;
 use std::fmt;
 
-use super::expression::{PathConstraints, SymExpression, SymType};
+use super::expression::{PathConstraints, Expression, SymType};
 use super::ref_values::{EvaluatedRefs, IntervalMap, Reference, ReferenceValue, SymRefType};
 use crate::ast::*;
 use crate::shared::{panic_with_diagnostics, CounterExample, Scope};
@@ -12,7 +12,7 @@ use crate::smt_solver::SolverEnv;
 #[derive(Debug, Clone)]
 struct Frame {
     pub scope: Scope,
-    pub env: FxHashMap<Identifier, SymExpression>,
+    pub env: FxHashMap<Identifier, Expression>,
 }
 
 type SymStack = Vec<Frame>;
@@ -38,14 +38,14 @@ impl<'a> SymMemory {
         }
     }
     /// Insert mapping `Identifier |-> SymbolicExpression` in top most frame of stack
-    pub fn stack_insert(&mut self, id: Identifier, sym_expr: SymExpression) -> () {
+    pub fn stack_insert(&mut self, id: Identifier, sym_expr: Expression) -> () {
         if let Some(s) = self.stack.last_mut() {
             s.env.insert(id, sym_expr);
         }
     }
 
     /// Insert mapping `Identifier |-> SymbolicExpression` in frame below top most frame of stack
-    pub fn stack_insert_below(&mut self, id: Identifier, sym_expr: SymExpression) -> () {
+    pub fn stack_insert_below(&mut self, id: Identifier, sym_expr: Expression) -> () {
         let below_index = self.stack.len() - 2;
         match self.stack.get_mut(below_index) {
             Some(frame) => {
@@ -56,9 +56,9 @@ impl<'a> SymMemory {
     }
 
     /// Iterate over frames from stack returning the first variable with given `id`
-    pub fn stack_get(&self, id: &'a Identifier) -> Option<SymExpression> {
+    pub fn stack_get(&self, id: &'a Identifier) -> Option<Expression> {
         if id == "null" {
-            return Some(SymExpression::Reference(Reference::null()));
+            return Some(Expression::Reference(Reference::null()));
         };
 
         for s in self.stack.iter().rev() {
@@ -157,10 +157,10 @@ impl<'a> SymMemory {
         solver: &mut SolverEnv,
         obj_name: &String,
         field_name: &'a String,
-        var: Option<SymExpression>,
-    ) -> Result<Option<SymExpression>, CounterExample> {
+        var: Option<Expression>,
+    ) -> Result<Option<Expression>, CounterExample> {
         let r = match self.stack_get(obj_name) {
-            Some(SymExpression::Reference(r)) => r,
+            Some(Expression::Reference(r)) => r,
             Some(otherwise) => panic_with_diagnostics(
                 &format!(
                     "Error while accessing {} because {:?} is not a reference",
@@ -218,12 +218,12 @@ impl<'a> SymMemory {
         eval_refs: &mut EvaluatedRefs,
         solver: &mut SolverEnv,
         arr_name: &Identifier,
-        index: Expression,
-        var: Option<SymExpression>,
-    ) -> Result<Option<SymExpression>, CounterExample> {
+        index: OOXExpression,
+        var: Option<Expression>,
+    ) -> Result<Option<Expression>, CounterExample> {
         //get information about array
         let (_r, size, is_lazy) = match self.stack_get(&arr_name){
-            Some(SymExpression::Reference(r)) => match self.heap_get(&r, solver, pc, i, eval_refs)?{
+            Some(Expression::Reference(r)) => match self.heap_get(&r, solver, pc, i, eval_refs)?{
                 Some(ReferenceValue::Array((_, _, size_expr, is_lazy))) => (r, size_expr,  is_lazy),
                 None => return Ok(None),
                 otherwise => panic_with_diagnostics(&format!("{:?} is not an array and can't be assigned to in assignment '{}[{:?}] := {:?}'", otherwise, arr_name, index, var), &self),
@@ -233,44 +233,44 @@ impl<'a> SymMemory {
 
         // substitute index and try to simplify it to a literal using simplifier and / or z3
         // to prevent from values being indexed twice in the array
-        let mut index = SymExpression::new(self, index);
+        let mut index = Expression::substitute(self, index);
         if solver.config.expression_evaluation {
             index = index.clone().eval(i, None);
         }
 
         let evaluated_index = match index {
-            SymExpression::Literal(Literal::Integer(_)) => index.clone(),
+            Expression::Literal(Literal::Integer(_)) => index.clone(),
             _ => {
                 // conjunct pathconstraints and  `val1 == index` and let SMT-solver find value of 'val1'
                 let conjuncted_pc = Box::new(pc.conjunct());
                 let val1_id = "!val1".to_string();
-                let val1 = SymExpression::FreeVariable(SymType::Int, val1_id.clone());
-                let index_is_val1 = SymExpression::And(
+                let val1 = Expression::FreeVariable(SymType::Int, val1_id.clone());
+                let index_is_val1 = Expression::And(
                     conjuncted_pc.clone(),
-                    Box::new(SymExpression::EQ(Box::new(index.clone()), Box::new(val1))),
+                    Box::new(Expression::EQ(Box::new(index.clone()), Box::new(val1))),
                 );
 
-                match solver.verify_expr(&index_is_val1, &self, i) {
+                match solver.satisfiable(&index_is_val1, &self, i) {
                     Some(model) => {
                         // combine pathconstraints and check wheter val1 is the only value index can be`pc && val2 != val1 && val2 == index`
-                        let val2 = Box::new(SymExpression::FreeVariable(
+                        let val2 = Box::new(Expression::FreeVariable(
                             SymType::Int,
                             "!val2".to_string(),
                         ));
                         let val1_lit = model.find(&val1_id);
-                        let val1 = Box::new(SymExpression::Literal(val1_lit.clone()));
-                        let index_is_val2 = SymExpression::And(
+                        let val1 = Box::new(Expression::Literal(val1_lit.clone()));
+                        let index_is_val2 = Expression::And(
                             conjuncted_pc,
-                            Box::new(SymExpression::And(
-                                Box::new(SymExpression::NE(val1, val2.clone())),
-                                Box::new(SymExpression::EQ(val2, Box::new(index.clone()))),
+                            Box::new(Expression::And(
+                                Box::new(Expression::NE(val1, val2.clone())),
+                                Box::new(Expression::EQ(val2, Box::new(index.clone()))),
                             )),
                         );
 
                         // if index can be any other value than val1 return sym_index, otherwise return val1
-                        match solver.verify_expr(&index_is_val2, &self, i) {
+                        match solver.satisfiable(&index_is_val2, &self, i) {
                             Some(_) => index.clone(),
-                            None => SymExpression::Literal(val1_lit),
+                            None => Expression::Literal(val1_lit),
                         }
                     }
                     None => index.clone(),
@@ -279,24 +279,24 @@ impl<'a> SymMemory {
         };
 
         // build expression index < length
-        let mut index_lt_size = SymExpression::LT(Box::new(index.clone()), Box::new(size.clone()));
+        let mut index_lt_size = Expression::LT(Box::new(index.clone()), Box::new(size.clone()));
         if solver.config.expression_evaluation {
             index_lt_size = index_lt_size.eval(i, None);
         };
 
         match index_lt_size {
-            SymExpression::Literal(Literal::Boolean(true)) => (),
+            Expression::Literal(Literal::Boolean(true)) => (),
             _ => {
                 // add 'index < size' as inner most constraint of pc  '!(pc1 => (pc2 && index < size))'
                 pc.push_assertion(index_lt_size);
                 let not_pc_implies_index_lt_size =
-                    &SymExpression::Not(Box::new(pc.combine_over_true()));
+                    &Expression::Not(Box::new(pc.combine_over_true()));
 
                 // remove assertion to save memory e.g. if its
                 pc.pop();
 
                 // try to find counter-example
-                match solver.verify_expr(not_pc_implies_index_lt_size, &self, i) {
+                match solver.satisfiable(not_pc_implies_index_lt_size, &self, i) {
                     None => (),
                     Some(model) => {
                         return Err(CounterExample(format!(
@@ -310,7 +310,7 @@ impl<'a> SymMemory {
 
         //get mutable HashMap representing array
         let (ty, arr) = match self.stack_get(&arr_name){
-            Some(SymExpression::Reference(r)) => match self.heap_get_mut(&r, solver, pc, i, eval_refs)?{
+            Some(Expression::Reference(r)) => match self.heap_get_mut(&r, solver, pc, i, eval_refs)?{
                 Some(ReferenceValue::Array((ty, arr, _, _))) => (ty, arr),
                 None => return Ok(None),
                 otherwise => panic_with_diagnostics(&format!("{:?} is not an array and can't be assigned to in assignment '{}[{:?}] := {:?}'", otherwise, arr_name, index, var), &self),
@@ -332,7 +332,7 @@ impl<'a> SymMemory {
             (false, SymType::Ref(SymRefType::Object(class))) => {
                 // generate and insert reference
                 let r = Reference::new_evaluated();
-                let sym_r = SymExpression::Reference(r.clone());
+                let sym_r = Expression::Reference(r.clone());
                 arr.insert(evaluated_index, sym_r.clone());
 
                 // instantiate object and insert under reference afterwards (to please borrowchecker)
@@ -346,7 +346,7 @@ impl<'a> SymMemory {
             (true, SymType::Ref(SymRefType::Object(class))) => {
                 // generate and insert reference
                 let lr = Reference::new_lazy(class.clone());
-                let sym_lr = SymExpression::Reference(lr);
+                let sym_lr = Expression::Reference(lr);
                 arr.insert(evaluated_index, sym_lr.clone());
 
                 Ok(Some(sym_lr))
@@ -356,18 +356,18 @@ impl<'a> SymMemory {
             }
 
             (false, SymType::Int) => {
-                let lit = SymExpression::Literal(Literal::Integer(0));
+                let lit = Expression::Literal(Literal::Integer(0));
                 arr.insert(evaluated_index, lit.clone());
                 Ok(Some(lit))
             }
             (false, SymType::Bool) => {
-                let lit = SymExpression::Literal(Literal::Boolean(false));
+                let lit = Expression::Literal(Literal::Boolean(false));
                 arr.insert(evaluated_index, lit.clone());
                 Ok(Some(lit))
             }
             _ => {
                 let fv_id = format!("{}[{:?}]", arr_name.clone(), evaluated_index);
-                let fv = SymExpression::FreeVariable(ty.clone(), fv_id);
+                let fv = Expression::FreeVariable(ty.clone(), fv_id);
                 arr.insert(evaluated_index, fv.clone());
                 Ok(Some(fv))
             }
@@ -383,7 +383,7 @@ impl<'a> SymMemory {
         for member in members {
             match member {
                 Member::Field((_, field)) => {
-                    fields.insert(field.clone(), SymExpression::Uninitialized);
+                    fields.insert(field.clone(), Expression::Uninitialized);
                 }
                 _ => (),
             }
@@ -405,7 +405,7 @@ impl<'a> SymMemory {
 
                         fields.insert(
                             field.clone(),
-                            SymExpression::FreeVariable(SymType::Int, field_name),
+                            Expression::FreeVariable(SymType::Int, field_name),
                         );
                     }
                     Type::Bool => {
@@ -413,13 +413,13 @@ impl<'a> SymMemory {
 
                         fields.insert(
                             field.clone(),
-                            SymExpression::FreeVariable(SymType::Bool, field_name),
+                            Expression::FreeVariable(SymType::Bool, field_name),
                         );
                     }
                     Type::Class(class) => {
                         // either make lazy object or uninitialized
                         let lr = Reference::new_lazy(class.clone());
-                        let lazy_ref = SymExpression::Reference(lr);
+                        let lazy_ref = Expression::Reference(lr);
 
                         fields.insert(field.clone(), lazy_ref);
                     }
@@ -439,7 +439,7 @@ impl<'a> SymMemory {
     pub fn init_array(
         &mut self,
         ty: SymType,
-        size_expr: SymExpression,
+        size_expr: Expression,
         is_lazy: bool,
     ) -> ReferenceValue {
         ReferenceValue::Array((ty, FxHashMap::default(), size_expr, is_lazy))

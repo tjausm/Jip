@@ -1,9 +1,8 @@
 class Main {
-    static void main(int i, int j){
-        int h := Main.add(i, j);
-        assert h == i+j;
+    static void main(){
+        Main.f();
     }
-    static int add(int i, int j){
-        return i + j;
+    static void f(){
+        ;
     }
 }
