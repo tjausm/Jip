@@ -1,6 +1,0 @@
-./jip -i 1 -f -c sv-benchmarks/java/jayhorn-recursive/SatAckermann02.oox verify -t 10000
-
-
---------------------------------------------------------------------------------
-
-

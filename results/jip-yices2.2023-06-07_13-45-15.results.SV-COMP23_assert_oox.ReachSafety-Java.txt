@@ -1,0 +1,126 @@
+   BENCHMARK INFORMATION
+benchmark definition:    sv-benchmarks/jip-yices2.xml
+name:                    jip-yices2
+run sets:                SV-COMP23_assert_oox.ReachSafety-Java
+date:                    Wed, 2023-06-07 13:45:15 CEST
+tool:                    Jip jip 1.0.5
+tool executable:         ./jip
+options:                 -i 1 -f -c --yices2-arg yices-smt2
+resource limits:
+- memory:                12000.0 MB
+- time:                  300 s
+- cpu cores:             1
+hardware requirements:
+- cpu cores:             1
+- memory:                12000.0 MB
+------------------------------------------------------------
+
+   SYSTEM INFORMATION
+host:                    tjeerd
+os:                      Linux-5.19.0-43-generic-x86_64-with-glibc2.35
+cpu:                     Intel Core i7-4770K CPU @ 3.50GHz
+- cores:                 8
+- max frequency:         3900.0 MHz
+- turbo boost enabled:   True
+ram:                     16710.561792 MB
+------------------------------------------------------------
+
+
+
+SV-COMP23_assert_oox.ReachSafety-Java
+Run set 1 of 1 with options '-i 1 -f -c --yices2-arg yices-smt2' and propertyfile 'None'
+
+inputfile                                       status                       cpu time   wall time        host
+-------------------------------------------------------------------------------------------------------------
+jayhorn-recursive/Ackermann01.yml               false                            0.02        0.04        None
+jayhorn-recursive/Addition.yml                  TIMEOUT (true)                 301.16      301.19        None
+jayhorn-recursive/InfiniteLoop.yml              false                            0.02        0.06        None
+jayhorn-recursive/SatAckermann01.yml            TIMEOUT (true)                 301.12      301.16        None
+jayhorn-recursive/SatAckermann02.yml            TIMEOUT (true)                 301.13      301.17        None
+jayhorn-recursive/SatAckermann03.yml            TIMEOUT (true)                 301.11      301.17        None
+jayhorn-recursive/SatAddition01.yml             TIMEOUT (true)                 301.14      301.20        None
+jayhorn-recursive/SatEvenOdd01.yml              TIMEOUT (true)                 301.16      301.21        None
+jayhorn-recursive/SatFibonacci01.yml            unknown                          0.02        0.07        None
+jayhorn-recursive/SatFibonacci02.yml            true                             0.02        0.03        None
+jayhorn-recursive/SatFibonacci03.yml            TIMEOUT (true)                 301.21      301.24        None
+jayhorn-recursive/SatGcd.yml                    OUT OF MEMORY (true)           209.93      210.40        None
+jayhorn-recursive/SatHanoi01.yml                TIMEOUT (true)                 301.05      301.25        None
+jayhorn-recursive/SatMccarthy91.yml             OUT OF MEMORY (true)           263.04      263.43        None
+jayhorn-recursive/SatPrimes01.yml               TIMEOUT (true)                 301.01      301.16        None
+jayhorn-recursive/UnsatAckermann01.yml          false                            0.04        0.37        None
+jayhorn-recursive/UnsatAddition01.yml           false                            0.02        0.03        None
+jayhorn-recursive/UnsatAddition02.yml           false                            0.02        0.03        None
+jayhorn-recursive/UnsatEvenOdd01.yml            false                            0.02        0.03        None
+jayhorn-recursive/UnsatFibonacci01.yml          false                            1.03        1.04        None
+jayhorn-recursive/UnsatFibonacci02.yml          TIMEOUT (true)                 301.22      301.25        None
+jayhorn-recursive/UnsatMccarthy91.yml           false                            0.02        0.05        None
+MinePump/spec1-5_product1.yml                   false                            0.15        0.16        None
+MinePump/spec1-5_product10.yml                  false                            0.16        0.16        None
+MinePump/spec1-5_product11.yml                  false                            0.82        0.83        None
+MinePump/spec1-5_product12.yml                  false                            0.71        0.74        None
+MinePump/spec1-5_product13.yml                  false                            0.18        0.18        None
+MinePump/spec1-5_product14.yml                  false                            0.17        0.21        None
+MinePump/spec1-5_product15.yml                  false                            1.55        1.57        None
+MinePump/spec1-5_product16.yml                  false                            1.30        1.30        None
+MinePump/spec1-5_product2.yml                   false                            0.15        0.15        None
+MinePump/spec1-5_product3.yml                   false                            0.77        0.77        None
+MinePump/spec1-5_product4.yml                   false                            0.69        0.69        None
+MinePump/spec1-5_product48.yml                  false                            0.18        0.18        None
+MinePump/spec1-5_product49.yml                  false                            0.18        0.18        None
+MinePump/spec1-5_product5.yml                   false                            0.17        0.17        None
+MinePump/spec1-5_product50.yml                  false                            0.18        0.18        None
+MinePump/spec1-5_product51.yml                  false                            1.43        1.44        None
+MinePump/spec1-5_product52.yml                  false                            1.23        1.23        None
+MinePump/spec1-5_product53.yml                  false                            0.17        0.17        None
+MinePump/spec1-5_product54.yml                  false                            0.17        0.18        None
+MinePump/spec1-5_product55.yml                  false                            1.23        1.23        None
+MinePump/spec1-5_product56.yml                  false                            1.07        1.07        None
+MinePump/spec1-5_product59.yml                  true                            93.46       93.47        None
+MinePump/spec1-5_product6.yml                   false                            0.18        0.51        None
+MinePump/spec1-5_product60.yml                  true                           141.55      141.57        None
+MinePump/spec1-5_product61.yml                  true                           226.81      227.17        None
+MinePump/spec1-5_product62.yml                  true                           228.72      228.78        None
+MinePump/spec1-5_product63.yml                  true                            92.76       92.80        None
+MinePump/spec1-5_product64.yml                  true                           139.81      139.84        None
+MinePump/spec1-5_product7.yml                   false                            1.51        1.85        None
+MinePump/spec1-5_product8.yml                   false                            1.27        1.28        None
+MinePump/spec1-5_product9.yml                   false                            0.16        0.16        None
+algorithms/BellmanFord-FunSat01.yml             TIMEOUT (true)                 300.99      301.02        None
+algorithms/BellmanFord-FunUnsat01.yml           false                            0.04        0.11        None
+algorithms/BellmanFord-MemSat01.yml             TIMEOUT (true)                 300.99      301.02        None
+algorithms/BellmanFord-MemUnsat01.yml           false                            0.02        0.04        None
+algorithms/BinaryTreeSearch-FunSat01.yml        TIMEOUT (true)                 301.03      301.06        None
+algorithms/BinaryTreeSearch-FunUnsat01.yml      false                            0.02        0.04        None
+algorithms/BinaryTreeSearch-MemSat01.yml        TIMEOUT (true)                 301.14      301.17        None
+algorithms/BinaryTreeSearch-MemUnsat01.yml      false                            0.02        0.07        None
+algorithms/BinaryTreeSearch-MemUnsat02.yml      false                            0.02        0.03        None
+algorithms/InsertionSort-FunSat01.yml           TIMEOUT (true)                 301.00      301.03        None
+algorithms/InsertionSort-FunSat02.yml           unknown                          0.02        0.06        None
+algorithms/InsertionSort-FunUnsat01.yml         false                            0.03        0.09        None
+algorithms/InsertionSort-MemSat01.yml           TIMEOUT (true)                 301.00      301.03        None
+algorithms/InsertionSort-MemUnsat01.yml         false                            0.02        0.08        None
+algorithms/MergeSortIterative-FunSat01.yml      TIMEOUT (true)                 301.02      301.05        None
+algorithms/MergeSortIterative-FunSat02.yml      TIMEOUT (true)                 300.98      301.05        None
+algorithms/MergeSortIterative-FunUnsat01.yml    false                            0.28        0.32        None
+algorithms/MergeSortIterative-MemSat01.yml      TIMEOUT (true)                 301.02      301.05        None
+algorithms/MergeSortIterative-MemUnsat01.yml    false                            0.03        0.07        None
+algorithms/RedBlackTree-FunSat01.yml            TIMEOUT (true)                 301.06      301.08        None
+algorithms/RedBlackTree-FunUnsat01.yml          false                            0.05        0.10        None
+algorithms/RedBlackTree-MemSat01.yml            TIMEOUT (true)                 301.17      301.21        None
+algorithms/RedBlackTree-MemUnsat01.yml          false                            0.05        0.12        None
+algorithms/SortedListInsert-FunSat01.yml        TIMEOUT (true)                 301.18      301.20        None
+algorithms/SortedListInsert-FunSat02.yml        TIMEOUT (true)                 266.51      331.46        None
+algorithms/SortedListInsert-FunUnsat01.yml      false                            0.02        0.08        None
+algorithms/SortedListInsert-MemSat01.yml        TIMEOUT (true)                 166.35      331.32        None
+algorithms/SortedListInsert-MemUnsat01.yml      TIMEOUT (true)                 165.93      331.25        None
+-------------------------------------------------------------------------------------------------------------
+Run set 1                                       done                          8637.28     9053.91           -
+
+Statistics:             81 Files
+  correct:              52
+    correct true:        7
+    correct false:      45
+  incorrect:             0
+    incorrect true:      0
+    incorrect false:     0
+  unknown:              29

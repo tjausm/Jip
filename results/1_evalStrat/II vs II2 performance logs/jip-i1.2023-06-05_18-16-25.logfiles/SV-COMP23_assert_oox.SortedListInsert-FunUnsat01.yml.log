@@ -1,0 +1,21 @@
+./jip -i 1 sv-benchmarks/java/algorithms/SortedListInsert-FunUnsat01.oox verify -t 10000
+
+
+--------------------------------------------------------------------------------
+
+
+Warning:  Jip has not finished exploring any paths. Is your search depth high enough? And are you sure the program terminates?
+Results
+Depth reached         59
+CFG coverage        97.6%
+Time (s)              0,028
+paths explored        0
+Paths pruned          2
+Avg. prune prob.      0.0%
+Smt calls             4
+Verdict               False
+
+Counter-example: Following input violates one of the assertion:
+nondet[1]   -> 0
+nondet[0]   -> 0
+
