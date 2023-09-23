@@ -15,7 +15,7 @@ fn {name}() {{
     let mut cmd_simple = Command::cargo_bin("jip").unwrap();
     let assert_simple = cmd_simple
         .arg("-a")
-        .arg("-f")
+        .arg("--expression-caching")
         .arg("-i")
         .arg("2")
         .arg(r#"{path}"#)

@@ -99,8 +99,8 @@ pub type Specifications = Vec<Specification>;
 
 #[derive(Clone, Debug)]
 pub enum Specification {
-    Requires(Expression),
-    Ensures(Expression),
+    Requires(OOXExpression),
+    Ensures(OOXExpression),
 }
 
 pub type Field = (Type, Identifier);
@@ -115,11 +115,11 @@ pub enum Statement {
     Call(Invocation),
     Skip(Skip),
     Ite(Ite),
-    Return(Expression),
+    Return(OOXExpression),
     ReturnVoid,
     Block(Box<Statements>),
-    Assert(Expression),
-    Assume(Expression),
+    Assert(OOXExpression),
+    Assume(OOXExpression),
     While(While),
 }
 
@@ -128,7 +128,7 @@ pub type DeclareAssign = (Type, Identifier, Rhs);
 
 pub type Declaration = (Type, Identifier);
 
-pub type While = (Expression, Box<Statement>);
+pub type While = (OOXExpression, Box<Statement>);
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub enum Type {
@@ -145,66 +145,66 @@ pub type Assignment = (Lhs, Rhs);
 pub enum Lhs {
     Identifier(String),
     AccessField(Identifier, Identifier),
-    AccessArray(Identifier, Expression),
+    AccessArray(Identifier, OOXExpression),
 }
 
 #[derive(Clone)]
 pub enum Rhs {
-    Expression(Expression),
+    OOXExpression(OOXExpression),
     AccessField(Identifier, Identifier),
-    AccessArray(Identifier, Expression),
+    AccessArray(Identifier, OOXExpression),
     Invocation(Invocation),
     Newobject(Identifier, Arguments),
-    NewArray(Type, Expression),
+    NewArray(Type, OOXExpression),
 }
 
 //TODO: add args hier
 pub type Invocation = (Identifier, Identifier, Arguments);
 
-pub type Arguments = Vec<Expression>;
+pub type Arguments = Vec<OOXExpression>;
 
 #[derive(Clone)]
 pub struct Skip;
 
-pub type Ite = (Expression, Box<Statement>, Box<Statement>);
+pub type Ite = (OOXExpression, Box<Statement>, Box<Statement>);
 
 #[derive(Clone, Hash)]
-pub enum Expression {
+pub enum OOXExpression {
     //expression1
     ///(forall arr, index, value : expression) -> for all index value pairs in given array the expression holds
-    Forall(Identifier, Identifier, Identifier, Box<Expression>),
+    Forall(Identifier, Identifier, Identifier, Box<OOXExpression>),
     ///(exists arr, index, value : expression) -> for all index value pairs in given array the expression holds
-    Exists(Identifier, Identifier, Identifier, Box<Expression>),
+    Exists(Identifier, Identifier, Identifier, Box<OOXExpression>),
 
     //expression2
-    Implies(Box<Expression>, Box<Expression>),
+    Implies(Box<OOXExpression>, Box<OOXExpression>),
 
     //expression3
-    And(Box<Expression>, Box<Expression>),
-    Or(Box<Expression>, Box<Expression>),
+    And(Box<OOXExpression>, Box<OOXExpression>),
+    Or(Box<OOXExpression>, Box<OOXExpression>),
 
     //expression4
-    EQ(Box<Expression>, Box<Expression>),
-    NE(Box<Expression>, Box<Expression>),
+    EQ(Box<OOXExpression>, Box<OOXExpression>),
+    NE(Box<OOXExpression>, Box<OOXExpression>),
 
     //Expression5
-    LT(Box<Expression>, Box<Expression>),
-    GT(Box<Expression>, Box<Expression>),
-    GEQ(Box<Expression>, Box<Expression>),
-    LEQ(Box<Expression>, Box<Expression>),
+    LT(Box<OOXExpression>, Box<OOXExpression>),
+    GT(Box<OOXExpression>, Box<OOXExpression>),
+    GEQ(Box<OOXExpression>, Box<OOXExpression>),
+    LEQ(Box<OOXExpression>, Box<OOXExpression>),
 
     //Expression6
-    Plus(Box<Expression>, Box<Expression>),
-    Minus(Box<Expression>, Box<Expression>),
+    Plus(Box<OOXExpression>, Box<OOXExpression>),
+    Minus(Box<OOXExpression>, Box<OOXExpression>),
 
     //Expression7
-    Multiply(Box<Expression>, Box<Expression>),
-    Divide(Box<Expression>, Box<Expression>),
-    Mod(Box<Expression>, Box<Expression>),
+    Multiply(Box<OOXExpression>, Box<OOXExpression>),
+    Divide(Box<OOXExpression>, Box<OOXExpression>),
+    Mod(Box<OOXExpression>, Box<OOXExpression>),
 
     //Expression8
-    Negative(Box<Expression>),
-    Not(Box<Expression>),
+    Negative(Box<OOXExpression>),
+    Not(Box<OOXExpression>),
 
     //expression9
     Identifier(Identifier),
@@ -245,34 +245,34 @@ impl fmt::Debug for Statement {
         }
     }
 }
-impl fmt::Debug for Expression {
+impl fmt::Debug for OOXExpression {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Expression::Forall(arr, i, v, body) => {
+            OOXExpression::Forall(arr, i, v, body) => {
                 write!(f, "forall {}, {}, {} : {:?}", arr, i, v, body)
             }
-            Expression::Exists(arr, i, v, body) => {
+            OOXExpression::Exists(arr, i, v, body) => {
                 write!(f, "exists {}, {}, {} : {:?}", arr, i, v, body)
             }
-            Expression::Implies(l_expr, r_expr) => write!(f, "({:?} ==> {:?})", l_expr, r_expr),
-            Expression::And(l_expr, r_expr) => write!(f, "({:?} && {:?})", l_expr, r_expr),
-            Expression::Or(l_expr, r_expr) => write!(f, "({:?} || {:?})", l_expr, r_expr),
-            Expression::EQ(l_expr, r_expr) => write!(f, "({:?} == {:?})", l_expr, r_expr),
-            Expression::NE(l_expr, r_expr) => write!(f, "({:?} != {:?})", l_expr, r_expr),
-            Expression::LT(l_expr, r_expr) => write!(f, "({:?} < {:?})", l_expr, r_expr),
-            Expression::GT(l_expr, r_expr) => write!(f, "({:?} > {:?})", l_expr, r_expr),
-            Expression::GEQ(l_expr, r_expr) => write!(f, "({:?} >= {:?})", l_expr, r_expr),
-            Expression::LEQ(l_expr, r_expr) => write!(f, "({:?} <= {:?})", l_expr, r_expr),
-            Expression::Plus(l_expr, r_expr) => write!(f, "({:?} + {:?})", l_expr, r_expr),
-            Expression::Minus(l_expr, r_expr) => write!(f, "({:?} - {:?})", l_expr, r_expr),
-            Expression::Multiply(l_expr, r_expr) => write!(f, "({:?} * {:?})", l_expr, r_expr),
-            Expression::Divide(l_expr, r_expr) => write!(f, "({:?} / {:?})", l_expr, r_expr),
-            Expression::Mod(l_expr, r_expr) => write!(f, "({:?} % {:?})", l_expr, r_expr),
-            Expression::Negative(expr) => write!(f, "-{:?}", expr),
-            Expression::Not(expr) => write!(f, "!{:?}", expr),
-            Expression::Identifier(id) => write!(f, "{}", id),
-            Expression::Literal(lit) => write!(f, "{:?}", lit),
-            Expression::SizeOf(id) => write!(f, "#{}", id),
+            OOXExpression::Implies(l_expr, r_expr) => write!(f, "({:?} ==> {:?})", l_expr, r_expr),
+            OOXExpression::And(l_expr, r_expr) => write!(f, "({:?} && {:?})", l_expr, r_expr),
+            OOXExpression::Or(l_expr, r_expr) => write!(f, "({:?} || {:?})", l_expr, r_expr),
+            OOXExpression::EQ(l_expr, r_expr) => write!(f, "({:?} == {:?})", l_expr, r_expr),
+            OOXExpression::NE(l_expr, r_expr) => write!(f, "({:?} != {:?})", l_expr, r_expr),
+            OOXExpression::LT(l_expr, r_expr) => write!(f, "({:?} < {:?})", l_expr, r_expr),
+            OOXExpression::GT(l_expr, r_expr) => write!(f, "({:?} > {:?})", l_expr, r_expr),
+            OOXExpression::GEQ(l_expr, r_expr) => write!(f, "({:?} >= {:?})", l_expr, r_expr),
+            OOXExpression::LEQ(l_expr, r_expr) => write!(f, "({:?} <= {:?})", l_expr, r_expr),
+            OOXExpression::Plus(l_expr, r_expr) => write!(f, "({:?} + {:?})", l_expr, r_expr),
+            OOXExpression::Minus(l_expr, r_expr) => write!(f, "({:?} - {:?})", l_expr, r_expr),
+            OOXExpression::Multiply(l_expr, r_expr) => write!(f, "({:?} * {:?})", l_expr, r_expr),
+            OOXExpression::Divide(l_expr, r_expr) => write!(f, "({:?} / {:?})", l_expr, r_expr),
+            OOXExpression::Mod(l_expr, r_expr) => write!(f, "({:?} % {:?})", l_expr, r_expr),
+            OOXExpression::Negative(expr) => write!(f, "-{:?}", expr),
+            OOXExpression::Not(expr) => write!(f, "!{:?}", expr),
+            OOXExpression::Identifier(id) => write!(f, "{}", id),
+            OOXExpression::Literal(lit) => write!(f, "{:?}", lit),
+            OOXExpression::SizeOf(id) => write!(f, "#{}", id),
         }
     }
 }
@@ -288,7 +288,7 @@ impl fmt::Debug for Lhs {
 impl fmt::Debug for Rhs {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Rhs::Expression(expr) => write!(f, "{:?};", expr),
+            Rhs::OOXExpression(expr) => write!(f, "{:?};", expr),
             Rhs::AccessField(class, field) => write!(f, "{}.{};", class, field),
             Rhs::AccessArray(class, index) => write!(f, "{}[{:?}];", class, index),
             Rhs::Invocation((class, fun, args)) => write!(f, " {}.{}({:?});", class, fun, args),

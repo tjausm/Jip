@@ -49,7 +49,7 @@ pub struct Config {
     pub infer_size: i8,
     pub symbolic_array_size: Option<i64>,
     pub equivalent_formula_caching: bool,
-    pub formula_caching: bool,
+    pub expression_caching: bool,
     pub prune_probability: PruneProbability,
     pub solver_type: SolverType,
     pub verbose: bool,
@@ -63,9 +63,8 @@ pub struct Diagnostics {
     pub paths_explored: i32,
     pub smt_calls: i32,
     pub cfg_coverage: CFGCoverage ,
-    pub eq_cache_hits: i32,
     pub cache_hits: i32,
-    pub cache_collision: i32
+    pub eq_cache_hits: i32,
 }
 
 #[derive(Clone)]
@@ -104,8 +103,7 @@ impl Diagnostics {
             smt_calls: 0,
             cfg_coverage: CFGCoverage::new(cfg_total_nodes),
             eq_cache_hits: 0,
-            cache_hits: 0,
-            cache_collision: 0
+            cache_hits: 0
         };
     }
 

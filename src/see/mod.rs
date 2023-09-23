@@ -14,7 +14,7 @@ use crate::shared::{Config, Timeout, PruneProbability};
 use crate::shared::ExitCode;
 use crate::shared::{panic_with_diagnostics, Depth, Diagnostics, CounterExample};
 use crate::smt_solver::SolverEnv;
-use crate::symbolic::expression::{PathConstraints, SymExpression, SymType};
+use crate::symbolic::expression::{PathConstraints, Expression, SymType};
 use crate::symbolic::memory::SymMemory;
 use crate::symbolic::ref_values::{EvaluatedRefs, IntervalMap, Reference, SymRefType};
 
@@ -48,7 +48,7 @@ pub fn bench(
 ) -> (ExitCode, String) {
     let end = end.unwrap_or(start) + 1;
     let depths = (start..end).step_by(step.try_into().unwrap());
-    println!("max. d      CFG cov.    time (s)    paths expl. paths pr.   avg. prune p. cache hits  eq. cache hits cache coll. smt-calls   verdict");
+    println!("max. d      CFG cov.    time (s)    paths expl. paths pr.   avg. prune p. cache hits  eq. cache hits smt-calls   verdict");
     for depth in depths {
         let now = Instant::now();
         let dia;
@@ -72,7 +72,7 @@ pub fn bench(
         let dur = now.elapsed();
         let time = format!("{:?},{:0>3}", dur.as_secs(), dur.as_millis());
         println!(
-            "{:<12}{:<12}{:<12}{:<12}{:<12}{:<14}{:<12}{:<12}{:<12}{:<12}{:<12}",
+            "{:<12}{:<12}{:<12}{:<12}{:<12}{:<14}{:<12}{:<12}{:<12}{:<12}",
             dia.reached_depth,
             format!("{:.1} %", dia.cfg_coverage.calculate()),
             &time[0..5],
@@ -81,7 +81,6 @@ pub fn bench(
             format!("{:.1} %", dia.average_prune_p()),
             dia.cache_hits,
             dia.eq_cache_hits,
-            dia.cache_collision,
             dia.smt_calls,
             verdict
         );
@@ -139,13 +138,10 @@ pub fn print_verification(program: &str, max_d: Option<Depth>, max_t :Option<Tim
         "Avg. prune prob.      {:.1}%\n",
         dia.average_prune_p()
     ));
-    if (config.formula_caching) {
+    if (config.expression_caching) {
         msg.push_str(&format!("Form. cache hits      {}\n", dia.cache_hits));
     } else if (config.equivalent_formula_caching)  {
         msg.push_str(&format!("Eq. form. cache hits  {}\n", dia.eq_cache_hits));
-    }
-    if (config.formula_caching || config.equivalent_formula_caching){    
-        msg.push_str(&format!("Cache collision       {}\n", dia.cache_collision));
     }
     msg.push_str(&format!("Smt calls             {}\n", dia.smt_calls));
     msg.push_str(&format!("Verdict               {}\n", verdict));
@@ -296,18 +292,18 @@ fn verify_program(
                     match parameter {
                         (Type::Int, id) => sym_memory.stack_insert(
                             id.clone(),
-                            SymExpression::FreeVariable(SymType::Int, id.clone()),
+                            Expression::FreeVariable(SymType::Int, id.clone()),
                         ),
                         (Type::Bool, id) => sym_memory.stack_insert(
                             id.clone(),
-                            SymExpression::FreeVariable(SymType::Bool, id.clone()),
+                            Expression::FreeVariable(SymType::Bool, id.clone()),
                         ),
                         (Type::Array(ty), id) => {
                             let r = Reference::new_evaluated();
                             let size = match config.symbolic_array_size {
-                                Some(s) => SymExpression::Literal(Literal::Integer(s)),
+                                Some(s) => Expression::Literal(Literal::Integer(s)),
                                 None => {
-                                    SymExpression::FreeVariable(SymType::Int, format!("#{:?}", r))
+                                    Expression::FreeVariable(SymType::Int, format!("#{:?}", r))
                                 }
                             };
                             let sym_ty = match &**ty {
@@ -324,11 +320,11 @@ fn verify_program(
                             };
                             let arr = sym_memory.init_array(sym_ty.clone(), size, true);
                             sym_memory.heap_insert(Some(r.clone()), arr);
-                            sym_memory.stack_insert(id.clone(), SymExpression::Reference(r));
+                            sym_memory.stack_insert(id.clone(), Expression::Reference(r));
                         }
                         (Type::Class(class_name), id) => {
                             let lr = Reference::new_lazy(class_name.clone());
-                            sym_memory.stack_insert(id.clone(), SymExpression::Reference(lr));
+                            sym_memory.stack_insert(id.clone(), Expression::Reference(lr));
                         }
                         (ty, id) => panic_with_diagnostics(
                             &format!("Can't call main with parameter {} of type {:?}", id, ty),
@@ -342,13 +338,13 @@ fn verify_program(
                 match stmt {
                     Statement::Declaration((ty, id)) => match ty {
                         Type::Int => {
-                            sym_memory.stack_insert(id.clone(), SymExpression::Uninitialized)
+                            sym_memory.stack_insert(id.clone(), Expression::Uninitialized)
                         }
                         Type::Bool => {
-                            sym_memory.stack_insert(id.clone(), SymExpression::Uninitialized)
+                            sym_memory.stack_insert(id.clone(), Expression::Uninitialized)
                         }
                         _ => sym_memory
-                            .stack_insert(id.clone(), SymExpression::Reference(Reference::null())),
+                            .stack_insert(id.clone(), Expression::Reference(Reference::null())),
                     },
                     Statement::Assume(assumption) => {
                         let (updated_p, feasible) = assume(
@@ -412,7 +408,7 @@ fn verify_program(
                         // add return value to stack
                         sym_memory.stack_insert(
                             retval_id.clone(),
-                            SymExpression::new(&sym_memory, expr.clone()),
+                            Expression::substitute(&sym_memory, expr.clone()),
                         );
                     }
                     _ => (),
@@ -439,7 +435,7 @@ fn verify_program(
                         loop {
                             match (params_iter.next(), args_iter.next()) {
                                 (Some((_, arg_id)), Some(expr)) => {
-                                    sym_memory.stack_insert(arg_id.clone(), SymExpression::new(&sym_memory, expr.clone()));
+                                    sym_memory.stack_insert(arg_id.clone(), Expression::substitute(&sym_memory, expr.clone()));
                                 },
                                 (Some((_, param)), None) => panic_with_diagnostics(
                                     &format!(
@@ -465,7 +461,7 @@ fn verify_program(
                             let val = sym_memory.stack_get(id);
 
                             match val {
-                                Some(SymExpression::Reference(_)) => {
+                                Some(Expression::Reference(_)) => {
                                     sym_memory.stack_insert(this_id.clone(), val.unwrap())
                                 }
 
@@ -492,8 +488,8 @@ fn verify_program(
                                 field,
                                 None,
                             ) {
-                                Ok(Some(SymExpression::Reference(r))) => sym_memory
-                                    .stack_insert(this_id.to_string(), SymExpression::Reference(r)),
+                                Ok(Some(Expression::Reference(r))) => sym_memory
+                                    .stack_insert(this_id.to_string(), Expression::Reference(r)),
                                 Ok(None) => continue 'q_edges,
                                 
                                 Err(ce) => {
@@ -515,7 +511,7 @@ fn verify_program(
                                 index.clone(),
                                 None,
                             ) {
-                                    Ok(Some(SymExpression::Reference(r))) => sym_memory.stack_insert(this_id.to_string(), SymExpression::Reference(r)),
+                                    Ok(Some(Expression::Reference(r))) => sym_memory.stack_insert(this_id.to_string(), Expression::Reference(r)),
                                     Ok(None) => continue 'q_edges,
                                     
                                     Err(ce) => return Ok((solver_env.diagnostics, Verdict::False(ce))),
@@ -529,7 +525,7 @@ fn verify_program(
                     } => {
                         // initialize object and insert into heap
                         let obj = sym_memory.init_object(from_class.clone());
-                        let r = SymExpression::Reference(sym_memory.heap_insert(None, obj));
+                        let r = Expression::Reference(sym_memory.heap_insert(None, obj));
 
                         match lhs {
                             Lhs::Identifier(id) => sym_memory.stack_insert_below(id.to_string(), r),

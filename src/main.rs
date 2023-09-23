@@ -41,13 +41,13 @@ struct Cli {
     #[clap(short, long)]
     symbolic_array_size: Option<i64>,
 
-    /// Turns on formula caching
+    /// Turns on normalized expression caching
     #[clap(long)]
-    equivalent_formula_caching: bool,
+    normalized_expression_caching: bool,
     
-    /// Turns on formula caching
-    #[clap(short, long)]
-    formula_caching: bool,
+    /// Turns on expression caching
+    #[clap(long)]
+    expression_caching: bool,
 
     /// Turns on constant pruning (SEE will try to prune all paths)
     #[clap(short, long)]
@@ -145,8 +145,8 @@ fn main() {
                 expression_evaluation: cli.expression_evaluator || cli.infer_size > 0,
                 infer_size: cli.infer_size,
                 symbolic_array_size: cli.symbolic_array_size,
-                equivalent_formula_caching: cli.equivalent_formula_caching,
-                formula_caching: cli.formula_caching,
+                equivalent_formula_caching: cli.normalized_expression_caching,
+                expression_caching: cli.expression_caching,
                 prune_probability,
                 solver_type: solver_type,
                 verbose: verbose,
@@ -162,8 +162,8 @@ fn main() {
                 expression_evaluation: cli.expression_evaluator || cli.infer_size > 0,
                 infer_size: cli.infer_size,
                 symbolic_array_size: cli.symbolic_array_size,
-                equivalent_formula_caching: cli.equivalent_formula_caching,
-                formula_caching: cli.formula_caching,
+                equivalent_formula_caching: cli.normalized_expression_caching,
+                expression_caching: cli.expression_caching,
                 prune_probability,
                 solver_type: solver_type,
                 verbose: false,
