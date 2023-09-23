@@ -1,3 +1,7 @@
+# What is Jip?
+
+![program transformation](images/programTransform.png)
+
 # Installation
 1. [Install rustup](https://www.rust-lang.org/tools/install)
 2. 
