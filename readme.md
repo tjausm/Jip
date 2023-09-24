@@ -2,7 +2,7 @@
 Jip is a software testing and verification tool developed as part of a Master's thesis in the Department of Computing Sciences at Utrecht University. The goal of Jip is to discover bugs in software through symbolic execution, a method widely used in the field of software testing and verification. The tool is built with Rust and supports three different SMT-solvers as backends, namely: Z3, CVC4, and Yices2.
 
 ## Symbolic Execution with Jip
-When Jip symbolically executes a program, it generates a Control Flow Graph (CFG) for it. For example, given the program in the image below on the left that assigns the maximum value to variable `z`, Jip will generate the CFG on the right. There are two possible paths through the CFG, representing all possible executions of the program. Jip will generate two formulas from the assumptions and assertions made in the path:
+When Jip symbolically executes a program, it generates a Control Flow Graph (CFG) for it. For example, given the program in the image below on the left that assigns the maximum value to variable `z`, Jip will generate the CFG on the right. There are two possible paths through the CFG, representing all possible executions of the program. Jip will generate two formulas from the assumptions and assertions made in each path through the CFG:
 1. `x >= y ==> x >= x && x >= y`
 2. `!(x >= y) ==> y >= x && y >= y`
 
