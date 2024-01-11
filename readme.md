@@ -24,8 +24,6 @@ Jip was the second-best in a benchmark against eight other tools using the setup
 | GDart       | 36    |
 | JayHorn     | 33    |
 
-Your readme looks well-organized and clear. I've made a few minor adjustments for clarity and formatting:
-
 # Installation
 
 1. [Install rustup](https://www.rust-lang.org/tools/install)
